@@ -42,9 +42,6 @@ export function OpenToHandEntry({ level }: { level: string }) {
   const openTo = map(alwaysAsked(attributes.read), (read) =>
     handEnterable(read.items, sourceNames),
   );
-  // Drawn while the catalog is read, so its state is said; gone once it says there is none.
-  if (openTo.state === "ready" && openTo.data.length === 0) return null;
-
   return (
     <section className="panel" aria-labelledby={headingId}>
       <h2 id={headingId} className="panel__heading">
@@ -64,36 +61,42 @@ export function OpenToHandEntry({ level }: { level: string }) {
         prominence="region"
         onRetry={attributes.reload}
       >
-        {(enterable) => (
-          <div className="table-card">
-            <table className="table" aria-label="Attributes open to hand entry">
-              <thead>
-                <tr>
-                  <th scope="col">Attribute</th>
-                  <th scope="col">Pillar</th>
-                  <th scope="col">What else would answer it</th>
-                  <th scope="col">&nbsp;</th>
-                </tr>
-              </thead>
-              <tbody>
-                {enterable.map((attribute) => (
-                  <Row
-                    key={attribute.id}
-                    attribute={attribute}
-                    pillars={pillars}
-                    level={level}
-                    open={open === attribute.id}
-                    onToggle={() =>
-                      setOpen((current) =>
-                        current === attribute.id ? null : attribute.id,
-                      )
-                    }
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        {/* **Kept, and saying so, when there are none**: Try again answered with none used to
+            take the card away, and the focused button with it, so focus fell to the page. */}
+        {(enterable) =>
+          enterable.length === 0 ? (
+            <p className="panel__hint">No attribute at this level may be entered by hand.</p>
+          ) : (
+            <div className="table-card">
+              <table className="table" aria-label="Attributes open to hand entry">
+                <thead>
+                  <tr>
+                    <th scope="col">Attribute</th>
+                    <th scope="col">Pillar</th>
+                    <th scope="col">What else would answer it</th>
+                    <th scope="col">&nbsp;</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {enterable.map((attribute) => (
+                    <Row
+                      key={attribute.id}
+                      attribute={attribute}
+                      pillars={pillars}
+                      level={level}
+                      open={open === attribute.id}
+                      onToggle={() =>
+                        setOpen((current) =>
+                          current === attribute.id ? null : attribute.id,
+                        )
+                      }
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )
+        }
       </LoadedRegion>
     </section>
   );

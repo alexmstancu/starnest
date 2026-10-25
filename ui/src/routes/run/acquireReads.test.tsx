@@ -52,6 +52,8 @@ interface ScreenRead {
 
 const HOLDS = /what the database holds/i;
 const UNSOURCED = /attributes with no data source at all/i;
+const LAST_ACQUISITION = /^the last acquisition$/i;
+const HAND_ENTRY = /figures you can enter by hand/i;
 
 const READS: ScreenRead[] = [
   {
@@ -71,7 +73,7 @@ const READS: ScreenRead[] = [
     what: "the last acquisition",
     path: `${BASE}/data-acquisition-runs/:runId`,
     refusal: NOT_FOUND,
-    owners: [HOLDS],
+    owners: [HOLDS, LAST_ACQUISITION],
     facts: [],
     drawnFromIt: [/values filled/i, /nobody answered/i, /a source broke/i],
   },
@@ -87,7 +89,7 @@ const READS: ScreenRead[] = [
     what: "the catalog",
     path: `${BASE}/attributes`,
     refusal: INVALID,
-    owners: [UNSOURCED, /figures you can enter by hand/i],
+    owners: [UNSOURCED, HAND_ENTRY],
     facts: [/every attribute at this level has at least one source/i],
     drawnFromIt: [/residency admin ease/i, /nobody measures this/i],
   },
@@ -346,5 +348,79 @@ describe("the unsourced card while the first criteria set is adopted", () => {
     expect(rowsDrawn.filter((row) => /residency admin ease.*not scored here/i.test(row))).toEqual(
       [],
     );
+  });
+});
+
+/**
+ * PL-001. **The run the screen opens by itself is a read like any other**: failed or refused, it
+ * says so with Try again, where it used to leave no card at all -- as if there had been no run.
+ */
+describe("the last acquisition when it could not be read", () => {
+  /** Fails the newest run's detail until the returned switch is flipped. */
+  function failTheNewestRun(): { failing: boolean } {
+    const switched = { failing: true };
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/7`, () =>
+        switched.failing ? HttpResponse.json(NOT_FOUND.body, { status: 404 }) : undefined,
+      ),
+    );
+    return switched;
+  }
+
+  it("shows the run once Try again answers, and takes the reader to it", async () => {
+    const run = failTheNewestRun();
+    renderShell("/acquire");
+    const last = within(await findRegion(LAST_ACQUISITION));
+    expect(await last.findByText(/could not be loaded/i)).toBeInTheDocument();
+
+    run.failing = false;
+    await userEvent.click(last.getByRole("button", { name: "Try again" }));
+
+    const card = await findRegion(/^acquisition 7$/i);
+    expect(within(card).getByRole("heading", { level: 2 })).toHaveFocus();
+  });
+
+  it("gives way to a run the reader opens, and stays gone once that one is dismissed", async () => {
+    failTheNewestRun();
+    renderShell("/acquire");
+    await within(await findRegion(LAST_ACQUISITION)).findByText(/could not be loaded/i);
+
+    const six = await screen.findByRole("rowheader", { name: "6" });
+    await userEvent.click(within(six).getByRole("button", { name: "6" }));
+    const card = await findRegion(/^acquisition 6$/i);
+    await userEvent.click(within(card).getByRole("button", { name: "Dismiss" }));
+
+    expect(within(theScreen()).queryByRole("region", { name: /acquisition 6/i })).toBeNull();
+    expect(within(theScreen()).queryByRole("region", { name: LAST_ACQUISITION })).toBeNull();
+  });
+});
+
+/**
+ * The focus rule. **Try again finding nothing open to hand entry keeps the reader in the card**:
+ * the card used to leave the screen when the catalog answered with none, taking the focused
+ * button with it, and focus fell to the page.
+ */
+describe("figures you can enter by hand when Try again finds none", () => {
+  it("keeps the card, and focus inside it", async () => {
+    let failing = true;
+    mockServer.use(
+      http.get(`${BASE}/attributes`, () =>
+        failing
+          ? new HttpResponse(null, { status: 500 })
+          : HttpResponse.json({ items: [] }),
+      ),
+    );
+    renderShell("/acquire");
+    const handEntry = await findRegion(HAND_ENTRY);
+    const tryAgain = await within(handEntry).findByRole("button", { name: "Try again" });
+
+    failing = false;
+    await userEvent.click(tryAgain);
+
+    expect(
+      await within(region(HAND_ENTRY)).findByText(/no attribute at this level/i),
+    ).toBeInTheDocument();
+    expect(document.body).not.toHaveFocus();
+    expect(region(HAND_ENTRY)).toContainElement(document.activeElement as HTMLElement);
   });
 });

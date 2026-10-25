@@ -80,7 +80,22 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
   // Built once and placed in one of two slots, because it is one card either way: the top of
   // the screen while the run is in flight, and inside a fold under the remedies once it is not.
   const report =
-    run.current === null ? null : (
+    run.current === null ? (
+      // Until the run the screen opens by itself has answered, its read stands where it will.
+      run.opening !== null && (
+        <section className="acquisition" aria-label="The last acquisition">
+          <LoadedRegion
+            read={run.opening}
+            what="The last acquisition"
+            skeleton="lines"
+            prominence="region"
+            onRetry={run.reopen}
+          >
+            {() => null}
+          </LoadedRegion>
+        </section>
+      )
+    ) : (
       <RunReport
         run={run.current}
         busy={run.busy === "opening"}

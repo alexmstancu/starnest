@@ -4270,15 +4270,25 @@ describe("a change of level", () => {
     });
   }
 
-  function holdThePlan(): { release: () => void } {
+  function holdThePlan(
+    answerWith: () => Response = () => HttpResponse.json(RUN_PLAN),
+  ): { release: () => void } {
     const answer = heldAnswer();
     mockServer.use(
       http.post(`${BASE}/data-acquisition-runs/plan`, async () => {
         await answer.held;
-        return HttpResponse.json(RUN_PLAN);
+        return answerWith();
       }),
     );
     return answer;
+  }
+
+  /** What the server answers an estimate for a level it no longer has. */
+  function refused(): Response {
+    return HttpResponse.json(
+      { code: "not_found", message: "No such level.", details: { level: "country" } },
+      { status: 404 },
+    );
   }
 
   it("puts away the estimate behind Start, and it does not come back", async () => {
@@ -4302,9 +4312,50 @@ describe("a change of level", () => {
     rerender({ level: "city" });
     plan.release();
     await waitFor(() => expect(result.current.busy).toBeNull());
+    // Asserted before going back, which clears whatever was estimated for the level left.
+    expect(result.current.plan).toBeNull();
     rerender({ level: "country" });
 
     expect(result.current.plan).toBeNull();
+  });
+
+  it("reports no refusal of an estimate still being read when the level changed", async () => {
+    const plan = holdThePlan(refused);
+    const { result, rerender } = renderAtLevel();
+    act(() => result.current.estimate("country"));
+    await waitFor(() => expect(result.current.busy).toBe("planning"));
+
+    rerender({ level: "city" });
+    plan.release();
+    await waitFor(() => expect(result.current.busy).toBeNull());
+
+    expect(result.current.failure).toBeNull();
+  });
+
+  it("reports no refusal of a proposal still being read when the level changed", async () => {
+    const plan = holdThePlan(refused);
+    const { result, rerender } = renderAtLevel();
+    await waitFor(() => expect(result.current.current?.id).toBe(7));
+    act(() => result.current.propose({ level: "country" }, "Retry", "failed"));
+    await waitFor(() => expect(result.current.busy).toBe("planning"));
+
+    rerender({ level: "city" });
+    plan.release();
+    await waitFor(() => expect(result.current.busy).toBeNull());
+
+    expect(result.current.failure).toBeNull();
+  });
+
+  it("still reports the refusal of an estimate for the level on screen", async () => {
+    const plan = holdThePlan(refused);
+    const { result } = renderAtLevel();
+    act(() => result.current.estimate("country"));
+    await waitFor(() => expect(result.current.busy).toBe("planning"));
+
+    plan.release();
+    await waitFor(() => expect(result.current.busy).toBeNull());
+
+    expect(result.current.failure).not.toBeNull();
   });
 
   it("clears an armed start rather than hiding it until the level comes back", async () => {

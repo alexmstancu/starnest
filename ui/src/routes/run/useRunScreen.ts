@@ -76,6 +76,8 @@ export interface ArmedRun {
   armedOn: number | null;
 }
 
+export type OpeningRead = Exclude<Read<RunDetail>, { state: "ready" }>;
+
 export interface CardFocus {
   runId: number;
   asked: number;
@@ -105,6 +107,12 @@ export interface RunScreenState {
    */
   starting: boolean;
   failure: unknown;
+  /**
+   * The read of the run the screen opens by itself, while it has not answered and the reader has
+   * not acted: null once it has, or once they have (PL-001). Failed, it is said with Try again.
+   */
+  opening: OpeningRead | null;
+  reopen: () => void;
   /**
    * Every run there has been. **Read again, it keeps the list it had** (PL-010), so what is
    * drawn from it -- and what the reader chose there -- stays on screen (NEW-11).
@@ -244,13 +252,19 @@ export function useRunScreen(
     [reloadHistory],
   );
 
-  /** Reads an estimate for one card, naming that card for as long as the read lasts. */
+  /**
+   * Reads an estimate for one card, naming that card for as long as the read lasts. **A refusal
+   * is reported only while it is still asked for**: one for a level or a selection the reader has
+   * left would stand over the one on screen, as its answer would (PL-116).
+   */
   const estimateFor = useCallback(
-    (origin: GapKind, read: () => Promise<void>) =>
+    (origin: GapKind, stillAsked: () => boolean, read: () => Promise<void>) =>
       act("planning", async () => {
         setEstimating(origin);
         try {
           await read();
+        } catch (refused) {
+          if (stillAsked()) throw refused;
         } finally {
           setEstimating((now) => (now === origin ? null : now));
         }
@@ -318,19 +332,56 @@ export function useRunScreen(
    * is skipped; and anything clicked while it is still reading outranks its answer.
    */
   const opened = useRef(false);
+  // Pending until it answers: the read is sent by the effect below, the render after the
+  // history arrives, so that render already says it is on its way.
+  const [openingRead, setOpeningRead] = useState<OpeningRead | "answered">({
+    state: "pending",
+  });
+  /**
+   * **No banner if it fails, but never silence** (PL-001): nobody asked for this read, so its
+   * failure is the card's own, said where the card would be, with Try again. A card left empty
+   * instead read as "there has been no run". Once the reader acts it is theirs, and so is what
+   * the act reports.
+   */
+  const readOpening = useCallback(
+    (runId: number) =>
+      watch(UNCLAIMED, runId).then(
+        () => {
+          setOpeningRead("answered");
+          return true;
+        },
+        (error: unknown) => {
+          setOpeningRead({ state: "failed", error });
+          return false;
+        },
+      ),
+    [watch, setOpeningRead],
+  );
   const runs = historyRead.state === "ready" ? historyRead.data : null;
+  const newestId = runs === null ? undefined : newestRun(runs)?.id;
   useEffect(() => {
     if (opened.current || runs === null) return;
     opened.current = true;
     const newest = newestRun(runs);
     if (newest === undefined || !unclaimed()) return;
-    // **Silent if it fails.** Nobody asked for this read -- it is the opening view -- so a
-    // banner about it would report a failure the reader did not cause. Opening a run from
-    // the history is an act, and that one reports.
-    void watch(UNCLAIMED, newest.id).catch(() => undefined);
-  }, [runs, watch, unclaimed]);
+    void readOpening(newest.id);
+  }, [runs, unclaimed, readOpening]);
 
   return {
+    // Read during the render: every act claims inside a handler that also sets state.
+    opening:
+      unclaimed() && newestId !== undefined && openingRead !== "answered" ? openingRead : null,
+    // Try again is the reader's, so it takes them to the card it brings (PL-126).
+    reopen: () => {
+      if (newestId === undefined) return;
+      const runId = newestId;
+      setOpeningRead({ state: "pending" });
+      void readOpening(runId).then((answered) => {
+        if (answered && unclaimed()) {
+          setCardFocus((asked) => ({ runId, asked: (asked?.asked ?? 0) + 1 }));
+        }
+      });
+    },
     plan,
     planOrigin,
     armed,
@@ -346,11 +397,12 @@ export function useRunScreen(
     dismissFailure: () => setFailure(null),
     estimate: (levelId) => {
       const version = levelVersion.current;
-      void estimateFor("everything", async () => {
+      const stillAsked = () => version === levelVersion.current;
+      void estimateFor("everything", stillAsked, async () => {
         setArmed(null);
         setPlanOrigin("everything");
         const planned = await planRun({ level: levelId });
-        if (version === levelVersion.current) setPlan(planned);
+        if (stillAsked()) setPlan(planned);
       });
     },
     // **Every act that reads a run back claims on the click**, before its first await, so a
@@ -373,8 +425,9 @@ export function useRunScreen(
     },
     propose: (scope, what, origin) => {
       const version = selectionVersion.current;
+      const stillAsked = () => version === selectionVersion.current;
       const armedOn = current?.id ?? null;
-      void estimateFor(origin, async () => {
+      void estimateFor(origin, stillAsked, async () => {
         setArmed(null);
         setPlan(null);
         setPlanOrigin(null);
@@ -382,7 +435,7 @@ export function useRunScreen(
         // The cap is read at the moment of arming, not cached: it is a setting somebody may
         // have just changed, and a stale ceiling in a confirmation is worse than none.
         const settings = await fetchSettings();
-        if (version !== selectionVersion.current) return;
+        if (!stillAsked()) return;
         setArmed({
           scope,
           plan: planned,

@@ -22,12 +22,6 @@ export interface KnownOffender {
   readonly removedBy: string;
 }
 
-const SERVER_UNREACHABLE: KnownOffender = {
-  identifier: "client.unreachable",
-  where: "the code under every failure notice, the sidebar's included",
-  removedBy: "PL-003 (C01)",
-};
-
 const RULE_EDITOR: readonly KnownOffender[] = [
   {
     identifier: "target_range",
