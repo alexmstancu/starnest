@@ -17,6 +17,7 @@ in-process, is a fake module that records its arguments.
 
 import re
 import shutil
+import socket
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -85,12 +86,22 @@ class Call:
         return self.arguments[-1]
 
 
+def a_free_port() -> str:
+    """A port nothing listens on. `tools/e2e_copy.py` refuses when a suite port answers, and a
+    real `make e2e` holds the default ones (8100, 5180) for minutes: a sandbox on those would
+    pass or fail by what else the machine happens to be running."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return str(probe.getsockname()[1])
+
+
 class Sandbox:
     """A copy of the Makefile with a `.env`, one backup, and fake tools first on PATH."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
         self.log = root / "calls.log"
+        self.ports = {"E2E_BACKEND_PORT": a_free_port(), "E2E_UI_PORT": a_free_port()}
         shutil.copy(ROOT / "Makefile", root / "Makefile")
         (root / "tools").mkdir()
         shutil.copy(ROOT / "tools" / "e2e_copy.py", root / "tools" / "e2e_copy.py")
@@ -124,6 +135,7 @@ class Sandbox:
                 "FAKE_LOG": str(self.log),
                 "FAKE_UV_PYTHON": sys.executable,
                 "PYTHONPATH": str(self.root / "python"),
+                **self.ports,
                 **environment,
             },
             capture_output=True,
