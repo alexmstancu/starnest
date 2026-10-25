@@ -539,6 +539,37 @@ describe("what a rule costs, and its colour", () => {
     ).toBeInTheDocument();
   });
 
+  /** A read *again* that fails offers Try again as a first read's failure does (P1-14). */
+  it("offers to read the ranking again when a re-read fails, and the line comes back", async () => {
+    let failing = false;
+    mockServer.use(
+      http.get("/v1/rankings", () =>
+        failing
+          ? HttpResponse.json({ code: "internal_error", message: "no ranking" }, { status: 500 })
+          : HttpResponse.json(rankingFor("default", "country")),
+      ),
+    );
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const rules = await panel();
+    await screen.findByRole("listitem", { name: "Rent fits the target spend" });
+    expect(rules.queryByText("Whom the rules remove or flag could not be loaded")).toBeNull();
+
+    failing = true;
+    await applyRent(user);
+
+    expect(
+      await rules.findByText("Whom the rules remove or flag could not be loaded"),
+    ).toBeInTheDocument();
+    failing = false;
+    await user.click(rules.getByRole("button", { name: "Try again" }));
+
+    expect(
+      await effectOf("Rent fits the target spend", "Applies to no country right now."),
+    ).toBeInTheDocument();
+    expect(rules.queryByText("Whom the rules remove or flag could not be loaded")).toBeNull();
+  });
+
   it("says it cannot tell when the ranking could not be read, and offers to read it again", async () => {
     let failing = true;
     mockServer.use(

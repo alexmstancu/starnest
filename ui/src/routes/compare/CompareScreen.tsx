@@ -19,7 +19,7 @@ import {
   type Comparison,
 } from "../../api/endpoints";
 import { ApiError, hasErrorCode } from "../../api/ApiError";
-import { combine, map, type Idle, type Read } from "../../api/read";
+import { combine, failureOf, map, type Idle, type Read } from "../../api/read";
 import { useRead } from "../../api/useRead";
 import { useValueCount } from "../../api/useValueCount";
 import { usePillarNames } from "../../api/usePillarNames";
@@ -326,13 +326,6 @@ function NothingToCompare({ error, region }: { error: unknown; region: FocusRegi
       <UnsetSetting error={error} title="Nothing to compare" detail={UNSET_DETAIL} />
     </div>
   );
-}
-
-/** Why a read did not answer: its first read failed, or a read of it again did. */
-function failureOf(read: Read<unknown> | Idle): unknown {
-  if (read.state === "failed") return read.error;
-  if (read.state === "ready" && typeof read.refresh === "object") return read.refresh.failed;
-  return null;
 }
 
 type Drawn = Extract<Read<Comparison>, { state: "ready" }>;

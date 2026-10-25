@@ -23,6 +23,13 @@ export interface Idle {
  * Two reads drawn as one: failed over pending over ready. Ready together, they are as fresh as
  * the older of the two, and as settled as the less settled.
  */
+/** Why a read did not answer: its first read failed, or a read of it again did; null otherwise. */
+export function failureOf(read: Read<unknown> | Idle): unknown {
+  if (read.state === "failed") return read.error;
+  if (read.state === "ready" && typeof read.refresh === "object") return read.refresh.failed;
+  return null;
+}
+
 export function combine<A, B>(a: Read<A>, b: Read<B>): Read<readonly [A, B]> {
   if (a.state === "failed") return a;
   if (b.state === "failed") return b;

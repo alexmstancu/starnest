@@ -5,7 +5,7 @@ import {
   type MatchRule,
   type RuleOutcome,
 } from "../../../api/endpoints";
-import type { Read } from "../../../api/read";
+import { failureOf, type Read } from "../../../api/read";
 import { candidateName } from "../../../format/display";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { ReadFailureCard } from "../../../shell/ReadFailureCard";
@@ -91,10 +91,12 @@ export function RulesPanel({
       </p>
 
       {/* Every gate that is on, and every compound rule, says whom it acts on from the ranking. */}
-      {evidence.ranking.state === "failed" && (
+      {/* A failed read again too: the lines then say the effect is not known, and this is the
+          way to learn it (P1-14). */}
+      {failureOf(evidence.ranking) !== null && (
         <ReadFailureCard
           what="Whom the rules remove or flag"
-          error={evidence.ranking.error}
+          error={failureOf(evidence.ranking)}
           onRetry={evidence.reloadRanking}
           prominence="region"
         />
