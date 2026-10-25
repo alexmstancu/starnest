@@ -148,6 +148,65 @@ for (const width of WIDTHS) {
   });
 }
 
+/**
+ * PL-082. **Every cell inside its row's ground and the header's, at every supported width.**
+ * The table is a grid: a column hidden without its track slides every later cell one column
+ * left, and a row narrower than its tracks spills past its ground. Δ home goes at 1440 and
+ * below, Pillars at 1280, and at 1280 the sidebar narrows to 200px so nothing scrolls sideways.
+ */
+for (const width of WIDTHS) {
+  test(`every ranking cell sits inside its row at ${width}px`, async ({ page }) => {
+    const { opened } = theArrangement();
+    await page.setViewportSize({ width, height: 900 });
+    await openTheRanking(page, opened);
+    const table = page.getByRole("table", { name: "Ranked candidates" });
+
+    const delta = table.getByRole("columnheader", { name: "Δ home" });
+    const pillars = table.getByRole("columnheader", { name: "Pillars" });
+    if (width <= 1440) await expect(delta).toBeHidden();
+    else await expect(delta).toBeVisible();
+    if (width <= 1280) await expect(pillars).toBeHidden();
+    else await expect(pillars).toBeVisible();
+
+    const spills = await table.evaluate((element) => {
+      const header = element.querySelector("thead tr")!.getBoundingClientRect();
+      const rows = [element.querySelector("thead tr")!, ...element.querySelectorAll("tbody tr")]
+        .filter((row) => row.querySelector('th[scope="row"], th[scope="col"]') !== null);
+      const visibleCells = (row: Element) =>
+        [...row.children].filter((cell) => getComputedStyle(cell).display !== "none");
+      const found: string[] = [];
+      for (const row of rows) {
+        const ground = row.getBoundingClientRect();
+        const cells = visibleCells(row);
+        if (cells.length !== visibleCells(rows[0]!).length) {
+          found.push(`${row.textContent?.slice(0, 20)}: ${cells.length} visible cells`);
+        }
+        const last = cells.at(-1)!.getBoundingClientRect();
+        if (last.right > Math.min(ground.right, header.right) + 0.5) {
+          found.push(`${row.textContent?.slice(0, 20)}: last cell ends at ${last.right}`);
+        }
+      }
+      return found;
+    });
+    expect(spills).toEqual([]);
+
+    if (width === 1280 || width === 1920) {
+      const scrolls = await table.evaluate((element) => {
+        const card = element.parentElement!;
+        return {
+          card: card.scrollWidth > card.clientWidth,
+          page: document.documentElement.scrollWidth > window.innerWidth,
+        };
+      });
+      expect(scrolls).toEqual({ card: false, page: false });
+    }
+    if (width === 1280) {
+      const sidebar = await page.getByRole("complementary").first().boundingBox();
+      expect(sidebar?.width).toBe(200);
+    }
+  });
+}
+
 test("a saved row opens nothing, so it takes no hover tint", async ({ page }) => {
   const { savedEvaluation, savedMatching } = theArrangement();
   await page.setViewportSize({ width: 1560, height: 900 });

@@ -100,3 +100,35 @@ describe("a row's pillar chart, when the bar the keyboard is on goes", () => {
     expect(name).toHaveFocus();
   });
 });
+
+/**
+ * PL-082. **A column the narrow desktop hides is hidden by its class**, on its header and on
+ * every cell under it -- home's baseline cell included -- or a hidden header leaves its cells
+ * standing and every cell after them reads under the wrong heading.
+ */
+describe("the columns the narrow desktop drops", () => {
+  it("marks the Δ home and Pillars header and every cell under them", () => {
+    render(
+      <RankingTable
+        ranking={rankingFor("default", "country")}
+        household={{ state: "ready", household: { home_country_candidate: "country.portugal" } }}
+      />,
+    );
+    const table = within(screen.getByRole("table", { name: /ranked candidates/i }));
+    const headings = table.getAllByRole("columnheader");
+    const delta = headings.findIndex((heading) => heading.textContent?.trim() === "Δ home");
+    const pillars = headings.findIndex((heading) =>
+      heading.textContent?.trim().startsWith("Pillars"),
+    );
+
+    expect(headings[delta]).toHaveClass("col--delta");
+    expect(headings[pillars]).toHaveClass("col--pillars");
+    const rows = table.getAllByRole("rowheader").map((heading) => heading.closest("tr")!);
+    expect(rows).toHaveLength(4);
+    for (const row of rows) {
+      const cells = [...row.querySelectorAll("th,td")];
+      expect(cells[delta], `${row.textContent}'s Δ home`).toHaveClass("col--delta");
+      expect(cells[pillars], `${row.textContent}'s pillars`).toHaveClass("col--pillars");
+    }
+  });
+});

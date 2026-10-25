@@ -119,7 +119,7 @@ export function RankingTable({
             <th scope="col" className="col--right">
               Score
             </th>
-            <th scope="col" className="col--right">
+            <th scope="col" className="col--right col--delta">
               &Delta; home
             </th>
             <th scope="col" className="col--pillars">
@@ -368,9 +368,13 @@ function CandidateRow({
           missing score is a dash -- a zero here would read as "the same", which is a
           measurement nobody made. */}
       {atHome && result.delta_vs_home == null ? (
-        <td className="col--right table__delta table__delta--baseline">baseline</td>
+        <td className="col--right col--delta table__delta table__delta--baseline">
+          baseline
+        </td>
       ) : (
-        <td className={`col--right table__delta table__delta--${deltaTone(result.delta_vs_home)}`}>
+        <td
+          className={`col--right col--delta table__delta table__delta--${deltaTone(result.delta_vs_home)}`}
+        >
           {formatSigned(result.delta_vs_home, 0)}
         </td>
       )}
