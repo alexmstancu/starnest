@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { replaceHousehold } from "../../api/endpoints";
+import { deleteEvaluation, replaceHousehold } from "../../api/endpoints";
 import { HOUSEHOLD } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
@@ -486,3 +486,120 @@ const OLD_DETAILS: Record<string, Record<string, unknown>> = {
     attribute_scores: [],
   },
 };
+
+/** A saved ranking's row in the sidebar, found by the name it is listed under. */
+async function savedRow(name: string): Promise<HTMLElement> {
+  const link = await within(await savedList()).findByRole("link", { name: new RegExp(name) });
+  return link.closest("li")!;
+}
+
+describe("the saved rankings card (PL-145)", () => {
+  it("lists each by its name over who led it and when", async () => {
+    renderShell("/rank");
+    await saveOne("before I raised housing");
+
+    const row = within(await savedRow("before I raised housing"));
+    expect(row.getByText("before I raised housing")).toBeInTheDocument();
+    expect(row.getByText(/^Portugal led, .*2026$/)).toBeInTheDocument();
+  });
+
+  it("says nobody was ranked rather than naming a leader", async () => {
+    mockServer.use(
+      http.get("/v1/evaluations", () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 3,
+              criteria_set: "default",
+              level: "country",
+              computed_at: "2026-09-21T09:00:00Z",
+              score_scale_max: 100,
+              note: "an empty roster",
+              leader: null,
+            },
+          ],
+        }),
+      ),
+    );
+    renderShell("/rank");
+
+    const row = within(await savedRow("an empty roster"));
+    expect(row.getByText(/^Nobody was ranked, /)).toBeInTheDocument();
+  });
+
+  it("deletes one only once it is confirmed, then shows the empty state", async () => {
+    renderShell("/rank");
+    await saveOne("short-lived");
+    const row = within(await savedRow("short-lived"));
+
+    await userEvent.click(row.getByRole("button", { name: /delete short-lived/i }));
+    // Asked, not done: it is still listed until the deletion is confirmed.
+    expect(row.getByRole("link", { name: /short-lived/ })).toBeInTheDocument();
+    expect(row.getByRole("button", { name: /keep it/i })).toHaveFocus();
+    await userEvent.click(row.getByRole("button", { name: /^delete$/i }));
+
+    const list = within(await savedList());
+    expect(await list.findByText(/none yet/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^saved rankings$/i })).toHaveFocus();
+  });
+
+  it("keeps it when the deletion is called off, and gives the keyboard back to the ×", async () => {
+    renderShell("/rank");
+    await saveOne("kept after all");
+    const row = within(await savedRow("kept after all"));
+
+    await userEvent.click(row.getByRole("button", { name: /delete kept after all/i }));
+    await userEvent.click(row.getByRole("button", { name: /keep it/i }));
+
+    expect(row.queryByRole("button", { name: /^delete$/i })).toBeNull();
+    expect(row.getByRole("button", { name: /delete kept after all/i })).toHaveFocus();
+    expect(row.getByRole("link", { name: /kept after all/ })).toBeInTheDocument();
+  });
+
+  it("closes the saved ranking it deletes if that one was open", async () => {
+    renderShell("/rank");
+    await openSaved("open while deleted");
+
+    const row = within(await savedRow("open while deleted"));
+    await userEvent.click(row.getByRole("button", { name: /delete open while deleted/i }));
+    await userEvent.click(row.getByRole("button", { name: /^delete$/i }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: /a saved ranking/i })).toBeNull(),
+    );
+  });
+
+  it("reports a failed deletion, keeps the ranking, and tries again", async () => {
+    renderShell("/rank");
+    await saveOne("stubborn");
+    const row = within(await savedRow("stubborn"));
+    mockServer.use(http.delete("/v1/evaluations/:evaluationId", () => HttpResponse.error()));
+
+    await userEvent.click(row.getByRole("button", { name: /delete stubborn/i }));
+    await userEvent.click(row.getByRole("button", { name: /^delete$/i }));
+
+    expect(await row.findByRole("alert")).toBeInTheDocument();
+    expect(row.getByRole("link", { name: /stubborn/ })).toBeInTheDocument();
+
+    mockServer.resetHandlers();
+    await userEvent.click(row.getByRole("button", { name: /try again/i }));
+    const list = within(await savedList());
+    expect(await list.findByText(/none yet/i)).toBeInTheDocument();
+  });
+
+  /** Gone already -- deleted from elsewhere since the list was read: said, and the list caught up. */
+  it("treats a ranking somebody already deleted as gone, and says so", async () => {
+    renderShell("/rank");
+    await saveOne("deleted elsewhere");
+    const row = within(await savedRow("deleted elsewhere"));
+    await deleteEvaluation(1);
+
+    await userEvent.click(row.getByRole("button", { name: /delete deleted elsewhere/i }));
+    await userEvent.click(row.getByRole("button", { name: /^delete$/i }));
+
+    const list = within(await savedList());
+    expect(await list.findByText(/had already been deleted/i)).toBeInTheDocument();
+    expect(list.queryByRole("link", { name: /deleted elsewhere/ })).toBeNull();
+    expect(list.queryByRole("alert")).toBeNull();
+  });
+});

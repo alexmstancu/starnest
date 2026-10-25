@@ -482,6 +482,8 @@ export const handlers = [
     // Frozen with it: a saved ranking keeps the scale it was computed on, and the results it
     // computed, whatever the setting and the figures do afterwards.
     const ranking = rankingFor(body.criteria_set, body.level, scaleInForce());
+    // Who was ranked first, by the roster's name; nobody when nothing was ranked (PL-145).
+    const first = ranking.candidates.find((each) => each.rank === 1);
     const summary: EvaluationSummary = {
       id: nextEvaluationId++,
       criteria_set: body.criteria_set,
@@ -489,6 +491,7 @@ export const handlers = [
       computed_at: "2026-09-21T09:00:00Z",
       score_scale_max: ranking.score_scale_max,
       ...(body.note === undefined ? {} : { note: body.note }),
+      leader: first ? { candidate: first.candidate, name: first.name } : null,
     };
     savedEvaluations = [{ summary, candidates: ranking.candidates }, ...savedEvaluations];
     return HttpResponse.json(summary, { status: 201 });
@@ -508,6 +511,14 @@ export const handlers = [
       score_scale_max: saved.summary.score_scale_max,
       candidates: againstHome(saved.candidates, household.home_country_candidate),
     });
+  }),
+
+  // Discarded with its whole tree (D47): 204, or 404 naming an id nobody kept.
+  http.delete(`${BASE}/evaluations/:evaluationId`, ({ params }) => {
+    const saved = savedEvaluationOf(params["evaluationId"]);
+    if (!saved) return evaluationNotFound(params["evaluationId"]);
+    savedEvaluations = savedEvaluations.filter((each) => each !== saved);
+    return new HttpResponse(null, { status: 204 });
   }),
 
   // One saved candidate's contributions, each with the row it scored (D46), on the frozen scale.

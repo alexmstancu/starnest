@@ -20,9 +20,9 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
  * contract has no delete for one, so an answer that was absent could never be put back as
  * absent. The copy is deleted afterwards, in `finally`, and the delete is checked.
  *
- * **One thing is left behind, by design**: the saved ranking. The contract has no delete for a
- * saved evaluation, so it is saved from the shipped set (never this spec's copy, which it would
- * then hold by foreign key and make undeletable) and carries the marker the boot sweep discards.
+ * **The saved ranking is deleted afterwards too** (D47). It is saved from the shipped set (never
+ * this spec's copy, which it would hold by foreign key) and carries the marker the boot sweep
+ * discards, should the delete never run.
  */
 
 const LAYOUT_SET = "e2e_rank_layout";
@@ -115,6 +115,12 @@ test.afterAll(async ({ playwright }, testInfo) => {
     baseURL: testInfo.project.use.baseURL,
   });
   try {
+    if (arranged !== undefined) {
+      const discarded = await api.delete(`/v1/evaluations/${arranged.savedEvaluation}`);
+      expect(discarded.status() === 204 || discarded.status() === 404, await discarded.text()).toBe(
+        true,
+      );
+    }
     // The threshold lives in the copy, so deleting the copy takes it too.
     const deleted = await api.delete(`/v1/criteria-sets/${LAYOUT_SET}`);
     expect(deleted.ok() || deleted.status() === 404, await deleted.text()).toBe(true);

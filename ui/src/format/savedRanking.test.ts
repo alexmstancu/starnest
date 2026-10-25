@@ -4,7 +4,7 @@ import {
   detailOf,
   newestFirst,
   requestedSavedRanking,
-  summariseSaved,
+  ledOn,
   type SavedRankingLike,
 } from "./savedRanking";
 
@@ -91,12 +91,20 @@ describe("the saved rankings list", () => {
     expect(detail).not.toContain("·");
   });
 
-  /** The sidebar is 262px wide, so the summary drops the time and keeps the day. */
-  it("summarises a saved ranking short enough for the sidebar", () => {
-    const summary = summariseSaved(saved(), SETS);
-    expect(summary).toContain("Working locally");
-    expect(summary).not.toContain("local_employment");
-    expect(summary).not.toMatch(/\d\d:\d\d/);
+  /**
+   * PL-145. The sidebar is 262px wide: who led it and the day it was kept, which is what tells
+   * two saved rankings apart at a glance -- the minute is noise until two share a day.
+   */
+  it("says who led it and on which day", () => {
+    const line = ledOn(saved({ leader: { candidate: "country.portugal", name: "Portugal" } }));
+    expect(line).toMatch(/^Portugal led, /);
+    expect(line).toMatch(/2026/);
+    expect(line).not.toMatch(/\d\d:\d\d/);
+  });
+
+  it("says nobody led a ranking that ranked nobody", () => {
+    expect(ledOn(saved({ leader: null }))).toMatch(/^Nobody was ranked, .*2026/);
+    expect(ledOn(saved())).toMatch(/^Nobody was ranked, /);
   });
 });
 

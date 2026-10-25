@@ -176,11 +176,10 @@ test.describe("saved rankings", () => {
    * A ranking is recomputed on every request, so it moves as weights move -- which is why
    * keeping one is a deliberate act rather than a side effect of looking.
    *
-   * **This leaves a row behind.** The contract has no `DELETE /evaluations`, deliberately: a
-   * saved evaluation is a measurement somebody chose to keep, not a draft. So this test
-   * marks what it creates rather than tidying it away.
+   * **It deletes what it kept, through the ×** (D47), and the note carries the marker the boot
+   * sweep discards should the deletion never run.
    */
-  test("keeps a ranking, lists it, and opens it again", async ({ page }) => {
+  test("keeps a ranking, lists it, opens it again, and deletes it", async ({ page }) => {
     await page.goto("/rank");
     // **Saving and listing are in two places**, as the design has them: the sidebar lists
     // what has been kept, because a saved ranking is about the session rather than about one
@@ -208,6 +207,11 @@ test.describe("saved rankings", () => {
     await expect(
       opened.getByRole("table", { name: "Ranked candidates" }),
     ).toBeVisible();
+
+    await entry.getByRole("button", { name: `Delete ${note}` }).click();
+    await entry.getByRole("button", { name: "Delete", exact: true }).click();
+    await expect(listed.getByRole("listitem").filter({ hasText: note })).toHaveCount(0);
+    await expect(opened).toHaveCount(0);
   });
 
   test("opens several candidates' figures at once", async ({ page }) => {

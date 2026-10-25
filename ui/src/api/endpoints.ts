@@ -728,6 +728,17 @@ export function fetchEvaluation(
 }
 
 /** The criteria as they were when this was saved -- a full copy, never a reference. */
+/** Discard a saved ranking with everything frozen with it (D47). 404 when nobody kept it. */
+export function deleteEvaluation(
+  evaluationId: number,
+  options?: RequestOptions,
+): Promise<void> {
+  return deleteResource("/evaluations/{evaluationId}", {
+    ...options,
+    pathParams: { evaluationId },
+  });
+}
+
 export function fetchEvaluationCriteria(
   evaluationId: number,
   options?: RequestOptions,

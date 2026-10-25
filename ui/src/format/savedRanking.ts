@@ -16,6 +16,8 @@ export interface SavedRankingLike {
   level: string;
   computed_at: string;
   note?: string | null;
+  /** Who was ranked first, by the roster's name; null when nobody was. */
+  leader?: { candidate: string; name: string } | null;
 }
 
 /**
@@ -65,13 +67,15 @@ export function detailOf(saved: SavedRankingLike, sets: SetNames): string {
 }
 
 /**
- * The same provenance at sidebar width, which is 262px and cannot hold a sentence.
+ * The second line at sidebar width (PL-145): who led it, and the day it was kept.
  *
  * The date alone, without the time: in a card listing several, what distinguishes them is
- * which day they were kept, and the minute is noise until two share a day.
+ * which day they were kept, and the minute is noise until two share a day. A ranking that
+ * ranked nobody says so rather than naming nobody as its leader.
  */
-export function summariseSaved(saved: SavedRankingLike, sets: SetNames): string {
-  return `${criteriaSetName(sets, saved.criteria_set)}, ${formatDate(saved.computed_at)}`;
+export function ledOn(saved: SavedRankingLike): string {
+  const day = formatDate(saved.computed_at);
+  return saved.leader ? `${saved.leader.name} led, ${day}` : `Nobody was ranked, ${day}`;
 }
 
 /**

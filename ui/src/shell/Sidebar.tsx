@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import {
   type EvaluationSummary,
@@ -25,12 +25,13 @@ import {
   describeSaved,
   newestFirst,
   requestedSavedRanking,
-  summariseSaved,
+  ledOn,
   type SetNames,
 } from "../format/savedRanking";
 import { HOUSEHOLD_LABELS } from "../format/vocabulary";
 import { ROUTES } from "../navigation/routes";
 import { LoadedRegion } from "./LoadedRegion";
+import { SavedRankingRow } from "./SavedRankingRow";
 import { useSelection } from "./SelectionContext";
 import { Skeleton } from "./Skeleton";
 import { levelsWithCandidates, noRankingBecause } from "./candidateCounts";
@@ -451,15 +452,38 @@ function SavedRankingsCard() {
   );
   const evaluations = asked(read);
   const kept = evaluations.state === "ready" ? evaluations.data.items.length : 0;
+  const heading = useRef<HTMLHeadingElement>(null);
+  // Said once a deletion found the ranking already gone, so the row vanishing is explained --
+  // until the next save, which makes it old news.
+  const [alreadyGoneAt, setAlreadyGoneAt] = useState<number | null>(null);
+  const alreadyGone = alreadyGoneAt === savedRankingsVersion;
+  // **The heading takes the keyboard once a row is gone** (PL-145): the × that had it went
+  // with the row, and focus left on nothing falls to the page.
+  const gone = useCallback(
+    (wasAlreadyGone: boolean) => {
+      setAlreadyGoneAt(wasAlreadyGone ? savedRankingsVersion : null);
+      void reload();
+      heading.current?.focus();
+    },
+    [reload, savedRankingsVersion],
+  );
 
   return (
     <section className="panel" aria-labelledby="saved-rankings-heading">
       <div className="panel__head">
-        <h2 id="saved-rankings-heading" className="panel__heading">
+        <h2
+          id="saved-rankings-heading"
+          className="panel__heading"
+          ref={heading}
+          tabIndex={-1}
+        >
           Saved rankings
         </h2>
         {kept > 0 && <span className="panel__count">{formatCount(kept)} kept</span>}
       </div>
+      {alreadyGone && (
+        <p className="sidebar__note">That ranking had already been deleted.</p>
+      )}
       <LoadedRegion
         read={evaluations}
         what="The saved rankings"
@@ -467,7 +491,9 @@ function SavedRankingsCard() {
         prominence="region"
         onRetry={reload}
       >
-        {(answer) => <SavedRankingsList saved={newestFirst(answer.items)} sets={sets} />}
+        {(answer) => (
+          <SavedRankingsList saved={newestFirst(answer.items)} sets={sets} onGone={gone} />
+        )}
       </LoadedRegion>
     </section>
   );
@@ -476,14 +502,16 @@ function SavedRankingsCard() {
 function SavedRankingsList({
   saved,
   sets,
+  onGone,
 }: {
   saved: readonly EvaluationSummary[];
   sets: SetNames;
+  onGone: (alreadyGone: boolean) => void;
 }) {
   // **Only the ranking that is open is the current page** (PL-021). A `NavLink` matched the
   // path alone, so on Rank every saved row claimed to be where the reader already was.
   const { pathname } = useLocation();
-  const [parameters] = useSearchParams();
+  const [parameters, setParameters] = useSearchParams();
   const open = pathname === RANK.path ? requestedSavedRanking(parameters.get("saved")) : null;
   if (saved.length === 0) {
     return (
@@ -492,20 +520,28 @@ function SavedRankingsList({
       </p>
     );
   }
+  // A deleted ranking that was open closes with it, rather than staying on screen to be read
+  // as one that still exists.
+  const goneFrom = (id: number) => (alreadyGone: boolean) => {
+    if (id === open) {
+      const next = new URLSearchParams(parameters);
+      next.delete("saved");
+      setParameters(next, { replace: true });
+    }
+    onGone(alreadyGone);
+  };
   return (
     <ul className="saved-list">
       {saved.map((entry) => (
-        <li key={entry.id} className="saved-list__row">
-          <Link
-            className="saved-list__open"
-            to={`${RANK.path}?saved=${entry.id}`}
-            title="Open this saved ranking"
-            aria-current={entry.id === open ? "page" : undefined}
-          >
-            <span className="saved-list__name">{describeSaved(entry, sets)}</span>
-            <span className="saved-list__meta">{summariseSaved(entry, sets)}</span>
-          </Link>
-        </li>
+        <SavedRankingRow
+          key={entry.id}
+          evaluationId={entry.id}
+          name={describeSaved(entry, sets)}
+          meta={ledOn(entry)}
+          href={`${RANK.path}?saved=${entry.id}`}
+          current={entry.id === open}
+          onGone={goneFrom(entry.id)}
+        />
       ))}
     </ul>
   );

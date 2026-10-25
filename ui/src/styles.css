@@ -4843,3 +4843,21 @@ select.field__control {
   font-style: italic;
   color: var(--colour-text-muted);
 }
+
+/* A saved ranking's deletion, asked under the row it is about (PL-145, D47). The row wraps so
+   the question takes the card's width beneath the name. */
+.saved-list__row--confirming {
+  flex-wrap: wrap;
+}
+
+.saved-list__confirm {
+  flex-basis: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.saved-list__confirm-actions {
+  display: flex;
+  gap: 6px;
+}
