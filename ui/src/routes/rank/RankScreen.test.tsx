@@ -1104,14 +1104,11 @@ describe("the drill-down", () => {
     );
   });
 
-  it("closes when the criteria set changes under it", async () => {
+  it("stays open when the criteria set changes under it", async () => {
+    // P1-20 (N6): what the reader has open is about candidates, not about the set, so a set
+    // switch keeps it and only a level change closes it (above).
     renderShell("/rank");
-    const row = await rankingRow("Portugal");
-    await userEvent.click(
-      // The candidate's name is the toggle: the whole row opens, and this is what a
-      // keyboard reaches.
-      within(row).getByRole("button", { name: "Portugal" }),
-    );
+    await userEvent.click(await toggleOf("Portugal"));
     expect(
       await screen.findByRole("table", { name: /every stored value/i }),
     ).toBeInTheDocument();
@@ -1122,10 +1119,39 @@ describe("the drill-down", () => {
     );
 
     await waitFor(() =>
-      expect(
-        screen.queryByRole("table", { name: /every stored value/i }),
-      ).toBeNull(),
+      expect(screen.getByRole("combobox", { name: /active criteria set/i })).toHaveValue(
+        "remote-only",
+      ),
     );
+    expect(await toggleOf("Portugal")).toHaveAttribute("aria-expanded", "true");
+    expect(
+      await screen.findByRole("table", { name: /every stored value/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps two open rows across a visit to Compare (PL-016)", async () => {
+    renderShell("/rank");
+    await userEvent.click(await toggleOf("Portugal"));
+    await userEvent.click(await toggleOf("Netherlands"));
+
+    const tabs = screen.getByRole("navigation", { name: "Sections" });
+    await userEvent.click(within(tabs).getByRole("link", { name: "Compare" }));
+    await screen.findByRole("heading", { level: 1, name: "Compare" });
+    await userEvent.click(within(tabs).getByRole("link", { name: "Rank" }));
+
+    expect(await toggleOf("Portugal")).toHaveAttribute("aria-expanded", "true");
+    expect(await toggleOf("Netherlands")).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps the open rows and their chosen pillar across a reload", async () => {
+    const page = renderShell("/rank");
+    await userEvent.click((await portugalBars()).safety);
+    page.unmount();
+
+    renderShell("/rank");
+
+    expect(await toggleOf("Portugal")).toHaveAttribute("aria-expanded", "true");
+    expect((await portugalBars()).safety).toHaveAttribute("aria-pressed", "true");
   });
 
   it("names every scored attribute when a candidate has no stored figures", async () => {

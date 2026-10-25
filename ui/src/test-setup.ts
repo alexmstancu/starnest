@@ -8,6 +8,7 @@ import { forgetSourceNames } from "./api/useSourceNames";
 import { forgetAnsweredWrites } from "./api/setWrites";
 import { forgetFailedReads } from "./api/reachability";
 import { resetMockData } from "./mocks/handlers";
+import { forgetStoredSession } from "./shell/sessionState";
 import { mockServer } from "./mocks/server";
 
 // Every wait in the suite is for a mocked request that resolves in milliseconds. The default
@@ -50,6 +51,10 @@ afterEach(() => {
   forgetSourceNames();
   forgetAnsweredWrites();
   forgetFailedReads();
+  // The session store mirrors to both browser stores (PL-016, PL-017), so one test's open rows
+  // or chosen set would otherwise be the next test's reload. The provider's own state goes with
+  // `cleanup()`, which unmounts it.
+  forgetStoredSession();
   // Last, so the resets above happen whether or not this throws.
   failOnAnythingWrittenToConsoleError();
 });

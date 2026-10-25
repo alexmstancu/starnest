@@ -2,6 +2,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { fetchCriteriaSets, fetchLevels, type CriteriaSetSummary, type Level } from "../api/endpoints";
 import { combine, map, type Read } from "../api/read";
 import { useRead } from "../api/useRead";
+import {
+  readLastUsedSelection,
+  readTabSelection,
+  writeSelection,
+  type RememberedSet,
+  type StoredSelection,
+} from "./sessionState";
 
 /**
  * What the user currently has selected: one criteria set and one level.
@@ -23,6 +30,11 @@ export interface Selection {
   criteriaSetId: string | null;
   selectLevel: (levelId: string) => void;
   selectCriteriaSet: (criteriaSetId: string | null) => void;
+  /**
+   * The remembered set this tab could not reopen because it no longer exists (PL-017), so the
+   * sidebar can say which set was gone; null once anything is chosen.
+   */
+  missingCriteriaSet: RememberedSet | null;
   /**
    * The two lists as one read (PL-009): what a screen draws first, so a list still coming or
    * one that failed never reads as "there are none". `levels` and `criteriaSets` above are its
@@ -87,8 +99,30 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
   const levelsData = levelsRead.state === "ready" ? levelsRead.data : null;
   const setsData = setsRead.state === "ready" ? setsRead.data : null;
 
-  const [levelId, setLevelId] = useState<string | null>(null);
-  const [criteriaSetId, setCriteriaSetId] = useState<string | null>(null);
+  // **Restored, then checked** (PL-017, P1-19): a reload keeps this tab's set and level, a new
+  // tab opens on the ones last used anywhere. Held back from every screen until the lists have
+  // been read, so nothing asks for a set that has since gone.
+  const [restored] = useState(restoreSelection);
+  const [levelId, setLevelId] = useState<string | null>(restored?.levelId ?? null);
+  const [criteriaSetId, setCriteriaSetId] = useState<string | null>(
+    restored?.criteriaSet?.id ?? null,
+  );
+  const [levelChecked, setLevelChecked] = useState(restored?.levelId == null);
+  const [setChecked, setSetChecked] = useState(restored?.criteriaSet == null);
+  const [missingCriteriaSet, setMissingCriteriaSet] = useState<RememberedSet | null>(null);
+  // Only a choice made here becomes the one a new tab opens on; restoring or falling back is not.
+  const chosenHere = useRef(false);
+  const selectLevel = useCallback((next: string) => {
+    chosenHere.current = true;
+    setLevelChecked(true);
+    setLevelId(next);
+  }, []);
+  const selectCriteriaSet = useCallback((next: string | null) => {
+    chosenHere.current = true;
+    setSetChecked(true);
+    setMissingCriteriaSet(null);
+    setCriteriaSetId(next);
+  }, []);
   const [savedRankingsVersion, setSavedRankingsVersion] = useState(0);
   const noteSavedRanking = useCallback(
     () => setSavedRankingsVersion((version) => version + 1),
@@ -119,7 +153,11 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
   // The shallowest level and the first criteria set are the opening view. Adopting a default
   // only while nothing is chosen means a reload never overrides a deliberate choice.
   useEffect(() => {
-    if (levelId === null && orderedLevels.length > 0) setLevelId(orderedLevels[0]!.id);
+    if (orderedLevels.length === 0) return;
+    if (levelId === null || !orderedLevels.some((level) => level.id === levelId)) {
+      setLevelId(orderedLevels[0]!.id);
+    }
+    setLevelChecked(true);
   }, [levelId, orderedLevels]);
 
   // **A set that disappears takes the selection with it** (P44). Adopting only while nothing was
@@ -142,6 +180,17 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
     // discarded still selected, so every screen went on asking for it.
     if (!criteriaSetsReady) return;
     const available = availableCriteriaSets.map((set) => set.id);
+    if (!setChecked) {
+      // The remembered set is checked once, against the first list read: one that has gone
+      // (a soft-deleted set answers 404) gives way to the first, and the sidebar names it.
+      lastSeenCriteriaSets.current = available;
+      setSetChecked(true);
+      if (criteriaSetId !== null && !available.includes(criteriaSetId)) {
+        setMissingCriteriaSet(restored?.criteriaSet ?? null);
+        setCriteriaSetId(available[0] ?? null);
+      }
+      return;
+    }
     const wasThere =
       criteriaSetId !== null && lastSeenCriteriaSets.current.includes(criteriaSetId);
     const isGone = criteriaSetId !== null && !available.includes(criteriaSetId);
@@ -150,7 +199,21 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
     if ((criteriaSetId === null && available.length > 0) || (wasThere && isGone)) {
       setCriteriaSetId(available[0] ?? null);
     }
-  }, [criteriaSetsReady, criteriaSetId, availableCriteriaSets]);
+  }, [criteriaSetsReady, criteriaSetId, availableCriteriaSets, setChecked, restored]);
+
+  // Exposed only once checked, so the screens read what the lists confirm.
+  const shownLevelId = levelChecked ? levelId : null;
+  const shownCriteriaSetId = setChecked ? criteriaSetId : null;
+  const shownSetName = availableCriteriaSets.find((set) => set.id === shownCriteriaSetId)?.name;
+  useEffect(() => {
+    if (!levelChecked || !setChecked) return;
+    if (shownLevelId === null && shownCriteriaSetId === null) return;
+    const criteriaSet =
+      shownCriteriaSetId === null
+        ? null
+        : { id: shownCriteriaSetId, name: shownSetName ?? shownCriteriaSetId };
+    writeSelection({ criteriaSet, levelId: shownLevelId }, { lastUsed: chosenHere.current });
+  }, [levelChecked, setChecked, shownLevelId, shownCriteriaSetId, shownSetName]);
 
   // **Depends on the two `reload` functions, not on the reads that carry them.** The hook
   // returns a fresh object every render, so `[levels, criteriaSets]` would make the context
@@ -185,10 +248,11 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
     () => ({
       levels: orderedLevels,
       criteriaSets: availableCriteriaSets,
-      levelId,
-      criteriaSetId,
-      selectLevel: setLevelId,
-      selectCriteriaSet: setCriteriaSetId,
+      levelId: shownLevelId,
+      criteriaSetId: shownCriteriaSetId,
+      selectLevel,
+      selectCriteriaSet,
+      missingCriteriaSet,
       savedRankingsVersion,
       noteSavedRanking,
       acquisitionsEnded,
@@ -202,8 +266,11 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
     [
       orderedLevels,
       availableCriteriaSets,
-      levelId,
-      criteriaSetId,
+      shownLevelId,
+      shownCriteriaSetId,
+      selectLevel,
+      selectCriteriaSet,
+      missingCriteriaSet,
       savedRankingsVersion,
       noteSavedRanking,
       acquisitionsEnded,
@@ -217,6 +284,19 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
   );
 
   return <SelectionContext.Provider value={value}>{children}</SelectionContext.Provider>;
+}
+
+/**
+ * Where this tab opens: its own selection on a reload, else a set named in the address (a shared
+ * link), else the one last used in any tab.
+ */
+function restoreSelection(): StoredSelection | undefined {
+  const own = readTabSelection();
+  if (own !== undefined) return own;
+  const lastUsed = readLastUsedSelection();
+  const fromAddress = new URLSearchParams(window.location.search).get("set");
+  if (fromAddress === null || fromAddress === "") return lastUsed;
+  return { criteriaSet: { id: fromAddress, name: fromAddress }, levelId: lastUsed?.levelId ?? null };
 }
 
 export function useSelection(): Selection {

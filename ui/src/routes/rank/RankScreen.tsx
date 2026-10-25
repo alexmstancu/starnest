@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { fetchCandidates, fetchRanking, type Ranking } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
 import type { RouteDefinition } from "../../navigation/routes";
@@ -6,11 +6,11 @@ import { NothingSelected } from "../../shell/NothingSelected";
 import { UnsetSetting } from "../../shell/UnsetSetting";
 import { AttributeDrillDown } from "./AttributeDrillDown";
 import { CandidateDetail } from "./CandidateDetail";
-import { type OpenCandidate, type OpenRow, choosePillar, toggleRow } from "./openRows";
 import { RankingMeta, RankingTable } from "./RankingTable";
 import { codesByCandidate, type HomeRead } from "./rankTable";
 import { useHome } from "./useHome";
 import { SaveControl } from "./SaveControl";
+import { useOpenRows } from "./useOpenRows";
 import { SavedRankingsPanel } from "./SavedRankingsPanel";
 import { useSelection } from "../../shell/SelectionContext";
 
@@ -39,13 +39,10 @@ export function RankScreen({ route }: { route: RouteDefinition }) {
 
   return (
     <section className="screen" aria-labelledby="screen-heading">
-      {/* Keyed by the selection, the way `ConfigureScreen` keys its panels: the open
-          drill-down is state about *this* ranking, and a switch of level or criteria set
-          makes it state about a ranking nobody is looking at (P53). It used to survive the
-          switch -- a provenance panel for Portugal sitting under a table of cities, with no
-          row matching it, so no button read "Hide figures" and nothing could close it. A
-          key rather than an effect, because React resets state on identity and clearing it
-          from an effect is a render the screen does not need. */}
+      {/* Keyed by the selection, so each ranking is read afresh. **What the reader has open is
+          not held here** (PL-016): it lives above the routes, survives a criteria-set switch
+          (P1-20) and is reset by a level change, where a panel for Portugal would sit under a
+          table of cities with no row to close it (P53). */}
       <TheRanking
         key={`${criteriaSetId}-${levelId}`}
         label={route.label}
@@ -105,21 +102,7 @@ function TheRanking({
   );
   const { criteriaSets } = useSelection();
   const setNames = new Map(criteriaSets.map((set) => [set.id, set.name]));
-  // Which candidates' evidence is open. Client state in the sense `arch.md` 8.1 permits: it
-  // decides nothing, and the evidence itself is fetched.
-  const [open, setOpen] = useState<readonly OpenRow[]>([]);
-  const toggle = useCallback(
-    (row: OpenCandidate) => setOpen((already) => toggleRow(already, row)),
-    [],
-  );
-  // **One handler for both ways in.** The chart in the row and the cards in the panel set the
-  // same thing, so they call the same function -- which is what makes them agree rather than
-  // two selections that happen to look alike.
-  const choose = useCallback(
-    (row: OpenCandidate, pillar: string) =>
-      setOpen((already) => choosePillar(already, row, pillar)),
-    [],
-  );
+  const { open, toggle, choose } = useOpenRows();
 
   return (
     <>

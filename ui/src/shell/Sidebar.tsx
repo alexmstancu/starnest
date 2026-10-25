@@ -117,8 +117,16 @@ export function Sidebar() {
 }
 
 function SelectionControls() {
-  const { levels, criteriaSets, levelId, criteriaSetId, selectLevel, selectCriteriaSet } =
-    useSelection();
+  const {
+    levels,
+    criteriaSets,
+    levelId,
+    criteriaSetId,
+    selectLevel,
+    selectCriteriaSet,
+    missingCriteriaSet,
+  } = useSelection();
+  const opened = criteriaSets.find((set) => set.id === criteriaSetId);
 
   // **Which levels can be chosen is data, not a name.** A level with no candidate nominated
   // for it would rank an empty list, so it is offered as soon as it holds one and not before
@@ -151,6 +159,14 @@ function SelectionControls() {
             ))}
           </select>
         </label>
+        {/* **Said, not silently swapped** (PL-017): editing writes through, so landing on
+            another set unannounced invites editing the wrong one. */}
+        {missingCriteriaSet !== null && (
+          <p className="sidebar__note" role="status">
+            The criteria set you last used, {missingCriteriaSet.name}, no longer exists
+            {opened === undefined ? "." : `, so ${opened.name} is open instead.`}
+          </p>
+        )}
       </div>
 
       <div className="sidebar__group">

@@ -4,7 +4,7 @@ import { HttpResponse, delay, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { replaceSettings } from "../../api/endpoints";
 import type { components } from "../../api/schema";
-import { ATTRIBUTES, SETTINGS } from "../../mocks/fixtures";
+import { ATTRIBUTES, SETTINGS, candidatesForLevel } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 
@@ -168,6 +168,101 @@ describe("when the level changes underneath", () => {
     expect(
       screen.queryByRole("table", { name: /every pillar/i }),
     ).toBeNull();
+  });
+});
+
+/** Moves to another tab the way a reader does, by the tab bar. */
+async function openTab(name: string) {
+  const tabs = screen.getByRole("navigation", { name: "Sections" });
+  await userEvent.click(within(tabs).getByRole("link", { name }));
+}
+
+/**
+ * PL-016. The choices live above the routes, so leaving the tab, reloading or switching set
+ * keeps them; a level change resets them (above).
+ */
+describe("what Compare remembers", () => {
+  async function compareWithRawFigures() {
+    await compare("Portugal", "Netherlands");
+    await userEvent.click(await screen.findByRole("radio", { name: /raw figures/i }));
+    expect(await screen.findByRole("table", { name: /every pillar/i })).toBeInTheDocument();
+  }
+
+  async function expectRemembered() {
+    expect(await screen.findByRole("table", { name: /every pillar/i })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Focus" })).toHaveValue("country.portugal");
+    expect(screen.getByRole("checkbox", { name: "Netherlands" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /raw figures/i })).toBeChecked();
+  }
+
+  it("keeps its selection, Raw figures and the matrix across a visit to Configure", async () => {
+    renderShell("/compare");
+    await compareWithRawFigures();
+
+    await openTab("Configure");
+    await screen.findByRole("heading", { level: 1, name: "Configure" });
+    await openTab("Compare");
+
+    await expectRemembered();
+  });
+
+  it("keeps them across a reload", async () => {
+    const page = renderShell("/compare");
+    await compareWithRawFigures();
+
+    page.unmount();
+    renderShell("/compare");
+
+    await expectRemembered();
+  });
+
+  it("keeps them across a set switch, drawn again for the new set", async () => {
+    const asked: string[] = [];
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, ({ request }) => {
+        asked.push(new URL(request.url).searchParams.get("criteria_set") ?? "");
+        return undefined;
+      }),
+    );
+    renderShell("/compare");
+    await compareWithRawFigures();
+
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: /active criteria set/i }),
+      "remote-only",
+    );
+
+    await waitFor(() => expect(asked).toContain("remote-only"));
+    await expectRemembered();
+  });
+
+  it("drops a remembered candidate the roster no longer holds, and asks for nothing", async () => {
+    const page = renderShell("/compare");
+    await compareWithRawFigures();
+    page.unmount();
+
+    let comparisonsAsked = 0;
+    mockServer.use(
+      http.get(`${BASE}/candidates`, ({ request }) => {
+        const level = new URL(request.url).searchParams.get("level");
+        const items = candidatesForLevel(level).filter(
+          (candidate) => candidate.id !== "country.netherlands",
+        );
+        return HttpResponse.json({ items });
+      }),
+      http.get(`${BASE}/comparisons`, () => {
+        comparisonsAsked += 1;
+        return undefined;
+      }),
+    );
+    renderShell("/compare");
+
+    expect(await screen.findByRole("option", { name: "Portugal" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Focus" })).toHaveValue("country.portugal");
+    expect(screen.queryByRole("checkbox", { name: "Netherlands" })).toBeNull();
+    expect(screen.getByRole("radio", { name: /raw figures/i })).toBeChecked();
+    expect(screen.queryByRole("table", { name: /every pillar/i })).toBeNull();
+    expect(comparisonsAsked).toBe(0);
   });
 });
 

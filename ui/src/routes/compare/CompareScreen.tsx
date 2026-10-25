@@ -1,8 +1,9 @@
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ComparisonMatrix } from "./ComparisonMatrix";
 import { ViewChoices } from "./ViewChoices";
 import type { Measure } from "./pillarMatrix";
+import { useComparisonChoices } from "./useComparisonChoices";
 import { droppedByLimit, withinLimit } from "./comparatorLimit";
 import { asksTheSame, requestFor, type ComparisonRequest } from "./comparisonRequest";
 import { pillarPriority, pillarWeightsAt } from "./ordering";
@@ -55,11 +56,11 @@ export function CompareScreen({ route }: { route: RouteDefinition }) {
           are per pillar, in score points, never averaged into one verdict.
         </p>
       </header>
-      {/* Keyed by the selection (P54). **A comparison never mixes levels** (`reqs.md`), and
-          the focus and comparators are candidate ids at one level, so they mean nothing at
-          another: keeping them across a switch re-asked for `level=city&focus=country.…`,
-          which the contract refuses with 409 "Levels mixed", while the picker showed the new
-          roster with a stale focus still selected and the button still enabled. */}
+      {/* Keyed by the selection, so each comparison is read afresh. **The choices are not held
+          here** (PL-016): they live above the routes, survive a criteria-set switch and are
+          reset by a level change -- a comparison never mixes levels (`reqs.md`), and keeping
+          candidate ids across one re-asked for `level=city&focus=country.…`, which the
+          contract refuses with 409 "Levels mixed" (P54). */}
       <TheComparison
         key={`${criteriaSetId}-${levelId}`}
         criteriaSetId={criteriaSetId}
@@ -80,13 +81,6 @@ function TheComparison({
   focusRegion: FocusRegion;
 }) {
   const selection = useSelection();
-  const [focus, setFocus] = useState<string | null>(null);
-  const [comparators, setComparators] = useState<string[]>([]);
-  // How the attribute rows read: the normalised score, or the figure in its own unit.
-  const [shownAs, setShownAs] = useState<"score" | "raw">("score");
-  const [measure, setMeasure] = useState<Measure>("points");
-  const [asked, setAsked] = useState<ComparisonRequest | null>(null);
-
   const candidates = useRead(
     useCallback(
       (signal: AbortSignal) => fetchCandidates(levelId ?? "", { signal }),
@@ -94,6 +88,18 @@ function TheComparison({
     ),
     { enabled: levelId !== null },
   );
+  const {
+    focus,
+    comparators,
+    shownAs,
+    measure,
+    asked,
+    chooseFocus,
+    toggleComparator,
+    showAs,
+    measureBy,
+    ask,
+  } = useComparisonChoices(candidates.read.state === "ready" ? candidates.read.data.items : null);
   const settings = useRead(
     useCallback((signal: AbortSignal) => fetchSettings({ signal }), []),
   );
@@ -180,30 +186,16 @@ function TheComparison({
             choices={
               <ViewChoices
                 shownAs={shownAs}
-                onShownAs={setShownAs}
+                onShownAs={showAs}
                 measure={measure}
-                onMeasure={setMeasure}
+                onMeasure={measureBy}
               />
             }
-            // **Choosing a focus drops it from the comparators** (P81). The chips already hide
-            // the focus, so a candidate ticked first and then made the focus vanished from the
-            // screen while staying in the request -- and the server refuses comparing a
-            // candidate with itself, so every Compare answered 409 with nothing on screen to
-            // untick. Pruning here keeps what is sent and what is shown the same list.
-            onFocus={(candidate) => {
-              setFocus(candidate);
-              setComparators((chosen) => chosen.filter((each) => each !== candidate));
-            }}
-            onToggleComparator={(candidate) =>
-              setComparators((chosen) =>
-                chosen.includes(candidate)
-                  ? chosen.filter((each) => each !== candidate)
-                  : [...chosen, candidate],
-              )
-            }
+            onFocus={chooseFocus}
+            onToggleComparator={toggleComparator}
             onCompare={(request) => {
               if (asksTheSame(request, asked)) void comparison.reload();
-              else setAsked(request);
+              else ask(request);
             }}
           />
           )
