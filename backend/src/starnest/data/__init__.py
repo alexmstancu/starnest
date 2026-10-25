@@ -118,6 +118,7 @@ from starnest.data.population_centre import PopulationCentre
 from starnest.data.reference_period import InvalidReferencePeriodError, ReferencePeriod
 from starnest.data.rules import (
     AnswerRecordedByAPersonError,
+    ClearingCitizenship,
     CompoundRule,
     CompoundRuleCondition,
     CompoundRuleDeclarationError,
@@ -176,6 +177,7 @@ __all__ = [
     "BreakdownSchemeId",
     "CatalogId",
     "CatalogStore",
+    "ClearingCitizenship",
     "Clock",
     "CompoundRule",
     "CompoundRuleCondition",

@@ -370,9 +370,22 @@ async def test_free_movement_concerns_the_eu_and_eea_states_and_is_cleared_by_eu
     assert not gate.concerns("country.united_kingdom")
     assert not gate.concerns("country.switzerland")
     assert gate.concerns("country.norway")
-    assert (gate.decided_by_citizenship, len(gate.cleared_by)) == (True, 31)
-    assert {"country.norway", "country.iceland", "country.switzerland"} <= set(gate.cleared_by)
-    assert "country.united_kingdom" not in gate.cleared_by
+    everywhere = {str(each.citizenship) for each in gate.cleared_by if not each.candidates}
+    assert (gate.decided_by_citizenship, len(everywhere)) == (True, 31)
+    assert {"country.norway", "country.iceland", "country.switzerland"} <= everywhere
+    assert "country.united_kingdom" not in everywhere
+
+
+async def test_a_british_citizenship_clears_free_movement_in_ireland_only(
+    catalog: PostgresCatalogStore,
+) -> None:
+    """0526: the Common Travel Area, scoped to the one country it is about."""
+    gate = {str(rule.id): rule for rule in await catalog.read_match_rules()}["eu_free_movement"]
+
+    (british,) = [each for each in gate.cleared_by if each.citizenship == "country.united_kingdom"]
+    assert british.candidates == ("country.ireland",)
+    assert gate.is_cleared_for("country.ireland", ["country.united_kingdom"])
+    assert not gate.is_cleared_for("country.france", ["country.united_kingdom"])
 
 
 async def test_each_country_s_own_gate_is_cleared_by_its_own_citizens(
@@ -381,7 +394,7 @@ async def test_each_country_s_own_gate_is_cleared_by_its_own_citizens(
     rules = {str(rule.id): rule for rule in await catalog.read_match_rules()}
 
     assert {
-        gate: rules[gate].cleared_by
+        gate: tuple(str(each.citizenship) for each in rules[gate].cleared_by)
         for gate in ("uk_skilled_worker", "ch_eu_efta_quota", "li_eea_quota")
     } == {
         "uk_skilled_worker": ("country.ireland", "country.united_kingdom"),
@@ -390,7 +403,8 @@ async def test_each_country_s_own_gate_is_cleared_by_its_own_citizens(
     }
     assert not rules["uk_skilled_worker"].decided_by_citizenship
     for rule in rules.values():
-        assert set(rule.concerned_candidates) <= set(rule.cleared_by) or not (rule.researchable), (
+        own = {str(each.citizenship) for each in rule.cleared_by if not each.candidates}
+        assert set(rule.concerned_candidates) <= own or not (rule.researchable), (
             f"{rule.id} concerns a country whose own citizens it does not clear"
         )
 

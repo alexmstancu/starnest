@@ -23,6 +23,9 @@ pytestmark = pytest.mark.storage
 MIGRATIONS = Path(__file__).resolve().parents[2].parent / "storage" / "migrations"
 THE_SEED = MIGRATIONS / "0502-research-asks-only-the-gates-it-can-answer.sql"
 ITS_ROLLBACK = THE_SEED.with_name(f"{THE_SEED.stem}.rollback.sql")
+#: `0526` scopes a clearing citizenship by a key into `match_rule_candidate`, so it goes first,
+#: as a real rollback to before `0502` would undo it.
+A_LATER_ROLLBACK = MIGRATIONS / "0526-a-clearing-citizenship-may-name-where-it-clears.rollback.sql"
 
 WHAT_IT_SEEDS = [
     ("ch_eu_efta_quota", "country.switzerland"),
@@ -61,6 +64,7 @@ def before_the_seed(connection: psycopg.Connection) -> Iterator[psycopg.Connecti
     the seed's rollback, run that way, would undo the seed for every test after this one.
     """
     with connection.transaction(force_rollback=True):
+        assert _apply_until_refused(connection, _statements(A_LATER_ROLLBACK)) is None
         assert _apply_until_refused(connection, _statements(ITS_ROLLBACK)) is None
         assert not _the_seed_changed_anything(connection)
         yield connection

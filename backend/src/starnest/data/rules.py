@@ -100,6 +100,23 @@ class MatchResult(StrEnum):
     UNKNOWN = "unknown"
 
 
+class ClearingCitizenship(BaseModel):
+    """A citizenship that clears a gate, and where (`reqs.md` 7.3, Q239).
+
+    **Empty `candidates` means everywhere the gate asks.** Otherwise only in those it names: a
+    British passport clears free movement in Ireland, under the Common Travel Area, and nowhere
+    else (0526).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    citizenship: CandidateId
+    candidates: tuple[CandidateId, ...] = ()
+
+    def clears_in(self, candidate: str) -> bool:
+        return not self.candidates or candidate in self.candidates
+
+
 class MatchRule(BaseModel):
     """A named yes/no gate attached to no attribute: a visa route, a quota, a manual exclusion.
 
@@ -145,11 +162,11 @@ class MatchRule(BaseModel):
             "level -- read through `concerns`, never directly."
         ),
     )
-    cleared_by: tuple[CandidateId, ...] = Field(
+    cleared_by: tuple[ClearingCitizenship, ...] = Field(
         default=(),
         description=(
-            "The citizenships that clear the gate wherever it asks: a household holding one "
-            "matches it with no recorded answer (`reqs.md` 7.3, Q239)."
+            "The citizenships that clear the gate, each where it clears it: a household holding "
+            "one matches the gate there with no recorded answer (`reqs.md` 7.3, Q239)."
         ),
     )
     decided_by_citizenship: bool = Field(
@@ -170,8 +187,12 @@ class MatchRule(BaseModel):
 
     def is_cleared_for(self, candidate: str, citizenships: Collection[str]) -> bool:
         """Whether a household holding these citizenships clears this gate about that candidate
-        (Q239): one of them is among those the catalog says clear it, and the gate asks there."""
-        return self.concerns(candidate) and any(held in self.cleared_by for held in citizenships)
+        (Q239): one of them is among those the catalog says clear it there, and the gate asks
+        there."""
+        return self.concerns(candidate) and any(
+            clearing.citizenship in citizenships and clearing.clears_in(candidate)
+            for clearing in self.cleared_by
+        )
 
     def concerns(self, candidate: str) -> bool:
         """Whether this gate is a question about that candidate.

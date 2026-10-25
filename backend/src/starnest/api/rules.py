@@ -53,14 +53,20 @@ from starnest.household import HouseholdNotConfiguredError
 router = APIRouter(tags=["rules"])
 
 
+class ClearingCitizenshipBody(BaseModel):
+    citizenship: str
+    candidates: tuple[str, ...] = ()
+    """Where it clears the gate. Empty: everywhere the gate asks (0526)."""
+
+
 class MatchRuleBody(BaseModel):
     id: str
     name: str
     level: str | None = None
     description: str
     """When a candidate matches the gate, in words: catalog text (`reqs.md` 7.3, D57)."""
-    cleared_by: tuple[str, ...] = ()
-    """The citizenships that clear the gate wherever it asks (`reqs.md` 7.3, Q239)."""
+    cleared_by: tuple[ClearingCitizenshipBody, ...] = ()
+    """The citizenships that clear the gate, each where it clears it (`reqs.md` 7.3, Q239)."""
     decided_by_citizenship: bool = False
     """Whether the household's citizenships decide it outright, with no recorded answer."""
 
@@ -346,7 +352,13 @@ async def list_match_rules(catalog: Catalog, level: str | None = None) -> MatchR
                 name=rule.name,
                 level=rule.level,
                 description=rule.description,
-                cleared_by=tuple(str(citizenship) for citizenship in rule.cleared_by),
+                cleared_by=tuple(
+                    ClearingCitizenshipBody(
+                        citizenship=str(clearing.citizenship),
+                        candidates=tuple(str(each) for each in clearing.candidates),
+                    )
+                    for clearing in rule.cleared_by
+                ),
                 decided_by_citizenship=rule.decided_by_citizenship,
             )
             for rule in await catalog.read_match_rules(level=level)

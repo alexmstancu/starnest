@@ -371,6 +371,21 @@ components:
       - items
       title: CandidatesBody
       type: object
+    ClearingCitizenshipBody:
+      properties:
+        candidates:
+          default: []
+          items:
+            type: string
+          title: Candidates
+          type: array
+        citizenship:
+          title: Citizenship
+          type: string
+      required:
+      - citizenship
+      title: ClearingCitizenshipBody
+      type: object
     ComparatorCellBody:
       properties:
         candidate:
@@ -1658,7 +1673,7 @@ components:
         cleared_by:
           default: []
           items:
-            type: string
+            $ref: '#/components/schemas/ClearingCitizenshipBody'
           title: Cleared By
           type: array
         decided_by_citizenship:

@@ -24,6 +24,10 @@ ITS_ROLLBACK = THE_MIGRATION.with_name(f"{THE_MIGRATION.stem}.rollback.sql")
 A_LATER_ROLLBACK = MIGRATIONS / "0516-a-set-holds-each-rule-as-a-gate-or-a-warning.rollback.sql"
 #: `0517` keeps the citizenships each answer version assumed, so it goes before both.
 THE_LATEST_ROLLBACK = MIGRATIONS / "0517-citizenship-clears-the-gates-it-names.rollback.sql"
+#: `0526` scopes a clearing row by a pair `0517`'s rollback deletes, so it goes before it.
+ITS_SCOPE_ROLLBACK = (
+    MIGRATIONS / "0526-a-clearing-citizenship-may-name-where-it-clears.rollback.sql"
+)
 
 GATE = "uk_skilled_worker"
 CANDIDATE = "country.united_kingdom"
@@ -45,6 +49,7 @@ def before_it(connection: psycopg.Connection) -> Iterator[psycopg.Connection]:
     and would commit it.
     """
     with connection.transaction(force_rollback=True):
+        _run(connection, ITS_SCOPE_ROLLBACK)
         _run(connection, THE_LATEST_ROLLBACK)
         _run(connection, A_LATER_ROLLBACK)
         _run(connection, ITS_ROLLBACK)

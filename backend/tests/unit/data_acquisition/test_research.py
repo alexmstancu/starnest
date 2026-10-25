@@ -12,7 +12,7 @@ from decimal import Decimal
 import pytest
 
 from starnest.candidates import Candidate
-from starnest.data import MatchResult, MatchRule, MatchRuleResult
+from starnest.data import ClearingCitizenship, MatchResult, MatchRule, MatchRuleResult
 from starnest.data_acquisition import (
     NOTHING,
     Estimate,
@@ -854,7 +854,21 @@ THE_UK_ROUTE = MatchRule(
     level="country",
     researchable=True,
     concerned_candidates=("country.united_kingdom",),
-    cleared_by=("country.ireland", "country.united_kingdom"),
+    cleared_by=(
+        ClearingCitizenship(citizenship="country.ireland"),
+        ClearingCitizenship(citizenship="country.united_kingdom"),
+    ),
+)
+# A researchable gate a citizenship clears in one of the places it asks only.
+A_QUOTA_CLEARED_IN_ONE_PLACE = MatchRule(
+    id="ch_eu_efta_quota",
+    name="Swiss EU/EFTA permit quota",
+    level="country",
+    researchable=True,
+    concerned_candidates=("country.switzerland", "country.spain"),
+    cleared_by=(
+        ClearingCitizenship(citizenship="country.portugal", candidates=("country.spain",)),
+    ),
 )
 
 
@@ -894,3 +908,13 @@ class TestWhatACitizenshipAlreadyClears:
 
         assert len(gates_to_ask(*scope, citizenships=["country.romania"])) == 2
         assert pairs_cleared_by_citizenship(*scope, citizenships=["country.romania"]) == 0
+
+    def test_a_citizenship_scoped_to_one_place_is_skipped_there_only(self) -> None:
+        """0526. A scoped clearing leaves every other pair of the gate to be asked."""
+        asked = gates_to_ask(
+            [A_QUOTA_CLEARED_IN_ONE_PLACE],
+            [SPAIN, SWITZERLAND],
+            citizenships=["country.portugal"],
+        )
+
+        assert [str(candidate.id) for _, candidate in asked] == ["country.switzerland"]

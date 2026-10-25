@@ -189,15 +189,30 @@ class TestEveryGateNamingCitizenshipsIsEvaluatedAgainstTheHousehold:
             if not gate["decided_by_citizenship"]:
                 for candidate in concerned:
                     await _refuse(api, gate["id"], candidate)
-            for held in gate["cleared_by"]:
+            for clearing in gate["cleared_by"]:
+                held, where = clearing["citizenship"], clearing["candidates"] or concerned
                 await _hold(api, held)
                 ranked = await _ranked(api, a_scratch_criteria_set)
-                assert [c for c in concerned if gate["id"] in _gates_refusing(ranked[c])] == [], (
-                    f"{held} should clear {gate['id']}"
+                assert [c for c in where if gate["id"] in _gates_refusing(ranked[c])] == [], (
+                    f"{held} should clear {gate['id']} in {where}"
                 )
-            (clears_nothing, *_) = sorted(roster - set(gate["cleared_by"]))
+                elsewhere = [c for c in concerned if c not in where and c != held]
+                if gate["decided_by_citizenship"] and elsewhere:
+                    assert all(gate["id"] in _gates_refusing(ranked[c]) for c in elsewhere), (
+                        f"{held} should clear {gate['id']} only in {where}"
+                    )
+            everywhere = {
+                each["citizenship"] for each in gate["cleared_by"] if not each["candidates"]
+            }
+            (clears_nothing, *_) = sorted(roster - everywhere)
+            spared = {
+                place
+                for each in gate["cleared_by"]
+                if each["citizenship"] == clears_nothing
+                for place in each["candidates"]
+            }
             await _hold(api, clears_nothing)
             ranked = await _ranked(api, a_scratch_criteria_set)
-            assert all(gate["id"] in _gates_refusing(ranked[c]) for c in concerned), (
-                f"{clears_nothing} should not clear {gate['id']}"
-            )
+            assert all(
+                gate["id"] in _gates_refusing(ranked[c]) for c in concerned if c not in spared
+            ), f"{clears_nothing} should not clear {gate['id']}"

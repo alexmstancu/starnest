@@ -218,13 +218,23 @@ SELECT r.id,
            WHERE  c.match_rule = r.id
            ORDER  BY c.candidate
        ) AS concerned_candidates,
-       -- The citizenships that clear the gate, and whether they decide it outright (0517).
-       ARRAY(
-           SELECT k.candidate
-           FROM   match_rule_clearing_citizenship AS k
-           WHERE  k.match_rule = r.id
-           ORDER  BY k.candidate
-       ) AS cleared_by,
+       -- The citizenships that clear the gate, each with the candidates it clears it in -- none
+       -- meaning everywhere the gate asks, which an unscoped row says whatever else is listed
+       -- (0517, 0526) -- and whether they decide it outright.
+       COALESCE(
+           (SELECT jsonb_agg(jsonb_build_object(
+                       'citizenship', clearing.citizenship,
+                       'candidates',  clearing.candidates)
+                     ORDER BY clearing.citizenship)
+            FROM   (SELECT k.candidate AS citizenship,
+                           CASE WHEN bool_or(k.applies_in_candidate IS NULL) THEN '[]'::jsonb
+                                ELSE jsonb_agg(k.applies_in_candidate
+                                               ORDER BY k.applies_in_candidate)
+                           END AS candidates
+                    FROM   match_rule_clearing_citizenship AS k
+                    WHERE  k.match_rule = r.id
+                    GROUP  BY k.candidate) AS clearing),
+           '[]'::jsonb) AS cleared_by,
        r.decided_by_citizenship
 FROM   match_rule AS r
 WHERE  :level::text IS NULL OR r.level IS NULL OR r.level = :level

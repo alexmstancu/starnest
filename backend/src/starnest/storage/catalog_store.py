@@ -24,6 +24,7 @@ from starnest.data import (
     BreakdownOptionId,
     BreakdownSchemeId,
     CatalogStore,
+    ClearingCitizenship,
     CompoundRule,
     CompoundRuleCondition,
     CompoundRuleId,
@@ -237,7 +238,13 @@ class PostgresCatalogStore(CatalogStore):
                 concerned_candidates=tuple(
                     CandidateId(candidate) for candidate in row.concerned_candidates
                 ),
-                cleared_by=tuple(CandidateId(citizenship) for citizenship in row.cleared_by),
+                cleared_by=tuple(
+                    ClearingCitizenship(
+                        citizenship=CandidateId(clearing["citizenship"]),
+                        candidates=tuple(CandidateId(each) for each in clearing["candidates"]),
+                    )
+                    for clearing in row.cleared_by
+                ),
                 decided_by_citizenship=row.decided_by_citizenship,
             )
             for row in rows

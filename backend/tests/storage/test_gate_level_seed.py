@@ -24,10 +24,12 @@ pytestmark = pytest.mark.storage
 MIGRATIONS = Path(__file__).resolve().parents[2].parent / "storage" / "migrations"
 THE_MIGRATION = MIGRATIONS / "0514-a-gate-concerns-only-candidates-at-its-level.sql"
 ITS_ROLLBACK = THE_MIGRATION.with_name(f"{THE_MIGRATION.stem}.rollback.sql")
-#: Undone first, newest first, as a descending `make rollback` reaches 0514: `0517` adds the
+#: Undone first, newest first, as a descending `make rollback` reaches 0514: `0526` scopes a
+#: clearing row by a free-movement pair, `0517` adds the
 #: free-movement rows after this, and `0523` keys frozen gates on `match_rule_level_key`, which
 #: 0514's rollback drops.
 LATER_ROLLBACKS = (
+    MIGRATIONS / "0526-a-clearing-citizenship-may-name-where-it-clears.rollback.sql",
     MIGRATIONS / "0517-citizenship-clears-the-gates-it-names.rollback.sql",
     next(MIGRATIONS.glob("0523-*.rollback.sql")),
 )

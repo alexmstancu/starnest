@@ -21,6 +21,7 @@ from starnest.criteria import (
 from starnest.data import (
     AssignedScore,
     Boolean,
+    ClearingCitizenship,
     CompoundRule,
     CompoundRuleCondition,
     CompoundRuleInput,
@@ -781,7 +782,12 @@ ROMANIA = "country.romania"
 IRELAND = "country.ireland"
 ICELAND = "country.iceland"
 
-# The shape of 0517's catalog rows: which citizenships clear which gate, about whom.
+
+def everywhere(*citizenships: str) -> tuple[ClearingCitizenship, ...]:
+    return tuple(ClearingCitizenship(citizenship=held) for held in citizenships)
+
+
+# The shape of 0517's and 0526's catalog rows: which citizenships clear which gate, and where.
 CITIZENSHIP_GATES = {
     "uk_skilled_worker": MatchRule(
         id="uk_skilled_worker",
@@ -789,7 +795,7 @@ CITIZENSHIP_GATES = {
         level="country",
         researchable=True,
         concerned_candidates=(UNITED_KINGDOM,),
-        cleared_by=(IRELAND, UNITED_KINGDOM),
+        cleared_by=everywhere(IRELAND, UNITED_KINGDOM),
     ),
     "ch_eu_efta_quota": MatchRule(
         id="ch_eu_efta_quota",
@@ -797,14 +803,17 @@ CITIZENSHIP_GATES = {
         level="country",
         researchable=True,
         concerned_candidates=(SWITZERLAND,),
-        cleared_by=(SWITZERLAND,),
+        cleared_by=everywhere(SWITZERLAND),
     ),
     "eu_free_movement": MatchRule(
         id="eu_free_movement",
         name="EU/EEA free movement",
         level="country",
-        concerned_candidates=(GERMANY, ROMANIA),
-        cleared_by=(IRELAND, ROMANIA),
+        concerned_candidates=(GERMANY, IRELAND, ROMANIA),
+        cleared_by=(
+            *everywhere(IRELAND, ROMANIA),
+            ClearingCitizenship(citizenship=UNITED_KINGDOM, candidates=(IRELAND,)),
+        ),
         decided_by_citizenship=True,
     ),
 }
@@ -911,3 +920,16 @@ class TestCitizenshipDecidesTheGates:
             )
             == ()
         )
+
+
+class TestACitizenshipScopedToAPlace:
+    """0526: a British passport clears free movement in Ireland, under the Common Travel Area,
+    and nowhere else -- so a British household is not ruled out of Ireland by default."""
+
+    def test_it_clears_the_gate_in_the_place_it_names(self) -> None:
+        assert refused_by("eu_free_movement", IRELAND, UNITED_KINGDOM) == ()
+
+    def test_it_clears_nothing_anywhere_else(self) -> None:
+        (refusal,) = refused_by("eu_free_movement", GERMANY, UNITED_KINGDOM)
+
+        assert refusal.citizenships == (UNITED_KINGDOM,)
