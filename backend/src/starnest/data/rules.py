@@ -37,7 +37,14 @@ from starnest.data.reference_period import ReferencePeriod
 
 
 class MalformedMatchRuleResultError(ValueError):
-    """A gate's answer contradicts itself: a half-recorded override, or a moment with no zone."""
+    """A gate's answer contradicts itself: a half-recorded override, or a moment with no zone.
+
+    `details`, where given, carries the ids the sentence names in words (PL-150).
+    """
+
+    def __init__(self, message: str, *, details: Mapping[str, object] | None = None) -> None:
+        super().__init__(message)
+        self.details = details
 
 
 class AnswerRecordedByAPersonError(ValueError):
@@ -47,7 +54,13 @@ class AnswerRecordedByAPersonError(ValueError):
     not overwrite what a person already gave (NEW-02). The research pass reports such a proposal
     among its refusals rather than its proposals (NEW-63); a request that sends one is told,
     rather than answered as though it were stored (NEW-36).
+
+    The sentence names the gate and the candidate; `details` carries their ids (PL-150).
     """
+
+    def __init__(self, message: str, *, details: Mapping[str, object] | None = None) -> None:
+        super().__init__(message)
+        self.details = details
 
 
 class CompoundRuleDeclarationError(ValueError):

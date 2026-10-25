@@ -194,7 +194,7 @@ async def research_gates(
             # reached, or billed for an empty answer, cited nothing as well, and a refusal saying
             # only that hid the one thing a person could act on.
             refusals.append(
-                f"{rule.id} for {candidate.id}: the model cited nothing, so there is "
+                f"{rule.name} for {candidate.name}: the model cited nothing, so there is "
                 f"nothing to confirm ({found.reason or 'no reason given'})"
             )
             continue
@@ -205,7 +205,7 @@ async def research_gates(
             # replaces a person (NEW-02). Listing the proposal would show one that is not stored;
             # leaving it out would hide a call that was billed (NEW-63).
             refusals.append(
-                f"{rule.id} for {candidate.id}: a person answered this gate while the pass "
+                f"{rule.name} for {candidate.name}: a person answered this gate while the pass "
                 "ran, so the proposal was not stored"
             )
             continue

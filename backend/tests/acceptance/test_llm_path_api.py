@@ -513,7 +513,7 @@ class TestResearchingTheGates:
         validate("researchMatchRules", body)
         assert body["proposals"] == []
         (refusal,) = body["refusals"]
-        assert refusal.startswith(f"uk_skilled_worker for {THE_UK}: a person answered")
+        assert refusal.startswith("UK Skilled Worker route for United Kingdom: a person answered")
         assert (body["calls"], body["cost_eur"]) == (1, pytest.approx(0.02))
         (answer,) = stored
         assert (answer["data_source"], answer["is_proposal"]) == ("manual", False)

@@ -563,6 +563,15 @@ class TestTheGates:
         )
         validate("putMatchRuleResult", response.json(), status=422)
         assert stored == 0
+        # PL-150: the sentence names the gate and the place; the ids travel in `details`.
+        assert "UK Skilled Worker route" in response.json()["message"]
+        assert "Porto" in response.json()["message"]
+        assert not AN_IDENTIFIER.search(response.json()["message"])
+        assert "uk_skilled_worker" not in response.json()["message"]
+        assert response.json()["details"] == {
+            "match_rule": "uk_skilled_worker",
+            "candidate": "city.portugal.porto",
+        }
 
     async def test_an_unknown_source_is_refused(self, api: httpx.AsyncClient) -> None:
         response = await api.put(
@@ -610,6 +619,15 @@ class TestAModelsAnswerNeverReplacesAPersons:
 
         assert response.status_code == 409, f"answered {response.status_code}"
         assert response.json()["code"] == "answer_recorded_by_a_person"
+        assert response.json()["message"].startswith(
+            "a person has answered UK Skilled Worker route for United Kingdom"
+        )
+        assert "uk_skilled_worker" not in response.json()["message"]
+        assert not AN_IDENTIFIER.search(response.json()["message"])
+        assert response.json()["details"] == {
+            "match_rule": "uk_skilled_worker",
+            "candidate": "country.united_kingdom",
+        }
         assert response_schema("putMatchRuleResult", 409) == {"$ref": "#/components/schemas/Error"}
         validate("putMatchRuleResult", response.json(), status=409)
 

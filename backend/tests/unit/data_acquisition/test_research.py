@@ -228,7 +228,7 @@ class TestWhatItStores:
 
         (refusal,) = outcome.refusals
         assert refusal == (
-            "uk_skilled_worker for country.portugal: a person answered this gate while the "
+            "UK Skilled Worker route for Portugal: a person answered this gate while the "
             "pass ran, so the proposal was not stored"
         )
         assert (outcome.proposals, outcome.calls, outcome.cost_eur) == ((), 1, Decimal("0.05"))
@@ -258,7 +258,7 @@ class TestWhatItStores:
         )
 
         (refusal,) = outcome.refusals
-        assert refusal.startswith("uk_skilled_worker for country.portugal: ")
+        assert refusal.startswith("UK Skilled Worker route for Portugal: ")
         assert "the model could not be reached: 429 rate limited" in refusal
 
     async def test_a_refusal_with_no_reason_from_the_researcher_says_so(self) -> None:

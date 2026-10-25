@@ -425,11 +425,16 @@ async def put_match_rule_result(
     )
     if candidate is None:
         raise UnknownCandidateError(f"there is no candidate {candidate_id!r}")
+    the_pair = {"match_rule": match_rule_id, "candidate": candidate_id}
     if rule.level is not None and str(candidate.level.id) != str(rule.level):
         raise MalformedMatchRuleResultError(
-            f"{rule.id} is asked of {rule.level} candidates, and {candidate_id} is not one"
+            f"{rule.name} is asked of {rule.level} candidates, and {candidate.name} is not one",
+            details=the_pair,
         )
-    if body.data_source not in {str(source.id) for source in await catalog.read_data_sources()}:
+    source = next(
+        (s for s in await catalog.read_data_sources() if str(s.id) == body.data_source), None
+    )
+    if source is None:
         raise UnknownDataSourceError(f"there is no data source {body.data_source!r}")
 
     now = datetime.now(UTC)
@@ -454,9 +459,10 @@ async def put_match_rule_result(
         )
     if not await results.record(answer):
         raise AnswerRecordedByAPersonError(
-            f"a person has answered {match_rule_id} for {candidate_id}, and an answer from "
-            f"{body.data_source}, a model, never replaces one (reqs.md 6.10 use 3): nothing was "
-            "stored. Send it as manual to replace the person's answer."
+            f"a person has answered {rule.name} for {candidate.name}, and an answer from "
+            f"{source.name}, a model, never replaces one: nothing was stored. Record it by hand "
+            "to replace the person's answer.",
+            details=the_pair,
         )
     (stored,) = await results.read_results(candidate=candidate_id, match_rule=match_rule_id)
     return _result_body(stored)

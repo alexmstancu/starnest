@@ -711,7 +711,7 @@ paths:
                     items: { $ref: "#/components/schemas/MatchRuleResult" }
                   refusals:
                     type: array
-                    description: "Gates asked whose answer was not stored: the model cited nothing (or could not be reached), or a person answered the gate while the pass ran (NEW-63). Each line gives its reason."
+                    description: "Gates asked whose answer was not stored: the model cited nothing (or could not be reached), or a person answered the gate while the pass ran (NEW-63). Each line names the gate and the candidate as the catalog names them, never by id (PL-150), and gives its reason."
                     items: { type: string }
                   cost_eur: { type: number }
                   calls: { type: integer }
@@ -787,7 +787,8 @@ paths:
             `answer_recorded_by_a_person` -- the answer comes from a model, and a person has
             already answered this gate for this candidate. A model's answer is a proposal and
             never replaces a person's (reqs.md 6.10 use 3), so nothing is stored; send it as
-            `manual` to replace the person's answer.
+            `manual` to replace the person's answer. The message names the gate and the
+            candidate; `details.match_rule` and `details.candidate` carry their ids (PL-150).
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
