@@ -419,7 +419,9 @@ describe("changing a weight", () => {
     await saveWeight(HOMICIDE, "80");
 
     await screen.findByRole("alert");
-    expect(await weightSlider(HOMICIDE)).toHaveValue("65");
+    // The refusal and the stored weight reach the screen through the write gate one render
+    // apart, so the weight is waited for rather than read once beside the alert.
+    await waitFor(() => expect(shownWeight(HOMICIDE)).toBe("65"));
   });
 
   it("reports a failed save rather than letting it look like it worked", async () => {
