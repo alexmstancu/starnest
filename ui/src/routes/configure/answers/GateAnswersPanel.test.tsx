@@ -6,17 +6,19 @@ import type { MatchRuleResult } from "../../../api/endpoints";
 import { mockServer } from "../../../mocks/server";
 import { expectHeld } from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
+import { describeAge } from "../gateAnswerReading";
 
 /**
- * Gate answers a person gives (UI-29).
+ * Gate answers a person gives, and every one recorded (UI-29, BE-36 stage 1).
  *
- * The rules under test: what this screen sends is always `manual`, and a refusal is worded from
- * its code, never the server's sentence.
+ * The rules under test: what this screen sends is always `manual`; a correction drops nothing
+ * the person did not drop; a refusal is worded from its code, never the server's sentence; and
+ * an answer whose period has ended is marked as **still applied**, never hidden or expired.
  */
 
 const BASE = "/v1";
 
-/** What the server answers a save with. */
+/** A recorded answer with everything a correction must keep. */
 const RECORDED: MatchRuleResult = {
   match_rule: "country.uk_skilled_worker",
   candidate: "country.united_kingdom",
@@ -49,6 +51,11 @@ async function settled(): Promise<void> {
   await waitFor(() =>
     expect(theForm().getByRole("option", { name: "United Kingdom" })).toBeInTheDocument(),
   );
+}
+
+/** Serves these answers, and every write the screen sends lands among them. */
+function serveAnswers(items: MatchRuleResult[]): void {
+  mockServer.use(http.get(`${BASE}/match-rule-results`, () => HttpResponse.json({ items })));
 }
 
 /** Every PUT the screen sends, its path and body, still answered by the mock. */
@@ -87,7 +94,7 @@ function save(): Promise<void> {
 }
 
 describe("recording a gate answer", () => {
-  it("records an answer nobody proposed, as manual", async () => {
+  it("records an answer nobody proposed, as manual, and lists it once it is read again", async () => {
     const writes = watchWrites();
     renderShell("/configure");
     await settled();
@@ -99,7 +106,10 @@ describe("recording a gate answer", () => {
     await userEvent.type(theForm().getByLabelText("Pages"), "https://www.gov.uk/skilled-worker-visa");
     await save();
 
-    await waitFor(() => expect(writes).toHaveLength(1));
+    const row = await theAnswers().findByRole("row", { name: /UK Skilled Worker route/ });
+    expect(row).toHaveTextContent("United Kingdom");
+    expect(row).toHaveTextContent("Not matching");
+    expect(row).toHaveTextContent("1 Jan 2026 to 31 Dec 2026");
     expect(writes).toEqual([
       {
         path: "/v1/match-rule-results/country.uk_skilled_worker/country.united_kingdom",
@@ -282,5 +292,145 @@ describe("what the server refuses", () => {
     expect(alert).toHaveTextContent(words);
     expect(alert).not.toHaveTextContent("THE SERVER'S OWN SENTENCE");
     expect(within(alert).queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  });
+});
+
+describe("the recorded answers", () => {
+  it("lists each answer a person recorded with its period and when, and no proposal", async () => {
+    renderShell("/configure");
+    await settled();
+
+    const row = await theAnswers().findByRole("row", { name: /Free movement applies/ });
+    expect(row).toHaveTextContent("Spain");
+    expect(row).toHaveTextContent("Matching");
+    expect(row).toHaveTextContent("No period recorded");
+    expect(row).toHaveTextContent(`10 Sept 2026, ${describeAge("2026-09-10T09:00:00Z", new Date())}`);
+    // Portugal's answer is a model's proposal, which the proposals panel lists.
+    expect(theAnswers().queryByRole("row", { name: /A visa route exists/ })).not.toBeInTheDocument();
+  });
+
+  it("marks an answer whose period has ended, and says it still applies", async () => {
+    serveAnswers([{ ...RECORDED, reference_period: { start: "2020-01-01", end: "2020-12-31" } }]);
+    renderShell("/configure");
+    await settled();
+
+    const row = await theAnswers().findByRole("row", { name: /UK Skilled Worker route/ });
+    expect(row).toHaveTextContent(
+      "Ended, still applied: its period ended on 31 Dec 2020, and it applies until you change it.",
+    );
+  });
+
+  it("says when no answer has been recorded at this level", async () => {
+    serveAnswers([]);
+    renderShell("/configure");
+    await settled();
+
+    expect(
+      await theAnswers().findByText("No gate answer has been recorded by hand at this level yet."),
+    ).toBeInTheDocument();
+  });
+
+  it("offers Try again when the answers cannot be read while the server is up", async () => {
+    let fail = true;
+    mockServer.use(
+      http.get(`${BASE}/match-rule-results`, () =>
+        fail
+          ? HttpResponse.json({ code: "internal_error", message: "the read failed" }, { status: 500 })
+          : HttpResponse.json({ items: [RECORDED] }),
+      ),
+    );
+    renderShell("/configure");
+    await screen.findByRole("region", { name: "Gate answers" });
+
+    const retry = await theAnswers().findByRole("button", { name: "Try again" });
+    fail = false;
+    await userEvent.click(retry);
+
+    expect(await theAnswers().findByRole("row", { name: /UK Skilled Worker route/ })).toBeInTheDocument();
+  });
+
+  it("prints a stored page that is not a web address as text, never as a link", async () => {
+    serveAnswers([
+      { ...RECORDED, citations: ["javascript:alert(1)", "https://www.gov.uk/skilled-worker-visa"] },
+    ]);
+    renderShell("/configure");
+    await settled();
+
+    const row = await theAnswers().findByRole("row", { name: /UK Skilled Worker route/ });
+    expect(within(row).getByText("javascript:alert(1)")).toBeInTheDocument();
+    expect(within(row).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
+      "https://www.gov.uk/skilled-worker-visa",
+    ]);
+  });
+
+  it("corrects an answer keeping its pages, period and override unless they are changed", async () => {
+    serveAnswers([RECORDED]);
+    const writes = watchWrites();
+    renderShell("/configure");
+    await settled();
+
+    await userEvent.click(
+      await theAnswers().findByRole("button", { name: "Change UK Skilled Worker route for United Kingdom" }),
+    );
+    expect(theForm().getByLabelText("Gate")).toHaveFocus();
+    await userEvent.clear(theForm().getByLabelText("Reason"));
+    await userEvent.type(theForm().getByLabelText("Reason"), "Still no sponsor.");
+    await save();
+
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0]).toEqual({
+      path: "/v1/match-rule-results/country.uk_skilled_worker/country.united_kingdom",
+      body: {
+        match_result: "not_matching",
+        reason: "Still no sponsor.",
+        data_source: "manual",
+        reference_period: { start: "2026-01-01", end: "2099-12-31" },
+        override_reason: "Checked with an employer.",
+        citations: ["https://www.gov.uk/skilled-worker-visa"],
+      },
+    });
+  });
+
+  it("shows a re-check's proposal read-only, and takes it through the form as manual", async () => {
+    serveAnswers([
+      {
+        ...RECORDED,
+        pending_proposal: {
+          match_result: "matching",
+          reason: "The sponsor list now includes local employers.",
+          data_source: "llm",
+          reference_period: null,
+          retrieval_date: "2026-10-20T09:00:00Z",
+          recorded_at: "2026-10-20T09:05:00Z",
+          citations: ["https://www.gov.uk/sponsors"],
+        },
+      },
+    ]);
+    const writes = watchWrites();
+    renderShell("/configure");
+    await settled();
+
+    const proposal = await theAnswers().findByRole("row", { name: /Take the proposal/ });
+    expect(proposal).toHaveTextContent(
+      "A re-check proposes Matching, with no period recorded. Read on 20 Oct 2026.",
+    );
+    expect(within(proposal).getByRole("link")).toHaveAttribute("href", "https://www.gov.uk/sponsors");
+    await userEvent.click(
+      within(proposal).getByRole("button", {
+        name: "Take the proposal for UK Skilled Worker route and United Kingdom",
+      }),
+    );
+    expect(theForm().getByLabelText("Answer")).toHaveValue("matching");
+    await save();
+
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0]?.body).toEqual({
+      match_result: "matching",
+      reason: "The sponsor list now includes local employers.",
+      data_source: "manual",
+      reference_period: null,
+      override_reason: null,
+      citations: ["https://www.gov.uk/sponsors"],
+    });
   });
 });

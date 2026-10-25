@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
+  fetchMatchRuleResults,
   fetchMatchRules,
   putMatchRuleResult,
   type MatchRule,
@@ -17,8 +18,8 @@ import {
 } from "./gateAnswerForm";
 
 /**
- * The form that records, overrides or rules out one gate answer at one level (`reqs.md` 3.7,
- * 8.2; UI-29).
+ * The gate answers a person recorded at one level, and the form that records, corrects or
+ * rules out one (`reqs.md` 3.7, 8.2; UI-29, BE-36).
  *
  * **Keyed by level, never by set** (D4): an answer is objective and belongs to no criteria set,
  * so switching sets keeps a half-typed answer, and a set that failed to read hides nothing here.
@@ -28,6 +29,15 @@ import {
  * ref, because two presses in one tick would both pass a check on state.
  */
 export interface GateAnswers {
+  /** The answers' read; the table draws it, kept on screen while it is read again. */
+  read: Read<{ items: MatchRuleResult[] }>;
+  /** What a person recorded about candidates at this level. Proposals are the other panel's. */
+  recorded: MatchRuleResult[];
+  /**
+   * The list on screen predates the last write, so a newer one is on its way (NEW-45). A
+   * Change from an outdated row would correct an answer that is no longer the stored one.
+   */
+  stale: boolean;
   /** The gates asked at this level, a level-free gate among them. */
   gates: Read<{ items: MatchRule[] }>;
   reloadGates: () => Promise<void>;
@@ -35,6 +45,8 @@ export interface GateAnswers {
   candidates: CandidateRosterState;
   draft: GateAnswerDraft;
   change: (edit: Partial<GateAnswerDraft>) => void;
+  /** Prefills the form: a stored answer to correct, or a proposal to take. */
+  load: (draft: GateAnswerDraft) => void;
   /** What the last press of Save found wrong before anything was sent. */
   problems: DraftProblem[];
   saving: boolean;
@@ -43,18 +55,33 @@ export interface GateAnswers {
   /** The answer the last save stored, until the form is edited again. */
   saved: MatchRuleResult | null;
   save: () => void;
+  reload: () => Promise<void>;
 }
 
 export function useGateAnswers(
   level: string,
+  /** Moves whenever any panel writes an answer, so this list is read again with the rest. */
+  answersFreshness: number,
   /** Told after a save, so everything describing the answers re-reads. */
   onAnswered: () => void,
 ): GateAnswers {
+  const answers = useRead(
+    useCallback((signal: AbortSignal) => fetchMatchRuleResults({ signal }), []),
+    { freshness: answersFreshness },
+  );
+  const read = answers.read.state === "idle" ? PENDING : answers.read;
   const gates = useRead(
     useCallback((signal: AbortSignal) => fetchMatchRules(level, { signal }), [level]),
   );
   const rosterState = useCandidateRosterState();
 
+  const recorded = useMemo(
+    () =>
+      atLevel(read.state === "ready" ? read.data.items : [], rosterState.roster, level).filter(
+        (answer) => answer.is_proposal !== true,
+      ),
+    [read, rosterState.roster, level],
+  );
   const candidates = useMemo(
     () => ({
       ...rosterState,
@@ -69,6 +96,12 @@ export function useGateAnswers(
   const [failure, setFailure] = useState<unknown>(null);
   const [saved, setSaved] = useState<MatchRuleResult | null>(null);
   const inFlight = useRef(false);
+
+  const load = useCallback((next: GateAnswerDraft) => {
+    setDraft(next);
+    setProblems([]);
+    setSaved(null);
+  }, []);
 
   function save(): void {
     if (inFlight.current) return;
@@ -95,6 +128,9 @@ export function useGateAnswers(
   }
 
   return {
+    read,
+    recorded,
+    stale: read.state === "ready" && read.refresh !== "idle",
     gates: gates.read.state === "idle" ? PENDING : gates.read,
     reloadGates: gates.reload,
     candidates,
@@ -103,12 +139,31 @@ export function useGateAnswers(
       setDraft((current) => ({ ...current, ...edit }));
       setSaved(null);
     },
+    load,
     problems,
     saving,
     failure,
     saved,
     save,
+    reload: answers.reload,
   };
 }
 
 const PENDING: Read<never> = { state: "pending" };
+
+/**
+ * The answers about candidates at this level. A candidate's level is the roster's to say --
+ * never read off its id -- and **one the roster does not place is kept**, so a roster that
+ * failed to load hides nothing.
+ */
+function atLevel(
+  answers: readonly MatchRuleResult[],
+  roster: readonly { id: string; level: string }[],
+  level: string,
+): MatchRuleResult[] {
+  const levelOf = new Map(roster.map((candidate) => [candidate.id, candidate.level]));
+  return answers.filter((answer) => {
+    const placed = levelOf.get(answer.candidate);
+    return placed === undefined || placed === level;
+  });
+}

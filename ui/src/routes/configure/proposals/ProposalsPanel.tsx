@@ -269,10 +269,7 @@ export function ProposalsPanel({
             </div>
           )}
           {proposals.levels === "pending" ? null : proposals.proposals.length === 0 ? (
-            <p className="screen__note">
-              No proposal is waiting. {proposals.confirmedCount} gate answers
-              have been recorded by hand.
-            </p>
+            <p className="screen__note">No proposal is waiting.</p>
           ) : (
             <table className="table">
               <caption>

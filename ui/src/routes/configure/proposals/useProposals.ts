@@ -43,8 +43,6 @@ export interface Proposals {
   rereadLevels: () => void;
   /** The unconfirmed answers, which are the only ones this panel acts on. */
   proposals: MatchRuleResult[];
-  /** How many answers a person has already settled, for context beside the proposals. */
-  confirmedCount: number;
   /**
    * Whether the list on screen was read before the answers were last written -- by a confirm or
    * a research pass -- so a newer one is on its way (NEW-45). **Confirm is held while it is**: a
@@ -147,8 +145,6 @@ export function useProposals(
     levels,
     rereadLevels: roster.reload,
     proposals: answers.filter((answer) => answer.is_proposal === true),
-    confirmedCount: answers.filter((answer) => answer.is_proposal !== true)
-      .length,
     stale,
     plan: estimate?.plan ?? null,
     capEur: estimate?.capEur ?? null,

@@ -5,7 +5,7 @@ ships is TBD, and firing one on a number nobody chose is the fabricated judgemen
 application exists to prevent (`devplan.md` D5).
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import ClassVar
 
@@ -30,6 +30,7 @@ from starnest.data import (
     MatchResult,
     MatchRule,
     MatchRuleResult,
+    ReferencePeriod,
     RuleOutcome,
     Share,
     ShareComposition,
@@ -473,6 +474,18 @@ class TestTheGates:
             )
             == ()
         )
+
+    def test_an_answer_whose_period_has_ended_still_rules_out(self) -> None:
+        """A confirmed answer is never auto-expired (the household's policy, 2026-10-13): it
+        applies until a person changes it, and the screen marks its ended period instead."""
+        period = ReferencePeriod(start=date(2020, 1, 1), end=date(2020, 12, 31))
+        ended = an_answer("uk_skilled_worker", MatchResult.NOT_MATCHING, "no sponsor").model_copy(
+            update={"reference_period": period}
+        )
+
+        (non_match,) = gates_that_rule_out(enforced=["uk_skilled_worker"], answers=[ended])
+
+        assert str(non_match.match_rule) == "uk_skilled_worker"
 
     def test_a_gate_the_set_does_not_enforce_is_not_consulted(self) -> None:
         """Whether a gate counts is the criteria set's preference (`arch.md` 3.6)."""

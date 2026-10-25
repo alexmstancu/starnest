@@ -1576,6 +1576,8 @@ export const MATCH_RULE_RESULTS: MatchRuleResult[] = [
     retrieval_date: "2026-09-10T09:00:00Z",
     reason: "Checked the treaty text.",
     is_proposal: false,
+    // When it was stored, which the server serves on every answer (D54).
+    recorded_at: "2026-09-10T09:00:00Z",
   },
 ];
 

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { emptyDraft, readDraft, type GateAnswerDraft } from "./gateAnswerForm";
+import type { MatchRuleResult } from "../../../api/endpoints";
+import {
+  draftFrom,
+  draftFromProposal,
+  emptyDraft,
+  readDraft,
+  type GateAnswerDraft,
+} from "./gateAnswerForm";
 
 const FILLED: GateAnswerDraft = {
   ...emptyDraft(),
@@ -8,14 +15,28 @@ const FILLED: GateAnswerDraft = {
   answer: "not_matching",
 };
 
+const STORED: MatchRuleResult = {
+  match_rule: "uk_skilled_worker",
+  candidate: "country.united_kingdom",
+  match_result: "not_matching",
+  data_source: "llm",
+  retrieval_date: "2026-09-12T09:00:00Z",
+  reason: "No sponsor in the local market.",
+  reference_period: { start: "2026-01-01", end: "2026-12-31" },
+  citations: ["https://www.gov.uk/skilled-worker-visa", "https://www.gov.uk/sponsors"],
+  override_reason: "Checked with an employer.",
+  override_date: "2026-09-13T09:00:00Z",
+  is_proposal: false,
+};
+
 function problemsOf(draft: GateAnswerDraft): string[] {
   const reading = readDraft(draft);
   return reading.ok ? [] : reading.problems.map((problem) => problem.field);
 }
 
 describe("a gate answer as typed", () => {
-  it("is always sent as manual", () => {
-    const reading = readDraft(FILLED);
+  it("is always sent as manual, whatever it was prefilled from", () => {
+    const reading = readDraft(draftFrom(STORED));
 
     expect(reading.ok && reading.input.data_source).toBe("manual");
   });
@@ -81,5 +102,42 @@ describe("a gate answer as typed", () => {
     const reading = readDraft({ ...FILLED, reason: "   " });
 
     expect(reading.ok && reading.input.reason).toBeNull();
+  });
+});
+
+describe("a correction", () => {
+  it("starts from everything the stored answer holds, so the PUT drops nothing unseen", () => {
+    const reading = readDraft(draftFrom(STORED));
+
+    expect(reading.ok && reading.input).toEqual({
+      match_result: "not_matching",
+      reason: "No sponsor in the local market.",
+      data_source: "manual",
+      reference_period: { start: "2026-01-01", end: "2026-12-31" },
+      override_reason: "Checked with an employer.",
+      citations: ["https://www.gov.uk/skilled-worker-visa", "https://www.gov.uk/sponsors"],
+    });
+  });
+
+  it("takes a re-check's proposal without the override it would replace", () => {
+    const draft = draftFromProposal(STORED, {
+      match_result: "matching",
+      reason: "A sponsor list now includes local employers.",
+      data_source: "llm",
+      reference_period: null,
+      retrieval_date: "2026-10-20T09:00:00Z",
+      recorded_at: "2026-10-20T09:00:00Z",
+      citations: ["https://www.gov.uk/sponsors"],
+    });
+    const reading = readDraft(draft);
+
+    expect(reading.ok && reading.input).toEqual({
+      match_result: "matching",
+      reason: "A sponsor list now includes local employers.",
+      data_source: "manual",
+      reference_period: null,
+      override_reason: null,
+      citations: ["https://www.gov.uk/sponsors"],
+    });
   });
 });

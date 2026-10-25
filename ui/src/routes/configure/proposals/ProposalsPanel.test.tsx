@@ -295,7 +295,7 @@ describe("what the panel shows", () => {
     ).toBeInTheDocument();
   });
 
-  it("leaves confirmed answers out of the list and counts them instead", async () => {
+  it("leaves confirmed answers out of the list, and does not count them", async () => {
     /** A confirmed answer is not something to act on here; it is context for one that is. */
     mockServer.use(
       http.get(`${BASE}/match-rule-results`, () =>
@@ -316,9 +316,9 @@ describe("what the panel shows", () => {
     renderShell("/configure");
     await settled();
 
-    expect(
-      await screen.findByText(/1 gate answers have been recorded by hand/i),
-    ).toBeInTheDocument();
+    // The recorded answers are listed under Gate answers, so this panel no longer counts them.
+    expect(await theProposals().findByText("No proposal is waiting.")).toBeInTheDocument();
+    expect(theProposals().queryByText(/recorded by hand/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("table", { name: /proposals/i })).not.toBeInTheDocument();
   });
 });
@@ -1008,6 +1008,8 @@ describe("a research pass, one gate at a time", () => {
     );
     expect(order.slice(order.indexOf(`POST ${BASE}/match-rule-research`))).toEqual([
       ...COUNTRY_GATES.map(() => `POST ${BASE}/match-rule-research`),
+      // One each for the proposals, the rules and the gate answers.
+      `GET ${BASE}/match-rule-results`,
       `GET ${BASE}/match-rule-results`,
       `GET ${BASE}/match-rule-results`,
     ]);

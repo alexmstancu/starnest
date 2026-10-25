@@ -1982,7 +1982,8 @@ describe("a gate's sentence once its answers change", () => {
    * How many times the stored answers were read because of a refused pass.
    *
    * **A later write that does re-read** follows the refusal, so any read the refusal asked for
-   * is counted first: a confirm re-reads the proposals and the rules, two reads and no more.
+   * is counted first: a confirm re-reads the proposals, the rules and the gate answers, three
+   * reads and no more.
    */
   async function readsCausedByARefusedPass(
     refusal: () => Response,
@@ -2019,7 +2020,7 @@ describe("a gate's sentence once its answers change", () => {
     );
     await waitFor(() => expect(gate).toHaveTextContent("Removes Portugal."));
 
-    return reads.count - before - 2;
+    return reads.count - before - 3;
   }
 
   it("reads nothing again after a refusal, which stored nothing", async () => {

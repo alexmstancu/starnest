@@ -5107,3 +5107,20 @@ select.field__control {
   padding: 0;
   border: 0;
 }
+
+/* An answer whose period has ended is still applied, so it is marked rather than hidden. */
+.answer-row--ended {
+  background: var(--colour-warning-surface);
+}
+
+.answer-row__ended {
+  margin: var(--space-quarter) 0 0;
+  font-size: var(--font-size-small);
+  color: var(--colour-warning);
+}
+
+/* A re-check's proposal, under the answer it is about: read-only until it is taken. */
+.answer-row--pending {
+  background: var(--colour-accent-surface);
+  font-size: var(--font-size-small);
+}

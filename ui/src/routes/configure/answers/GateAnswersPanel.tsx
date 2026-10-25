@@ -1,34 +1,51 @@
 import { useRef } from "react";
+import type { MatchRuleResult } from "../../../api/endpoints";
 import { useCandidateNames } from "../../../api/useCandidateNames";
 import { useMatchRuleNames } from "../../../api/useMatchRuleNames";
 import { candidateName, formatMatchStatus, matchRuleName } from "../../../format/display";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
+import { dayOf, inReadingOrder } from "../gateAnswerReading";
+import { draftFrom, draftFromProposal } from "./gateAnswerForm";
 import { GateAnswerFormPanel } from "./GateAnswerFormPanel";
+import { RecordedAnswersTable } from "./RecordedAnswersTable";
 import { useGateAnswers } from "./useGateAnswers";
 
 /**
- * Gate answers a person gives: record one, override one with a reason, or rule a candidate out
- * by hand (UI-29, `reqs.md` 8.2).
+ * Gate answers a person gives: record one, override one with a reason, correct one, or rule a
+ * candidate out by hand (UI-29, `reqs.md` 8.2) -- and every answer already recorded, with its
+ * period and age (BE-36 stage 1).
  *
  * **Outside the set's rules, keyed by level** (D4): answers are objective and belong to no set.
  * **Gates and candidates by name, never by id.**
  */
 export function GateAnswersPanel({
   levelId,
+  answersFreshness,
   onAnswered,
   researching,
 }: {
   levelId: string;
+  answersFreshness: number;
   onAnswered: () => void;
   /** A research pass is asking: Save waits for it. */
   researching: boolean;
 }) {
-  const answers = useGateAnswers(levelId, onAnswered);
+  const answers = useGateAnswers(levelId, answersFreshness, onAnswered);
   const gateNames = useMatchRuleNames();
   const candidateNames = useCandidateNames();
   const firstField = useRef<HTMLSelectElement>(null);
-  const saved = answers.saved;
+  const now = new Date();
+  const today = dayOf(now);
+  const names = (answer: Pick<MatchRuleResult, "match_rule" | "candidate">): [string, string] => [
+    matchRuleName(gateNames, answer.match_rule),
+    candidateName(candidateNames, answer.candidate),
+  ];
+  const fill = (draft: Parameters<typeof answers.load>[0]) => {
+    answers.load(draft);
+    firstField.current?.focus();
+  };
+  const tableHeld = answers.saving || answers.stale;
 
   return (
     <section className="panel" aria-labelledby="gate-answers-heading">
@@ -52,9 +69,30 @@ export function GateAnswersPanel({
       </LoadedRegion>
       <ActRefusal act="The gate answer" error={answers.failure} />
       <p className="panel__hint" role="status">
-        {saved !== null &&
-          `Recorded ${formatMatchStatus(saved.match_result)} for ${matchRuleName(gateNames, saved.match_rule)} and ${candidateName(candidateNames, saved.candidate)}.`}
+        {answers.saved !== null &&
+          `Recorded ${formatMatchStatus(answers.saved.match_result)} for ${names(answers.saved).join(" and ")}.`}
       </p>
+
+      <h4 className="gate-answers__heading">Recorded answers</h4>
+      <LoadedRegion
+        read={answers.read}
+        what="The gate answers"
+        skeleton="lines"
+        onRetry={answers.reload}
+        prominence="region"
+      >
+        {() => (
+          <RecordedAnswersTable
+            recorded={inReadingOrder(answers.recorded, today, names)}
+            names={names}
+            today={today}
+            now={now}
+            held={tableHeld}
+            onChange={(answer) => fill(draftFrom(answer))}
+            onTake={(answer, proposal) => fill(draftFromProposal(answer, proposal))}
+          />
+        )}
+      </LoadedRegion>
     </section>
   );
 }

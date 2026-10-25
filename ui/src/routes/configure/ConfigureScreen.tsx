@@ -178,6 +178,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
               <GateAnswersPanel
                 key={`answers-${levelId}`}
                 levelId={levelId}
+                answersFreshness={answersVersion}
                 onAnswered={noteAnswered}
                 researching={pass.running}
               />
