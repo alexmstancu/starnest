@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { usePillarNames, type PillarNames } from "../../../api/usePillarNames";
 import {
+  fetchCriteriaSet,
   updatePillarLock,
   updatePillarWeight,
   type CriteriaSet,
@@ -9,7 +10,8 @@ import type { components } from "../../../api/schema";
 import { formatPercentage, pillarName } from "../../../format/display";
 import type { ChangeHistory } from "../useChangeHistory";
 import { useNotePillarChange } from "./useNotePillarChange";
-import type { PillarAnswers } from "./usePillarAnswers";
+import type { Answers } from "../useAnswers";
+import { settled } from "../unknownOutcome";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { useWeightDrag } from "../useWeightDrag";
 import {
@@ -53,7 +55,7 @@ export function PillarWeightsPanel({
   answers,
 }: {
   /** Where an undo's answer is shown: the panel on screen then, which may not be this one. */
-  answers?: PillarAnswers;
+  answers?: Answers<PillarWeight[]>;
   criteriaSet: CriteriaSet;
   /**
    * The attribute catalog the rows inside each pillar read. When it could not be read the
@@ -115,8 +117,13 @@ export function PillarWeightsPanel({
       setSaving(true);
       setFailure(null);
       try {
-        const rebalanced = await updatePillarWeight(criteriaSet.id, pillar, weight);
-        setWeights(rebalanced.items);
+        const sentFor = criteriaSet.id;
+        const rebalanced = await settled(
+          () => updatePillarWeight(sentFor, pillar, weight),
+          () => pillarsIf(sentFor, (row) => row.pillar === pillar && row.weight === weight),
+        );
+        // To the panel showing the set now, which a set switch may have remounted (PL-033).
+        showAnswer(sentFor, rebalanced.items);
         note.weight(pillar, weights, rebalanced.items, weight);
       } catch (error) {
         setFailure(error);
@@ -130,7 +137,7 @@ export function PillarWeightsPanel({
         ended();
       }
     },
-    [criteriaSet.id, ended, undoing, note, weights, history],
+    [criteriaSet.id, ended, undoing, note, weights, history, showAnswer],
   );
 
   // **Its own request, carrying no weight** (P68). See `updatePillarLock`: a lock sent with a
@@ -146,8 +153,12 @@ export function PillarWeightsPanel({
       setSaving(true);
       setFailure(null);
       try {
-        const rebalanced = await updatePillarLock(criteriaSet.id, pillar, locked);
-        setWeights(rebalanced.items);
+        const sentFor = criteriaSet.id;
+        const rebalanced = await settled(
+          () => updatePillarLock(sentFor, pillar, locked),
+          () => pillarsIf(sentFor, (row) => row.pillar === pillar && row.weight_locked === locked),
+        );
+        showAnswer(sentFor, rebalanced.items);
         note.lock(pillar, locked);
       } catch (error) {
         setFailure(error);
@@ -157,7 +168,7 @@ export function PillarWeightsPanel({
         done?.();
       }
     },
-    [criteriaSet.id, undoing, note, history],
+    [criteriaSet.id, undoing, note, history, showAnswer],
   );
 
   // The weights as a rebalance sees them: what the drag snapshots, and what the total is read
@@ -463,4 +474,16 @@ function PillarRow({
       )}
     </>
   );
+}
+
+/**
+ * A set's pillar weights read back, when a write's answer was lost: what the write would have
+ * answered if the read shows it took effect, nothing when it did not (PL-033).
+ */
+async function pillarsIf(
+  criteriaSetId: string,
+  tookEffect: (row: PillarWeight) => boolean,
+): Promise<{ items: PillarWeight[] } | null> {
+  const items = (await fetchCriteriaSet(criteriaSetId)).pillar_weights ?? [];
+  return items.some(tookEffect) ? { items } : null;
 }

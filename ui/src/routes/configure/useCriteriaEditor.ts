@@ -7,6 +7,7 @@ import {
   type CriteriaSet,
   type Criterion,
   type CriterionRule,
+  type RebalancedPillar,
 } from "../../api/endpoints";
 import { answeredWrites } from "../../api/setWrites";
 import type { Idle, Read } from "../../api/read";
@@ -16,7 +17,9 @@ import {
   undoCanRestore,
 } from "./changeHistory";
 import { titleOf, type AttributeCatalog } from "./criteria/criterionReading";
+import type { Answers } from "./useAnswers";
 import type { ChangeHistory } from "./useChangeHistory";
+import { settled } from "./unknownOutcome";
 
 /**
  * One criteria set, and the one write the Configure screen makes.
@@ -82,6 +85,11 @@ export function useCriteriaEditor(
   history?: ChangeHistory,
   /** For what a change is called in the history: the catalog's name, never the id. */
   catalog?: AttributeCatalog,
+  /**
+   * Where an answer goes: to the editor showing its set when it lands, which may not be this one
+   * if Configure was left and opened again meanwhile (PL-033).
+   */
+  answers?: Answers<Criterion[]>,
 ): CriteriaEditor {
   const fetcher = useCallback(
     async (signal: AbortSignal): Promise<CriteriaSet> => {
@@ -133,6 +141,18 @@ export function useCriteriaEditor(
     }
   }, []);
 
+  const deliver = useCallback(
+    (sentFor: string, answer: Criterion[]) =>
+      answers === undefined ? mergeInto(sentFor, answer) : answers.deliver(sentFor, answer),
+    [answers, mergeInto],
+  );
+  useEffect(() => {
+    if (answers === undefined || criteriaSetId === null) return undefined;
+    return answers.listen(criteriaSetId, (answer) =>
+      setCriteria((current) => applyRebalance(current, answer)),
+    );
+  }, [answers, criteriaSetId]);
+
   /** A refusal for one set, reported only while that set is the one on screen. */
   const reportFor = useCallback((sentFor: string, error: unknown) => {
     if (shownSet.current === sentFor) setSaveError(error);
@@ -157,9 +177,12 @@ export function useCriteriaEditor(
       const named = titleOf(attribute, catalog?.get(attribute));
       const inSet = setName ?? sentFor;
 
-      void updateCriterionWeight(sentFor, attribute, weight)
+      void settled(
+        () => updateCriterionWeight(sentFor, attribute, weight),
+        () => criteriaIf(sentFor, attribute, (criterion) => criterion.weight === weight),
+      )
         .then((rebalanced) => {
-          mergeInto(sentFor, rebalanced.criteria);
+          deliver(sentFor, rebalanced.criteria);
           // Noted whichever set is on screen now: the change was made, in the set it names.
           history?.note({
             // The set is part of the identity: the same attribute in two sets is two
@@ -184,7 +207,7 @@ export function useCriteriaEditor(
                 attribute,
                 before,
               );
-              mergeInto(sentFor, back.criteria);
+              deliver(sentFor, back.criteria);
             },
             undoes: { criteriaSetId: sentFor, by: "write" },
           });
@@ -203,7 +226,7 @@ export function useCriteriaEditor(
       undoing,
       catalog,
       setName,
-      mergeInto,
+      deliver,
       reportFor,
     ],
   );
@@ -222,9 +245,13 @@ export function useCriteriaEditor(
       const named = titleOf(attribute, catalog?.get(attribute));
       const inSet = setName ?? sentFor;
 
-      void updateCriterionLock(sentFor, attribute, weightLocked)
+      void settled(
+        () => updateCriterionLock(sentFor, attribute, weightLocked),
+        () =>
+          criteriaIf(sentFor, attribute, (criterion) => criterion.weight_locked === weightLocked),
+      )
         .then((rebalanced) => {
-          mergeInto(sentFor, rebalanced.criteria);
+          deliver(sentFor, rebalanced.criteria);
           history?.note({
             target: `lock:${sentFor}:${attribute}`,
             stage: "Pillar weights",
@@ -237,7 +264,7 @@ export function useCriteriaEditor(
                 attribute,
                 before === true,
               );
-              mergeInto(sentFor, back.criteria);
+              deliver(sentFor, back.criteria);
             },
             undoes: { criteriaSetId: sentFor, by: "write" },
           });
@@ -249,7 +276,7 @@ export function useCriteriaEditor(
           done?.();
         });
     },
-    [criteriaSetId, history, undoing, catalog, setName, mergeInto, reportFor],
+    [criteriaSetId, history, undoing, catalog, setName, deliver, reportFor],
   );
 
   const setRule = useCallback(
@@ -270,7 +297,7 @@ export function useCriteriaEditor(
           (changed) => {
             // The same response shape as a weight change, and applied the same way: the screen
             // shows what the server decided rather than what was typed at it.
-            mergeInto(sentFor, changed.criteria);
+            deliver(sentFor, changed.criteria);
             return null;
           },
           // **A refused rule is the rule form's to report** (PL-026), field by field inside it,
@@ -284,7 +311,7 @@ export function useCriteriaEditor(
           setSavingRuleFor(null);
         });
     },
-    [criteriaSetId, history, undoing, mergeInto],
+    [criteriaSetId, history, undoing, deliver],
   );
 
   return {
@@ -320,4 +347,22 @@ function applyRebalance(
       rebalanced.find((entry) => entry.attribute === criterion.attribute) ??
       criterion,
   );
+}
+
+/**
+ * A set's criteria read back, when a write's answer was lost: the pillar the write would have
+ * answered with if the read shows it took effect, nothing when it did not (PL-033).
+ */
+async function criteriaIf(
+  criteriaSetId: string,
+  attribute: string,
+  tookEffect: (criterion: Criterion) => boolean,
+): Promise<RebalancedPillar | null> {
+  const criteria = (await fetchCriteriaSet(criteriaSetId)).criteria ?? [];
+  const written = criteria.find((each) => each.attribute === attribute);
+  if (written === undefined || !tookEffect(written)) return null;
+  return {
+    pillar: written.pillar,
+    criteria: criteria.filter((each) => each.pillar === written.pillar),
+  };
 }

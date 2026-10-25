@@ -1,7 +1,7 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { HttpResponse, getResponse, http } from "msw";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import {
   createCriteriaSet,
   deleteCriteriaSet,
@@ -16,6 +16,7 @@ import {
   followChromiumFocusFixup,
 } from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
+import { LIST_PATIENCE_MS } from "./useCriteriaSets";
 
 /**
  * Making, using, renaming, copying and discarding a set of priorities.
@@ -1197,6 +1198,275 @@ describe("an entry and the set it targets", () => {
     ]);
   });
 });
+
+/**
+ * PL-033, round 5. **Configure's one write in flight is held above the route**: every write
+ * that touches a set takes it -- a rule's switch and its kind included -- it outlives the screen
+ * that sent it, a write whose answer was lost is read back, and a list that never comes back
+ * is a failure with Try again rather than a hold for ever.
+ */
+describe("the one write in flight, above the screen", () => {
+  let writes: string[] = [];
+  afterEach(() => {
+    mockServer.events.removeAllListeners("request:start");
+    writes = [];
+  });
+  const PILLAR_PATH = "/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId";
+  const GATE_PATH = "/v1/criteria-sets/:criteriaSetId/match-rules/:matchRuleId";
+
+  function movePillar(pillar: string, weight: string): void {
+    const slider = screen.getByRole("slider", { name: `${pillar} weight` });
+    fireEvent.change(slider, { target: { value: weight } });
+    fireEvent.pointerUp(slider);
+  }
+
+  it("holds Delete while a rule's switch is being saved", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    const gate = await screen.findByRole("switch", { name: "Enforce Free movement applies" });
+    const enforce = holdRequests("put", GATE_PATH);
+    await user.click(gate);
+    await waitFor(() => expect(enforce.sent).toHaveLength(1));
+    const remove = (await row("Default")).getByRole("button", { name: "Delete" });
+    writes = recordWrites();
+
+    expectHeld(remove);
+    await user.click(remove);
+    expect(writes).toEqual([]);
+    enforce.release();
+
+    await waitFor(() => expect(gate).toHaveAttribute("aria-checked", "true"));
+    await waitFor(() => expectNotHeld(remove));
+  });
+
+  it("holds a rule's switch and its kind while another write is in flight", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    const gate = await screen.findByRole("switch", { name: "Enforce A visa route exists" });
+    const kind = screen.getByRole("combobox", { name: "What A visa route exists does when it fires" });
+    const lock = holdRequests("put", PILLAR_PATH);
+    await user.click(await screen.findByRole("button", { name: "Lock Economy" }));
+    await waitFor(() => expect(lock.sent).toHaveLength(1));
+    writes = recordWrites();
+
+    expectHeld(gate);
+    expectHeld(kind);
+    await user.click(gate);
+    fireEvent.change(kind, { target: { value: "warning" } });
+    expect(writes).toEqual([]);
+    lock.release();
+
+    await waitFor(() => expectNotHeld(gate));
+    expect(gate).toHaveAttribute("aria-checked", "true");
+  });
+
+  it("keeps a write's hold, and says why, when Configure is left and opened again", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    const lock = holdRequests("put", PILLAR_PATH);
+    await user.click(await screen.findByRole("button", { name: "Lock Economy" }));
+    await waitFor(() => expect(lock.sent).toHaveLength(1));
+
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+    await screen.findByRole("heading", { name: "Rank", level: 1 });
+    await user.click(screen.getByRole("link", { name: "Configure" }));
+    const again = await screen.findByRole("button", { name: "Lock Economy" });
+    const history = await historyPanel();
+    writes = recordWrites();
+
+    expectHeld(again);
+    expect(history.getByRole("status")).toHaveTextContent(
+      "A change is being saved; the next waits until it is stored.",
+    );
+    await user.click(again);
+    expect(writes).toEqual([]);
+    lock.release();
+
+    await history.findByText("Locked the Economy pillar, in Default");
+    await waitFor(() => expect(again).toHaveAttribute("aria-pressed", "true"));
+    await user.click(history.getByRole("button", { name: "Undo this" }));
+    await waitFor(() => expect(again).toHaveAttribute("aria-pressed", "false"));
+    const economy = (await fetchCriteriaSet("default")).pillar_weights?.find(
+      (each) => each.pillar === "economics",
+    );
+    expect(economy?.weight_locked).toBe(false);
+  });
+
+  it("reads a deletion back when its answer is lost, and lists it with its restore", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    mockServer.use(
+      http.delete(
+        "/v1/criteria-sets/:criteriaSetId",
+        async ({ request }) => {
+          await getResponse(handlers, request);
+          return HttpResponse.error();
+        },
+        { once: true },
+      ),
+    );
+
+    await deleteSet(user, "Remote only");
+
+    const history = await historyPanel();
+    await history.findByText("Deleted Remote only");
+    await waitFor(() =>
+      expect(screen.queryByRole("listitem", { name: "Remote only" })).toBeNull(),
+    );
+    writes = recordWrites();
+    await user.click(history.getByRole("button", { name: "Undo this" }));
+    expect(await row("Remote only")).toBeTruthy();
+    expect(writes).toEqual(["POST /v1/criteria-sets/remote_only/restore"]);
+  });
+
+  it.each([
+    {
+      what: "a pillar's lock",
+      method: "put" as const,
+      path: PILLAR_PATH,
+      control: () => screen.findByRole("button", { name: "Lock Economy" }),
+      shows: (control: HTMLElement) => expect(control).toHaveAttribute("aria-pressed", "true"),
+      entry: "Locked the Economy pillar, in Default",
+    },
+    {
+      what: "a criterion's lock",
+      method: "patch" as const,
+      path: "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId",
+      control: () => criterionLockOf(userEvent.setup()),
+      shows: (control: HTMLElement) => expect(control).toHaveAttribute("aria-pressed", "true"),
+      entry: "Locked Cost of living index, in Default",
+    },
+    {
+      what: "a rule's switch",
+      method: "put" as const,
+      path: GATE_PATH,
+      control: () => screen.findByRole("switch", { name: "Enforce Free movement applies" }),
+      shows: (control: HTMLElement) => expect(control).toHaveAttribute("aria-checked", "true"),
+      entry: null,
+    },
+  ])("reads $what back when its answer is lost, and shows and lists what took effect", async ({
+    method,
+    path,
+    control,
+    shows,
+    entry,
+  }) => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    const pressed = await control();
+    mockServer.use(
+      http[method](
+        path,
+        async ({ request }) => {
+          await getResponse(handlers, request);
+          return HttpResponse.error();
+        },
+        { once: true },
+      ),
+    );
+
+    await user.click(pressed);
+
+    await waitFor(() => shows(pressed));
+    const history = await historyPanel();
+    if (entry !== null) expect(await history.findByText(entry)).toBeInTheDocument();
+    expect(screen.queryByText(/did not go through/)).toBeNull();
+  });
+
+  it("turns a list that never comes back into a failure with Try again, saying why it waits", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderShell("/configure");
+    const remove = (await row("Remote only")).getByRole("button", { name: "Delete" });
+    const list = holdRequests("get", "/v1/criteria-sets");
+
+    await settledScreen();
+    await user.click(remove);
+    await waitFor(() => expect(list.sent).toHaveLength(1));
+    const history = await historyPanel();
+    expect(history.getByRole("status")).toHaveTextContent(
+      "The list of sets is being read again; undo waits for it.",
+    );
+    act(() => {
+      vi.advanceTimersByTime(LIST_PATIENCE_MS);
+    });
+    const retry = await (await panel()).findByRole("button", { name: "Try again" });
+    expectHeld(remove);
+    expectHeld(history.getByRole("button", { name: "Undo this" }));
+    list.release();
+    await user.click(retry);
+
+    await waitFor(() =>
+      expect(screen.queryByRole("listitem", { name: "Remote only" })).toBeNull(),
+    );
+    expectNotHeld(history.getByRole("button", { name: "Undo this" }));
+  });
+
+  it("shows a pillar's late answer in the panel showing its set now, so the next change reads it", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    await screen.findByRole("slider", { name: "Economy weight" });
+    const move = holdRequests("put", PILLAR_PATH);
+    movePillar("Economy", "50");
+    await waitFor(() => expect(move.sent).toHaveLength(1));
+    await user.click((await row("Remote only")).getByRole("button", { name: "Use" }));
+    await waitFor(() => expect(sidebarSets()).toHaveValue("remote_only"));
+    await user.click((await row("Default")).getByRole("button", { name: "Use" }));
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    await screen.findByRole("slider", { name: "Economy weight" });
+
+    move.release();
+    const history = await historyPanel();
+    await history.findByText(/Pillar weight for Economy: 40.* to 50/);
+    await waitFor(() =>
+      expect(screen.getByRole("slider", { name: "Economy weight" })).toHaveValue("50"),
+    );
+    movePillar("Housing", "40");
+
+    await history.findByText(/Pillar weight for Housing: 29\.2% to 40/);
+  });
+
+  it("shows a criterion's late answer in the editor of a Configure opened again", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    const lock = holdRequests("patch", "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId");
+    await user.click(await criterionLockOf(user));
+    await waitFor(() => expect(lock.sent).toHaveLength(1));
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+    await screen.findByRole("heading", { name: "Rank", level: 1 });
+    await user.click(screen.getByRole("link", { name: "Configure" }));
+    const shown = await criterionLockOf(user);
+
+    lock.release();
+
+    await (await historyPanel()).findByText("Locked Cost of living index, in Default");
+    await waitFor(() => expect(shown).toHaveAttribute("aria-pressed", "true"));
+  });
+});
+
+/** The last panel on the screen has arrived, so every read before it has too. */
+async function settledScreen(): Promise<void> {
+  await screen.findByRole("region", { name: "Source priority" });
+  await waitFor(() => expect(screen.queryByText("Loading…")).not.toBeInTheDocument());
+}
+
+/** Opens the Economy pillar, if it is not open, and finds a criterion's lock inside it. */
+async function criterionLockOf(user: UserEvent): Promise<HTMLElement> {
+  const named = { name: "Lock the weight for Cost of living index" };
+  if (screen.queryByRole("button", named) === null) {
+    await user.click(await screen.findByRole("button", { name: /^Economy/ }));
+  }
+  return screen.findByRole("button", named);
+}
 
 /**
  * UI-28. **An empty list that has arrived is not a list still on its way.** The selection treated

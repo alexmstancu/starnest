@@ -2143,7 +2143,7 @@ describe("a research pass while the screen changes around it", () => {
         ),
       ),
     );
-    await chooseSet("remote-only");
+    await chooseSet("remote_only");
     expect((await screen.findAllByText("The server failed while answering.")).length).toBeGreaterThan(0);
 
     expect(

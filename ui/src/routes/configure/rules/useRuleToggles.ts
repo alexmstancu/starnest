@@ -11,6 +11,7 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   fetchCompoundRules,
+  fetchCriteriaSet,
   fetchMatchRuleResults,
   fetchMatchRules,
   fetchRanking,
@@ -27,6 +28,8 @@ import type { Idle, Read } from "../../../api/read";
 import { useRead } from "../../../api/useRead";
 import { useCandidateRosterState } from "../../../api/useCandidateRoster";
 import type { CandidateNames } from "../../../api/useCandidateNames";
+import { useConfigurationSession } from "../useConfigurationSession";
+import { settled as settledWrite } from "../unknownOutcome";
 import { answersAtLevel } from "./ruleEffect";
 
 export interface RuleToggles {
@@ -56,6 +59,8 @@ export interface RuleToggles {
   reloadMatchRules: () => Promise<void>;
   reloadCompoundRules: () => Promise<void>;
   failure: unknown;
+  /** Another write in Configure is in flight, so a switch or a kind waits for it (PL-033). */
+  held: boolean;
   isEnforced: (matchRuleId: string) => boolean;
   isApplied: (compoundRuleId: string) => boolean;
   enforce: (matchRuleId: string, wanted: boolean) => void;
@@ -141,18 +146,33 @@ export function useRuleToggles(
    * when it is not -- the one thing this panel must never do, because a gate decides whether a
    * candidate can be ranked at all. The same holds for a gate softened to a warning.
    */
+  //
+  // **Configure's one write in flight** (PL-033): a rule's switch or kind changes the set, so it
+  // takes the slot every other set write takes, and an answer lost on the way is read back.
+  const { history } = useConfigurationSession();
   const save = useCallback(
-    async (write: () => Promise<void>, accepted: () => void) => {
+    async (
+      write: () => Promise<void>,
+      accepted: () => void,
+      tookEffect: (stored: CriteriaSet) => boolean,
+    ) => {
+      const done = history.begin();
+      if (done === null) return;
       setFailure(null);
       try {
-        await write();
+        await settledWrite(
+          () => write().then(() => true as const),
+          async () => (tookEffect(await fetchCriteriaSet(criteriaSet.id)) ? true : null),
+        );
         accepted();
         setAccepted((count) => count + 1);
       } catch (error) {
         setFailure(error);
+      } finally {
+        done();
       }
     },
-    [],
+    [history, criteriaSet.id],
   );
 
   const toggle = (
@@ -161,6 +181,7 @@ export function useRuleToggles(
     write: (wanted: boolean) => Promise<void>,
     remember: (change: (current: string[]) => string[]) => void,
     rememberOutcome: (change: (current: Outcomes) => Outcomes) => void,
+    stored: (set: CriteriaSet) => string[] | undefined,
   ) =>
     void save(
       () => write(wanted),
@@ -172,6 +193,7 @@ export function useRuleToggles(
         // from its default rather than from what it was before (D56).
         if (!wanted) rememberOutcome((current) => withoutOutcome(current, id));
       },
+      (set) => (stored(set) ?? []).includes(id) === wanted,
     );
 
   return {
@@ -191,6 +213,7 @@ export function useRuleToggles(
     reloadMatchRules: matchRules.reload,
     reloadCompoundRules: compoundRules.reload,
     failure,
+    held: history.busy,
     isEnforced: (matchRuleId) => enforced.includes(matchRuleId),
     isApplied: (compoundRuleId) => applied.includes(compoundRuleId),
     enforce: (matchRuleId, wanted) =>
@@ -200,6 +223,7 @@ export function useRuleToggles(
         (value) => setMatchRuleEnforcement(criteriaSet.id, matchRuleId, value),
         setEnforced,
         setGateOutcomes,
+        (set) => set.enforced_match_rules,
       ),
     apply: (compoundRuleId, wanted) =>
       toggle(
@@ -209,6 +233,7 @@ export function useRuleToggles(
           setCompoundRuleApplication(criteriaSet.id, compoundRuleId, value),
         setApplied,
         setCompoundOutcomes,
+        (set) => set.applied_compound_rules,
       ),
     // A gate newly enforced is a gate, as the server makes it.
     outcomeOfGate: (matchRuleId) => gateOutcomes[matchRuleId] ?? "not_matching",
@@ -217,6 +242,7 @@ export function useRuleToggles(
       void save(
         () => setMatchRuleEnforcement(criteriaSet.id, matchRuleId, true, outcome),
         () => setGateOutcomes((current) => ({ ...current, [matchRuleId]: outcome })),
+        (set) => set.match_rule_outcomes?.[matchRuleId] === outcome,
       ),
     holdCompoundRuleAs: (compoundRuleId, outcome) =>
       void save(
@@ -224,6 +250,7 @@ export function useRuleToggles(
           setCompoundRuleApplication(criteriaSet.id, compoundRuleId, true, outcome),
         () =>
           setCompoundOutcomes((current) => ({ ...current, [compoundRuleId]: outcome })),
+        (set) => set.compound_rule_outcomes?.[compoundRuleId] === outcome,
       ),
   };
 }

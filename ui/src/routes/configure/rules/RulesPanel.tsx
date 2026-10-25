@@ -104,6 +104,7 @@ export function RulesPanel({
             onToggle: (wanted: boolean) => rules.enforce(rule.id, wanted),
             outcome: rules.outcomeOfGate(rule.id),
             onOutcome: (outcome: RuleOutcome) => rules.holdGateAs(rule.id, outcome),
+            held: rules.held,
           }))
         }
       />
@@ -142,6 +143,7 @@ export function RulesPanel({
             // Its kind from its outcome in this set (PL-158), never from the list it sits in.
             outcome: rules.outcomeOfCompoundRule(rule),
             onOutcome: (outcome: RuleOutcome) => rules.holdCompoundRuleAs(rule.id, outcome),
+            held: rules.held,
           }))
         }
       />
@@ -162,6 +164,8 @@ interface RuleRow {
   /** What it does when it fires, in this set. */
   outcome: RuleOutcome;
   onOutcome: (outcome: RuleOutcome) => void;
+  /** Another write in Configure is in flight, so this one waits for it (PL-033). */
+  held: boolean;
 }
 
 const OUTCOME_LABELS: Record<RuleOutcome, string> = {
@@ -234,7 +238,10 @@ function RuleRows({
                 : "Off in this set. Switch it on to apply it."
             }
             className="switch"
-            onClick={() => row.onToggle(!row.on)}
+            aria-disabled={row.held || undefined}
+            onClick={() => {
+              if (!row.held) row.onToggle(!row.on);
+            }}
           >
             <span className="switch__knob" aria-hidden="true" />
           </button>
@@ -256,11 +263,11 @@ function RuleRows({
           <select
             className="field__control rule-row__kind"
             aria-label={`What ${row.name} does when it fires`}
-            aria-disabled={!row.on}
+            aria-disabled={!row.on || row.held || undefined}
             title={row.on ? undefined : "Switch the rule on to choose whether it acts as a gate or a warning."}
             value={row.outcome}
             onChange={(event) => {
-              if (row.on) row.onOutcome(event.target.value as RuleOutcome);
+              if (row.on && !row.held) row.onOutcome(event.target.value as RuleOutcome);
             }}
           >
             {(Object.keys(OUTCOME_LABELS) as RuleOutcome[]).map((outcome) => (

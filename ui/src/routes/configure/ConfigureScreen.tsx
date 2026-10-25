@@ -10,7 +10,6 @@ import { useCriteriaSets } from "./sets/useCriteriaSets";
 import { DataSourcesPanel } from "./sources/DataSourcesPanel";
 import { HouseholdPanel } from "./household/HouseholdPanel";
 import { PillarWeightsPanel } from "./pillars/PillarWeightsPanel";
-import { usePillarAnswers } from "./pillars/usePillarAnswers";
 import { ProposalsPanel } from "./proposals/ProposalsPanel";
 import { useResearchPass } from "./proposals/useResearchPass";
 import { RulesPanel } from "./rules/RulesPanel";
@@ -18,7 +17,7 @@ import { SettingsPanel } from "./settings/SettingsPanel";
 import { RecentChanges } from "./RecentChanges";
 import { Stage } from "./Stage";
 import { useAttributeCatalog } from "./useAttributeCatalog";
-import { useChangeHistory } from "./useChangeHistory";
+import { useConfigurationSession } from "./useConfigurationSession";
 import { useCriteriaEditor } from "./useCriteriaEditor";
 import { countByPillar, requiredAttributes, unsourcedShareByPillar } from "./weights";
 
@@ -37,13 +36,13 @@ import { countByPillar, requiredAttributes, unsourcedShareByPillar } from "./wei
 export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   const selection = useSelection();
   const { criteriaSetId, levelId } = selection;
-  const history = useChangeHistory();
-  const pillarAnswers = usePillarAnswers();
+  // The history, its one write in flight and where answers go outlive this screen (PL-033).
+  const { history, pillarAnswers, criteriaAnswers } = useConfigurationSession();
   // Once for the screen rather than once per opened pillar: every criterion row wants the
   // same copy of what the attributes are, and the panel inside a pillar is mounted and
   // unmounted each time one is opened. The history names its changes from it too.
   const catalog = useAttributeCatalog(levelId);
-  const editor = useCriteriaEditor(criteriaSetId, history, catalog.catalog);
+  const editor = useCriteriaEditor(criteriaSetId, history, catalog.catalog, criteriaAnswers);
   // **The one writer of sets, here rather than in its panel** (D-C03-9): its entries and the
   // holds between it and the other writers belong to the screen that owns the history.
   const sets = useCriteriaSets({ selection, history });

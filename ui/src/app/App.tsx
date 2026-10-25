@@ -9,6 +9,7 @@ import { Sidebar } from "../shell/Sidebar";
 import { AcquiringBar } from "../shell/AcquiringBar";
 import { ServerDownCard } from "../shell/ServerDownCard";
 import { TabBar } from "../shell/TabBar";
+import { ConfigurationSessionProvider } from "../routes/configure/ConfigurationSessionProvider";
 import { SelectionProvider } from "../shell/SelectionContext";
 import { SessionProvider } from "../shell/SessionProvider";
 import {
@@ -44,41 +45,45 @@ export function App() {
     <SelectionProvider>
       {/* Inside the selection, so the screens' level-scoped state resets with the level. */}
       <SessionProvider>
-        <DocumentTitle />
-        <div className="layout">
-          <Sidebar />
-          <main className="main">
-            <TabBar />
-            {/* **Under the tabs, on every screen but Acquire.** An acquisition takes minutes
-              and the reason to start one is usually to go and look at something else. */}
-            <AcquiringBar />
-            <div className="content">
-              <ServerDownCard />
-              <Routes>
-                <Route
-                  path="/"
-                  element={<Navigate to={DEFAULT_ROUTE} replace />}
-                />
-                {ROUTES.map((route) => {
-                  // Total by construction, and now provably so: `RoutePath` is a union of the
-                  // route table's own literals, so `SCREENS` must name every one of them and
-                  // this lookup cannot miss. It used to need a `!` -- which was not a
-                  // `noUncheckedIndexedAccess` limitation as its comment claimed, but the
-                  // symptom of `RoutePath` having widened to `string` (P77).
-                  const Screen = SCREENS[route.path];
-                  return (
-                    <Route
-                      key={route.path}
-                      path={route.path}
-                      element={<Screen route={route} />}
-                    />
-                  );
-                })}
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </div>
-          </main>
-        </div>
+        {/* **Above the routes**, so a configuration write in flight keeps its hold, its entry
+            and its answer when the reader leaves Configure before it lands (PL-033). */}
+        <ConfigurationSessionProvider>
+          <DocumentTitle />
+          <div className="layout">
+            <Sidebar />
+            <main className="main">
+              <TabBar />
+              {/* **Under the tabs, on every screen but Acquire.** An acquisition takes minutes
+                and the reason to start one is usually to go and look at something else. */}
+              <AcquiringBar />
+              <div className="content">
+                <ServerDownCard />
+                <Routes>
+                  <Route
+                    path="/"
+                    element={<Navigate to={DEFAULT_ROUTE} replace />}
+                  />
+                  {ROUTES.map((route) => {
+                    // Total by construction, and now provably so: `RoutePath` is a union of the
+                    // route table's own literals, so `SCREENS` must name every one of them and
+                    // this lookup cannot miss. It used to need a `!` -- which was not a
+                    // `noUncheckedIndexedAccess` limitation as its comment claimed, but the
+                    // symptom of `RoutePath` having widened to `string` (P77).
+                    const Screen = SCREENS[route.path];
+                    return (
+                      <Route
+                        key={route.path}
+                        path={route.path}
+                        element={<Screen route={route} />}
+                      />
+                    );
+                  })}
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </div>
+            </main>
+          </div>
+        </ConfigurationSessionProvider>
       </SessionProvider>
     </SelectionProvider>
   );

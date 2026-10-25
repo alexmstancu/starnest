@@ -119,10 +119,13 @@ export function RecentChanges({
         </p>
       )}
 
-      {/* Why everything waits, while it does: Configure sends one write at a time (PL-033). */}
-      {history.busy && (
+      {/* Why everything waits, while it does: Configure sends one write at a time, and set
+          actions wait for the list to show them (PL-033). */}
+      {held && (
         <p className="panel__hint" role="status">
-          A change is being saved; the next waits until it is stored.
+          {history.busy
+            ? "A change is being saved; the next waits until it is stored."
+            : "The list of sets is being read again; undo waits for it."}
         </p>
       )}
 

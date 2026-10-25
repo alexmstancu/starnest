@@ -69,6 +69,11 @@ function nearestFunction(node: ts.Node): ts.Node | undefined {
   return at;
 }
 
+function isSettledThunk(scope: ts.Node): boolean {
+  const parent = scope.parent;
+  return ts.isCallExpression(parent) && calledName(parent) === "settled";
+}
+
 function callsNote(scope: ts.Node): boolean {
   let found = false;
   walk(scope, (node) => {
@@ -87,7 +92,10 @@ function verbsSentWithANote(file: ts.SourceFile): Set<string> {
     if (!ts.isCallExpression(node)) return;
     const name = calledName(node);
     if (name === undefined || !RECORDED.includes(name)) return;
-    const scope = nearestFunction(node);
+    let scope = nearestFunction(node);
+    // A verb sent through `settled`, which reads back an answer lost on the way (PL-033), is
+    // sent from the function that hands it the thunk.
+    while (scope !== undefined && isSettledThunk(scope)) scope = nearestFunction(scope);
     if (scope !== undefined && callsNote(scope)) noted.add(name);
   });
   return noted;
