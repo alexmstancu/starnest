@@ -1,7 +1,7 @@
 -- Every number the domain reads is finite, in the database as well as in Python (PL-167: ST-16,
 -- IN-NAN; decision D61).
 --
--- depends: 0510-a-gate-answer-is-kept-once-written
+-- depends: 0515-every-gate-says-what-it-tests
 --
 -- **Three checks named "finite" tested only for NaN** (`0006`), and PostgreSQL has stored
 -- +Infinity and -Infinity in `numeric` since version 14 -- so each passed both infinities. **The

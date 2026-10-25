@@ -1,7 +1,7 @@
 -- A criterion carries one share bound and one label threshold at most (PL-169: ST-17, IN-LABEL;
 -- decision D62).
 --
--- depends: 0510-a-gate-answer-is-kept-once-written
+-- depends: 0518-every-figure-the-domain-reads-is-finite
 --
 -- **The two tables were keyed for several bounds, and every other layer models one**: the domain
 -- (`ShareThreshold`, `LabelThreshold`), the API, and the contract, whose `labels` stays a
