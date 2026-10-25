@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { replaceSettings } from "../../../api/endpoints";
 import { MATCH_RULE_RESULTS, SETTINGS } from "../../../mocks/fixtures";
 import { mockServer } from "../../../mocks/server";
+import { SLICES_KEY } from "../../../shell/sessionState";
 import {
   expectHeld,
   expectNotHeld,
@@ -2177,6 +2178,33 @@ describe("dismissing the outcome while the set is unread", () => {
       expect(screen.queryByRole("region", { name: "Gate proposals" })).toBeNull(),
     );
   }
+
+  it("shows an outcome that could not be read, and Dismiss hands focus to the set's failure card", async () => {
+    window.sessionStorage.setItem(
+      SLICES_KEY,
+      JSON.stringify({
+        "configure/research-pass": { value: { kind: "finished", pass: { level: "country" } }, level: null },
+      }),
+    );
+    mockServer.use(
+      http.get(`${BASE}/criteria-sets/:id`, () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "the criteria set could not be read" },
+          { status: 500 },
+        ),
+      ),
+    );
+    renderShell("/configure");
+    const card = await within(rulesStage()).findByText(/criteria set could not be loaded/i);
+
+    expect(
+      await theProposals().findByText(/^An earlier pass's outcome could not be read\./),
+    ).toBeInTheDocument();
+    expect(statusLine()).not.toHaveTextContent("€");
+    await dismissByKeyboard();
+
+    expect(document.activeElement).toContainElement(card);
+  });
 
   it("puts focus on the set's failure card, not the page", async () => {
     await aPassThenTheSetUnread(() =>

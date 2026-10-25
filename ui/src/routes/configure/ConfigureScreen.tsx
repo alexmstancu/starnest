@@ -63,7 +63,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   // level-wide and needs no criteria set, but its panel is drawn beside a loaded set's rules; a
   // read that failed, or one still loading, hid Stop, the progress and the spend while the pass
   // went on asking -- and paying. Drawn in stage 4 even then, so there is never a second Stop.
-  const passPanel = levelId !== null && (pass.running || pass.end !== null) && (
+  const passPanel = levelId !== null && (pass.running || pass.dismissable) && (
     <ProposalsPanel
       key={`proposals-${levelId}`}
       levelId={levelId}
