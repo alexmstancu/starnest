@@ -75,7 +75,14 @@ class PostgresMatchRuleResultStore(MatchRuleResultStore):
                 # version is discarded with this savepoint: history for an answer that never
                 # stood is not history.
                 async with connection.transaction():
-                    version = await self._queries.insert_match_rule_answer(connection, **answer)
+                    # The pair's live row first, so a re-check storing a proposal beside it and
+                    # this replacing it take turns rather than interleave (D53).
+                    await self._queries.lock_match_rule_result(
+                        connection, match_rule=answer["match_rule"], candidate=answer["candidate"]
+                    )
+                    version = await self._queries.insert_match_rule_answer(
+                        connection, beside_answer=None, **answer
+                    )
                     written = await self._queries.upsert_match_rule_result(
                         connection, answer=version.id, **answer
                     )
@@ -123,6 +130,7 @@ class PostgresMatchRuleResultStore(MatchRuleResultStore):
                 retrieval_date=result.retrieval_date,
                 override_reason=None,
                 override_date=None,
+                beside_answer=live.answer,
             )
             await self._queries.insert_match_rule_answer_citations(
                 connection, answer=version.id, urls=list(result.citations)
@@ -148,7 +156,11 @@ def _answer_from(row: Any) -> MatchRuleResult:
         override_date=row.override_date,
         recorded_at=row.recorded_at,
         pending_proposal=_pending_proposal_from(row),
-        assumed_citizenships=tuple(CandidateId(held) for held in row.assumed_citizenships),
+        assumed_citizenships=(
+            None
+            if row.assumed_citizenships is None
+            else tuple(CandidateId(held) for held in row.assumed_citizenships)
+        ),
         needs_recheck=bool(row.needs_recheck),
     )
 

@@ -541,6 +541,6 @@ def _evidence_body(answer: MatchRuleResult) -> MatchRuleResultBody:
     whether today's household needs it re-checked (Q239): that is the answers read's to say."""
     return _gate_answer_body(
         answer.model_copy(
-            update={"pending_proposal": None, "assumed_citizenships": (), "needs_recheck": False}
+            update={"pending_proposal": None, "assumed_citizenships": None, "needs_recheck": False}
         )
     )

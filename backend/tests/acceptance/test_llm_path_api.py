@@ -645,6 +645,22 @@ class TestEstimatingAResearchPassBeforeAgreeingToIt:
         assert (plan["gates_total"], plan["llm_call_count"]) == (3, 3)
         assert plan["estimated_cost_eur"] == pytest.approx(0.06)
 
+    async def test_a_pair_the_household_s_citizenship_clears_is_left_out_and_counted(
+        self, database_url: str
+    ) -> None:
+        """Q239. A British household's UK route is decided by its passport: not billed."""
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            await _with_a_household(api)
+            household = (await api.get("/v1/household")).json()
+            await api.put(
+                "/v1/household",
+                json=household | {"citizenships": ["country.romania", "country.united_kingdom"]},
+            )
+            plan = (await api.post("/v1/match-rule-research/plan", json={"level": COUNTRY})).json()
+
+        assert (plan["gates_total"], plan["cleared_by_citizenship"]) == (2, 1)
+        assert plan["estimated_cost_eur"] == pytest.approx(0.04)
+
     async def test_a_gate_research_cannot_answer_is_estimated_at_nothing(
         self, database_url: str
     ) -> None:

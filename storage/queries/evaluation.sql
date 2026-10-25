@@ -373,6 +373,10 @@ SELECT r.id,
                                       'override_reason',        version.override_reason,
                                       'override_date',          version.override_date,
                                       'recorded_at',            version.recorded_at,
+                                      'assumed_citizenships', CASE WHEN version.citizenships_recorded THEN
+                                          COALESCE((SELECT jsonb_agg(held.citizenship ORDER BY held.citizenship)
+                                                    FROM   match_rule_answer_citizenship AS held
+                                                    WHERE  held.answer = version.id), '[]'::jsonb) END,
                                       'is_proposal',            source.source_kind = 'llm',
                                       'citations',              COALESCE(
                                           (SELECT jsonb_agg(page.url ORDER BY page.url)
@@ -415,6 +419,10 @@ SELECT r.id,
                                               'override_reason',        version.override_reason,
                                               'override_date',          version.override_date,
                                               'recorded_at',            version.recorded_at,
+                                              'assumed_citizenships', CASE WHEN version.citizenships_recorded THEN
+                                                  COALESCE((SELECT jsonb_agg(held.citizenship ORDER BY held.citizenship)
+                                                            FROM   match_rule_answer_citizenship AS held
+                                                            WHERE  held.answer = version.id), '[]'::jsonb) END,
                                               'is_proposal',            source.source_kind = 'llm',
                                               'citations',              COALESCE(
                                                   (SELECT jsonb_agg(page.url ORDER BY page.url)
@@ -566,6 +574,10 @@ SELECT r.id,
                                       'override_reason',        version.override_reason,
                                       'override_date',          version.override_date,
                                       'recorded_at',            version.recorded_at,
+                                      'assumed_citizenships', CASE WHEN version.citizenships_recorded THEN
+                                          COALESCE((SELECT jsonb_agg(held.citizenship ORDER BY held.citizenship)
+                                                    FROM   match_rule_answer_citizenship AS held
+                                                    WHERE  held.answer = version.id), '[]'::jsonb) END,
                                       'is_proposal',            source.source_kind = 'llm',
                                       'citations',              COALESCE(
                                           (SELECT jsonb_agg(page.url ORDER BY page.url)
@@ -608,6 +620,10 @@ SELECT r.id,
                                               'override_reason',        version.override_reason,
                                               'override_date',          version.override_date,
                                               'recorded_at',            version.recorded_at,
+                                              'assumed_citizenships', CASE WHEN version.citizenships_recorded THEN
+                                                  COALESCE((SELECT jsonb_agg(held.citizenship ORDER BY held.citizenship)
+                                                            FROM   match_rule_answer_citizenship AS held
+                                                            WHERE  held.answer = version.id), '[]'::jsonb) END,
                                               'is_proposal',            source.source_kind = 'llm',
                                               'citations',              COALESCE(
                                                   (SELECT jsonb_agg(page.url ORDER BY page.url)

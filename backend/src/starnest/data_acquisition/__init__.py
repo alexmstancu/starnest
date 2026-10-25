@@ -53,6 +53,7 @@ from starnest.data_acquisition.research import (
     ResearchOutcome,
     ResearchSpend,
     gates_to_ask,
+    pairs_cleared_by_citizenship,
     plan_research,
     research_gates,
 )
@@ -128,6 +129,7 @@ __all__ = [
     "figures_standing_in",
     "gates_to_ask",
     "open_run",
+    "pairs_cleared_by_citizenship",
     "plan_research",
     "plan_sources",
     "priced",

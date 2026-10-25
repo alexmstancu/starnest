@@ -22,6 +22,8 @@ ITS_ROLLBACK = THE_MIGRATION.with_name(f"{THE_MIGRATION.stem}.rollback.sql")
 #: `0516` cites an answer version from a saved gate warning, so it is undone first, as a real
 #: rollback to before `0510` would undo it.
 A_LATER_ROLLBACK = MIGRATIONS / "0516-a-set-holds-each-rule-as-a-gate-or-a-warning.rollback.sql"
+#: `0517` keeps the citizenships each answer version assumed, so it goes before both.
+THE_LATEST_ROLLBACK = MIGRATIONS / "0517-citizenship-clears-the-gates-it-names.rollback.sql"
 
 GATE = "uk_skilled_worker"
 CANDIDATE = "country.united_kingdom"
@@ -43,6 +45,7 @@ def before_it(connection: psycopg.Connection) -> Iterator[psycopg.Connection]:
     and would commit it.
     """
     with connection.transaction(force_rollback=True):
+        _run(connection, THE_LATEST_ROLLBACK)
         _run(connection, A_LATER_ROLLBACK)
         _run(connection, ITS_ROLLBACK)
         connection.execute(

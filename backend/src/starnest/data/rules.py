@@ -18,7 +18,7 @@ how a caller asks whether anybody has finished writing the rule, and both compou
 MVP ships answer no.
 """
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -168,6 +168,11 @@ class MatchRule(BaseModel):
         """
         return self.level is None or self.level == level
 
+    def is_cleared_for(self, candidate: str, citizenships: Collection[str]) -> bool:
+        """Whether a household holding these citizenships clears this gate about that candidate
+        (Q239): one of them is among those the catalog says clear it, and the gate asks there."""
+        return self.concerns(candidate) and any(held in self.cleared_by for held in citizenships)
+
     def concerns(self, candidate: str) -> bool:
         """Whether this gate is a question about that candidate.
 
@@ -248,18 +253,20 @@ class MatchRuleResult(BaseModel):
             "being pending once a person records an answer again."
         ),
     )
-    assumed_citizenships: tuple[CandidateId, ...] = Field(
-        default=(),
+    assumed_citizenships: tuple[CandidateId, ...] | None = Field(
+        default=None,
         description=(
             "The household citizenships this version assumed, copied when it was written "
-            "(Q239). Empty on a version written before they were recorded."
+            "(Q239). None where they were not recorded -- a version written before 0517 -- "
+            "which is an unknown assumption, not an assumption of none."
         ),
     )
     needs_recheck: bool = Field(
         default=False,
         description=(
-            "Whether the household's citizenships now differ from those it assumed. A flag "
-            "only: the answer still applies until a person records again (Q239)."
+            "Whether the household's citizenships now differ from those it assumed, or it "
+            "assumed something unknown while the household holds any. A flag only: the answer "
+            "still applies until a person records again (Q239)."
         ),
     )
 

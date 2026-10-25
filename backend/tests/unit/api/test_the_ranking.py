@@ -40,7 +40,7 @@ class OneSet:
 
 
 class Roster:
-    async def read_candidates(self, *, level: str):
+    async def read_candidates(self, *, level: str | None = None):
         return tuple(
             Candidate(id=each, name=each.removeprefix("country."), level=COUNTRY)
             for each in (PORTUGAL, SPAIN, GREECE)

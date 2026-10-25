@@ -21,6 +21,7 @@ from psycopg_pool import AsyncConnectionPool
 from starnest.data import MatchResult, MatchRuleResult
 from starnest.household import Household
 from starnest.storage import PostgresHouseholdStore, PostgresMatchRuleResultStore
+from starnest.storage.queries import load_queries
 
 pytestmark = pytest.mark.storage
 
@@ -442,12 +443,87 @@ class TestAnAnswerRecordsTheCitizenshipsItAssumed:
             False,
         )
 
-    async def test_an_answer_recorded_with_no_household_assumed_nothing_and_is_never_flagged(
+    async def test_an_answer_recorded_with_no_household_is_flagged_once_one_is_recorded(
         self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
     ) -> None:
-        """Nobody knows what it assumed, so flagging it would claim something unknown."""
+        """It assumed no citizenship at all, which the household's now contradict."""
         await answers.record(an_answer("manual", MatchResult.NOT_MATCHING, OFFICIAL_PAGE, at=NOON))
+        unflagged = await the_answer(answers)
         await hold_citizenships(pool, "country.united_kingdom")
 
         recorded = await the_answer(answers)
-        assert (recorded.assumed_citizenships, recorded.needs_recheck) == ((), False)
+        assert (unflagged.assumed_citizenships, unflagged.needs_recheck) == ((), False)
+        assert (recorded.assumed_citizenships, recorded.needs_recheck) == ((), True)
+
+    async def test_an_answer_older_than_its_assumptions_is_unknown_and_flagged(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        """A version written before 0517 recorded none: an unknown assumption cannot be shown to
+        match, so it is flagged whenever the household holds a citizenship -- and kept as it is."""
+        await answers.record(an_answer("manual", MatchResult.NOT_MATCHING, OFFICIAL_PAGE, at=NOON))
+        async with pool.connection() as connection:
+            await connection.execute("UPDATE match_rule_answer SET citizenships_recorded = false")
+        without_a_household = await the_answer(answers)
+
+        await hold_citizenships(pool, "country.romania")
+
+        legacy = await the_answer(answers)
+        assert (without_a_household.assumed_citizenships, without_a_household.needs_recheck) == (
+            None,
+            False,
+        )
+        assert (legacy.assumed_citizenships, legacy.needs_recheck) == (None, True)
+        assert legacy.match_result is MatchResult.NOT_MATCHING
+
+
+class TestAPendingProposalIsNamedByTheAnswerItStandsBeside:
+    """D53, 0517. `recorded_at` is each transaction's start, so ordering by it is wrong."""
+
+    async def test_a_person_s_answer_begun_before_a_proposal_and_committed_after_settles_it(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        """Two connections interleaved: the person's transaction starts first, the re-check's
+        proposal is stored and committed beside the old answer, then the person's commits. By
+        time the proposal reads as newer; it stood beside an answer that is no longer live."""
+        await answers.record(an_answer("manual", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING))
+        queries = load_queries()
+        person = an_answer("manual", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON)
+        written = {
+            "match_rule": GATE,
+            "candidate": UNITED_KINGDOM,
+            "match_result": str(person.match_result),
+            "reason": person.reason,
+            "data_source": "manual",
+            "reference_period_start": None,
+            "reference_period_end": None,
+            "retrieval_date": NOON,
+            "override_reason": None,
+            "override_date": None,
+        }
+
+        async with pool.connection() as connection, connection.transaction():
+            await connection.execute("SELECT now()")
+            await asyncio.sleep(0.01)
+            assert await answers.propose_beside(
+                an_answer("llm", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON, is_proposal=True)
+            )
+            version = await queries.insert_match_rule_answer(
+                connection, beside_answer=None, **written
+            )
+            await queries.upsert_match_rule_result(connection, answer=version.id, **written)
+
+        settled = await the_answer(answers)
+        assert (settled.data_source, settled.match_result) == ("manual", MatchResult.NOT_MATCHING)
+        assert settled.pending_proposal is None
+
+    async def test_a_proposal_stored_beside_the_live_answer_is_pending(
+        self, answers: PostgresMatchRuleResultStore
+    ) -> None:
+        """The control: the same proposal, beside the answer that is still live."""
+        await answers.record(an_answer("manual", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING))
+
+        await answers.propose_beside(
+            an_answer("llm", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON, is_proposal=True)
+        )
+
+        assert (await the_answer(answers)).pending_proposal is not None

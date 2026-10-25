@@ -21,6 +21,7 @@ from starnest.data_acquisition import (
     Researched,
     SpendCapNotSetError,
     gates_to_ask,
+    pairs_cleared_by_citizenship,
     plan_research,
     research_gates,
 )
@@ -810,3 +811,55 @@ class TestARecheckAsksOnlyWhatAPersonNamed:
         (refusal,) = outcome.refusals
         assert refusal.startswith("UK Skilled Worker route for Portugal: no answer a person")
         assert outcome.calls == 1
+
+
+# The UK route as 0517 seeds it: about the UK, cleared by a British or Irish passport.
+UNITED_KINGDOM = Candidate(
+    id="country.united_kingdom", name="United Kingdom", level=COUNTRY, country_code="GB"
+)
+THE_UK_ROUTE = MatchRule(
+    id="uk_skilled_worker",
+    name="UK Skilled Worker route",
+    level="country",
+    researchable=True,
+    concerned_candidates=("country.united_kingdom",),
+    cleared_by=("country.ireland", "country.united_kingdom"),
+)
+
+
+class TestWhatACitizenshipAlreadyClears:
+    """Q239. A pair the household's passport decides is never asked, never billed, and counted."""
+
+    async def test_a_pair_the_household_s_citizenship_clears_is_never_asked(self) -> None:
+        researcher = StubResearcher()
+
+        outcome = await research_gates(
+            researcher=researcher,
+            rules=[THE_UK_ROUTE, THE_SWISS_QUOTA],
+            candidates=[UNITED_KINGDOM, SWITZERLAND],
+            citizenships=["country.ireland"],
+            results=RecordingResults(),
+            spend_cap_eur=Decimal(1),
+        )
+
+        assert researcher.asked == [("ch_eu_efta_quota", "country.switzerland")]
+        assert [str(proposal.match_rule) for proposal in outcome.proposals] == ["ch_eu_efta_quota"]
+
+    def test_the_estimate_leaves_it_out_and_counts_it(self) -> None:
+        scope = ([THE_UK_ROUTE, THE_SWISS_QUOTA], [UNITED_KINGDOM, SWITZERLAND])
+
+        estimate = plan_research(
+            researcher=StubResearcher(),
+            rules=scope[0],
+            candidates=scope[1],
+            citizenships=["country.united_kingdom"],
+        )
+
+        assert estimate.calls == 1
+        assert pairs_cleared_by_citizenship(*scope, citizenships=["country.united_kingdom"]) == 1
+
+    def test_a_citizenship_that_clears_nothing_leaves_every_pair_asked(self) -> None:
+        scope = ([THE_UK_ROUTE, THE_SWISS_QUOTA], [UNITED_KINGDOM, SWITZERLAND])
+
+        assert len(gates_to_ask(*scope, citizenships=["country.romania"])) == 2
+        assert pairs_cleared_by_citizenship(*scope, citizenships=["country.romania"]) == 0

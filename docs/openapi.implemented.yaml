@@ -1688,11 +1688,12 @@ components:
     MatchRuleResultBody:
       properties:
         assumed_citizenships:
-          default: []
-          items:
-            type: string
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
           title: Assumed Citizenships
-          type: array
         candidate:
           title: Candidate
           type: string
@@ -2281,6 +2282,10 @@ components:
       description: What a research pass would ask and what it would cost (`reqs.md`
         6.3).
       properties:
+        cleared_by_citizenship:
+          default: 0
+          title: Cleared By Citizenship
+          type: integer
         estimate_basis:
           anyOf:
           - type: string

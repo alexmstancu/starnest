@@ -2151,20 +2151,22 @@ components:
                 ended period never expires an answer: it applies until a person changes it. Null
                 only on an answer not yet stored.
             assumed_citizenships:
-              type: array
+              type: [array, "null"]
               description: >-
                 Candidate ids of the household citizenships this answer assumed, copied when it was
-                recorded (Q239). Empty on an answer recorded before they were kept, or with no
-                household, and always empty on a ranking's gate evidence.
+                recorded (Q239); empty when it was recorded with no household. **Null means not
+                recorded**: an answer recorded before 0517 has an unknown assumption. Null too on
+                an answer not yet stored and on a ranking's gate evidence.
               items: { type: string }
             needs_recheck:
               type: boolean
               description: >-
-                The household's citizenships differ from those this answer assumed, so a person
-                should re-check it (`researchMatchRules` with `recheck`, or record again). A flag
-                only: the answer still applies until a person records again, and is never expired
-                or overwritten. False where it assumed nothing on record, and always false on a
-                ranking's gate evidence.
+                The household's citizenships differ from those this answer assumed -- or its
+                assumption is unknown (null) while the household holds any, since an unknown
+                assumption cannot be shown to match -- so a person should re-check it
+                (`researchMatchRules` with `recheck`, or record again). A flag only: the answer
+                still applies until a person records again, and is never expired or overwritten.
+                Always false on a ranking's gate evidence.
             pending_proposal:
               description: >-
                 What a re-check found about an answer a person recorded, stored beside it after it
@@ -2331,7 +2333,7 @@ components:
 
     ResearchPlan:
       type: object
-      required: [gates_total, llm_call_count, estimated_cost_eur]
+      required: [gates_total, llm_call_count, estimated_cost_eur, cleared_by_citizenship]
       properties:
         gates_total:
           type: integer
@@ -2341,6 +2343,13 @@ components:
           description: "Equal to `gates_total` while one gate is one question, which is how the researcher asks."
         estimated_cost_eur: { type: number }
         estimate_basis: { type: [string, "null"] }
+        cleared_by_citizenship:
+          type: integer
+          minimum: 0
+          description: >-
+            Pairs left out of `gates_total` because a citizenship the household holds clears them
+            (MatchRule.cleared_by, Q239): the passport decides them, so a model is never asked or
+            paid. The pass leaves out the same pairs.
 
     Run:
       type: object

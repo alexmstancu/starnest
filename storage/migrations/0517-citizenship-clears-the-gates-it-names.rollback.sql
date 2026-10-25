@@ -8,7 +8,7 @@
 --
 -- **Locked before it counts** (BE-A1): a row committed between the count and the drop would
 -- escape the refusal.
-LOCK TABLE match_rule, match_rule_candidate, match_rule_answer_citizenship,
+LOCK TABLE match_rule, match_rule_candidate, match_rule_answer_citizenship, match_rule_answer,
            evaluation_citizenship, non_match_reason, candidate_gate_warning
     IN SHARE ROW EXCLUSIVE MODE;
 
@@ -38,9 +38,16 @@ ALTER TABLE non_match_reason DROP COLUMN IF EXISTS decided_by_citizenship;
 
 DROP TABLE IF EXISTS evaluation_citizenship;
 DROP TABLE IF EXISTS match_rule_answer_citizenship;
+ALTER TABLE match_rule_answer
+    DROP CONSTRAINT IF EXISTS match_rule_answer_stands_beside_an_answer_of_its_pair;
+ALTER TABLE match_rule_answer DROP COLUMN IF EXISTS beside_answer;
+ALTER TABLE match_rule_answer DROP COLUMN IF EXISTS citizenships_recorded;
 
 DELETE FROM match_rule_candidate WHERE match_rule = 'eu_free_movement';
 
 ALTER TABLE match_rule DROP COLUMN IF EXISTS decided_by_citizenship;
+UPDATE match_rule
+SET    description = 'The candidate is an EU or EEA state, and the household''s citizenship carries free movement there.'
+WHERE  id = 'eu_free_movement';
 
 DROP TABLE IF EXISTS match_rule_clearing_citizenship;

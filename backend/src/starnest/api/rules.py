@@ -41,11 +41,13 @@ from starnest.data import (
 )
 from starnest.data_acquisition import (
     NoResearcherConfiguredError,
+    pairs_cleared_by_citizenship,
     plan_research,
     research_gates,
 )
 from starnest.evaluation import describe_compound_rule
 from starnest.evaluation.wording import names_in
+from starnest.household import HouseholdNotConfiguredError
 
 router = APIRouter(tags=["rules"])
 
@@ -118,7 +120,7 @@ class MatchRuleResultBody(BaseModel):
     pending_proposal: PendingProposalBody | None = None
     # What the answer assumed, and whether the household has changed since (Q239). A flag for a
     # person to act on: the answer applies until a person records again.
-    assumed_citizenships: tuple[str, ...] = ()
+    assumed_citizenships: tuple[str, ...] | None = None
     needs_recheck: bool = False
 
 
@@ -237,6 +239,9 @@ class ResearchPlanBody(BaseModel):
     llm_call_count: int
     estimated_cost_eur: float
     estimate_basis: str | None = None
+    # Pairs left out because the household's citizenships clear them (Q239): never asked, never
+    # billed, and counted so the plan says why it asks fewer than the gates concern.
+    cleared_by_citizenship: int = 0
 
 
 class ResearchOutcomeBody(BaseModel):
@@ -373,6 +378,7 @@ async def plan_match_rule_research(
     results: MatchRuleResults,
     catalog: Catalog,
     candidates: Candidates,
+    households: Households,
 ) -> ResearchPlanBody:
     """What researching the gates would cost, without asking anything.
 
@@ -395,18 +401,33 @@ async def plan_match_rule_research(
     await _refuse_while_the_llm_source_is_off(catalog)
 
     wanted_rules, roster = await _research_targets(body, catalog, candidates)
+    answered = await results.read_results()
+    # With no household recorded nothing is cleared, and the pass itself refuses; the estimate
+    # still prices what it would ask.
+    try:
+        citizenships = [str(held) for held in (await households.get_household()).citizenships]
+    except HouseholdNotConfiguredError:
+        citizenships = []
     estimate = plan_research(
         researcher=researcher,
         rules=wanted_rules,
         candidates=roster,
-        already_answered=await results.read_results(),
+        already_answered=answered,
         recheck=body.rechecked_pairs,
+        citizenships=citizenships,
     )
     return ResearchPlanBody(
         gates_total=estimate.calls,
         llm_call_count=estimate.calls,
         estimated_cost_eur=float(estimate.cost_eur),
         estimate_basis=estimate.basis or None,
+        cleared_by_citizenship=pairs_cleared_by_citizenship(
+            wanted_rules,
+            roster,
+            answered,
+            recheck=body.rechecked_pairs,
+            citizenships=citizenships,
+        ),
     )
 
 
@@ -563,7 +584,11 @@ def _result_body(result: MatchRuleResult) -> MatchRuleResultBody:
         is_proposal=result.is_proposal,
         recorded_at=result.recorded_at,
         pending_proposal=_pending_body(result.pending_proposal),
-        assumed_citizenships=tuple(str(held) for held in result.assumed_citizenships),
+        assumed_citizenships=(
+            None
+            if result.assumed_citizenships is None
+            else tuple(str(held) for held in result.assumed_citizenships)
+        ),
         needs_recheck=result.needs_recheck,
     )
 

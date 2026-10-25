@@ -77,6 +77,7 @@ def _without_the_gate(connection: psycopg.Connection, gate: str) -> None:
         "(SELECT id FROM match_rule_answer WHERE match_rule = %s)",
         "DELETE FROM match_rule_answer WHERE match_rule = %s",
         "DELETE FROM match_rule_research_spend WHERE match_rule = %s",
+        "DELETE FROM match_rule_clearing_citizenship WHERE match_rule = %s",
         "DELETE FROM match_rule WHERE id = %s",
     ):
         connection.execute(referring, (gate,))

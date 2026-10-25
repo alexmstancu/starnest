@@ -129,11 +129,7 @@ class Citizenship:
 
     def clears(self, gate: str) -> bool:
         rule = self.gates.get(gate)
-        return (
-            rule is not None
-            and rule.concerns(self.candidate)
-            and not self.held.isdisjoint(rule.cleared_by)
-        )
+        return rule is not None and rule.is_cleared_for(self.candidate, self.held)
 
     def refuses(self, gate: str) -> bool:
         rule = self.gates.get(gate)

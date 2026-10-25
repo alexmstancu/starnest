@@ -699,6 +699,11 @@ def _gate_answer_from(frozen: dict[str, Any] | None) -> MatchRuleResult | None:
             else datetime.fromisoformat(frozen["override_date"])
         ),
         recorded_at=datetime.fromisoformat(frozen["recorded_at"]),
+        assumed_citizenships=(
+            None
+            if (assumed := frozen.get("assumed_citizenships")) is None
+            else tuple(CandidateId(held) for held in assumed)
+        ),
     )
 
 

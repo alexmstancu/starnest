@@ -313,5 +313,6 @@ class TestAGateConcernsCandidatesAtItsLevel:
         _concern(connection, gate="uk_skilled_worker", candidate="country.ireland", level="country")
 
         assert connection.execute(
-            "SELECT level FROM match_rule_candidate WHERE candidate = 'country.ireland'"
+            "SELECT level FROM match_rule_candidate"
+            " WHERE candidate = 'country.ireland' AND match_rule = 'uk_skilled_worker'"
         ).fetchall() == [("country",)]

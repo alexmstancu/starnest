@@ -175,12 +175,13 @@ class TestEveryGateNamingCitizenshipsIsEvaluatedAgainstTheHousehold:
     ) -> None:
         gates = (await api.get("/v1/match-rules", params={"level": COUNTRY})).json()["items"]
         named = [gate for gate in gates if gate["cleared_by"]]
-        clearing = {held for gate in named for held in gate["cleared_by"]}
-        roster = (await api.get("/v1/candidates", params={"level": COUNTRY})).json()["items"]
-        (clears_nothing, *_) = sorted(
-            {row["id"] for row in roster} - clearing - {UNITED_KINGDOM, "country.switzerland"}
-        )
-        assert {UK_ROUTE, FREE_MOVEMENT, "ch_eu_efta_quota"} <= {gate["id"] for gate in named}
+        roster = {
+            row["id"]
+            for row in (await api.get("/v1/candidates", params={"level": COUNTRY})).json()["items"]
+        }
+        assert {UK_ROUTE, FREE_MOVEMENT, "ch_eu_efta_quota", "li_eea_quota"} <= {
+            gate["id"] for gate in named
+        }
 
         for gate in named:
             await _enforce(api, a_scratch_criteria_set, gate["id"])
@@ -194,6 +195,7 @@ class TestEveryGateNamingCitizenshipsIsEvaluatedAgainstTheHousehold:
                 assert [c for c in concerned if gate["id"] in _gates_refusing(ranked[c])] == [], (
                     f"{held} should clear {gate['id']}"
                 )
+            (clears_nothing, *_) = sorted(roster - set(gate["cleared_by"]))
             await _hold(api, clears_nothing)
             ranked = await _ranked(api, a_scratch_criteria_set)
             assert all(gate["id"] in _gates_refusing(ranked[c]) for c in concerned), (

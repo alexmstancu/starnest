@@ -609,11 +609,13 @@ VALUES (:criterion, 'ShareComposition', :label, :min_share, :max_share);
 -- reached the ranking would rule a candidate out on an answer somebody corrected. r.answer names
 -- the version the live row shows, so a saved refusal can pin it.
 --
--- **Beside a person's answer, the proposal a re-check stored after it** (D53): the newest model
--- version written later than the live one, which never became live because a model never
--- replaces a person. It is pending until a person records again, which makes the live version
--- newer than it -- so "take the proposal" and "answer differently" both settle it, and nothing
--- has to be deleted or flagged. Versions are ordered by (recorded_at, id), as history is.
+-- **Beside a person's answer, the proposal a re-check stored beside it** (D53): the newest model
+-- version naming the live one as `beside_answer`, which never became live because a model never
+-- replaces a person. It is pending until a person records again, which moves the live row to
+-- another version -- so "take the proposal" and "answer differently" both settle it, and nothing
+-- has to be deleted or flagged. **Named by id, never by time** (0517): `recorded_at` is each
+-- transaction's start, so a person's answer begun before a proposal and committed after it read
+-- as the older of the two.
 SELECT r.match_rule,
        r.candidate,
        r.answer,
@@ -640,20 +642,25 @@ SELECT r.match_rule,
            '[]'::jsonb) AS citations,
        live.recorded_at,
        -- The citizenships the live version assumed, and whether the household's differ now
-       -- (Q239). A version that assumed nothing on record is never flagged: nobody knows what
-       -- it assumed. Flagged only; the answer applies until a person records again.
-       ARRAY(SELECT a.citizenship
-             FROM   match_rule_answer_citizenship AS a
-             WHERE  a.answer = r.answer
-             ORDER  BY a.citizenship) AS assumed_citizenships,
-       EXISTS (SELECT 1 FROM match_rule_answer_citizenship AS a WHERE a.answer = r.answer)
-       AND ARRAY(SELECT a.citizenship
+       -- (Q239). NULL where the version recorded none (written before 0517): an unknown
+       -- assumption cannot be shown to match, so it is flagged while the household holds any.
+       -- Flagged only; the answer applies until a person records again.
+       CASE WHEN live.citizenships_recorded THEN
+           ARRAY(SELECT a.citizenship
+                 FROM   match_rule_answer_citizenship AS a
+                 WHERE  a.answer = r.answer
+                 ORDER  BY a.citizenship)
+       END AS assumed_citizenships,
+       CASE WHEN live.citizenships_recorded THEN
+           ARRAY(SELECT a.citizenship
                  FROM   match_rule_answer_citizenship AS a
                  WHERE  a.answer = r.answer
                  ORDER  BY a.citizenship)
            IS DISTINCT FROM ARRAY(SELECT held.candidate
                                   FROM   household_citizenship AS held
-                                  ORDER  BY held.candidate) AS needs_recheck,
+                                  ORDER  BY held.candidate)
+       ELSE EXISTS (SELECT 1 FROM household_citizenship)
+       END AS needs_recheck,
        pending.id                     AS pending_answer,
        pending.match_result           AS pending_match_result,
        pending.reason                 AS pending_reason,
@@ -674,12 +681,10 @@ LEFT   JOIN LATERAL (
        SELECT version.*
        FROM   match_rule_answer AS version
        JOIN   data_source AS model ON model.id = version.data_source AND model.source_kind = 'llm'
-       WHERE  version.match_rule = r.match_rule
-         AND  version.candidate = r.candidate
-         AND  (version.recorded_at, version.id) > (live.recorded_at, live.id)
+       WHERE  version.beside_answer = r.answer
          AND  NOT EXISTS (SELECT 1 FROM data_source AS s
                           WHERE s.id = r.data_source AND s.source_kind = 'llm')
-       ORDER  BY version.recorded_at DESC, version.id DESC
+       ORDER  BY version.id DESC
        LIMIT  1
 ) AS pending ON true
 WHERE  (:candidate::text IS NULL OR r.candidate = :candidate)
@@ -687,7 +692,7 @@ WHERE  (:candidate::text IS NULL OR r.candidate = :candidate)
   AND  (:level::text IS NULL OR c.level = :level)
 ORDER  BY r.candidate, r.match_rule;
 
--- name: insert_match_rule_answer(match_rule, candidate, match_result, reason, data_source, reference_period_start, reference_period_end, retrieval_date, override_reason, override_date)<!
+-- name: insert_match_rule_answer(match_rule, candidate, match_result, reason, data_source, reference_period_start, reference_period_end, retrieval_date, override_reason, override_date, beside_answer)<!
 -- One version of a gate's answer, never changed once written (Q237). The live row is pointed at
 -- it by upsert_match_rule_result in the same transaction.
 --
@@ -697,10 +702,10 @@ WITH version AS (
     INSERT INTO match_rule_answer (
         match_rule, candidate, match_result, reason, data_source,
         reference_period_start, reference_period_end, retrieval_date,
-        override_reason, override_date)
+        override_reason, override_date, beside_answer)
     VALUES (:match_rule, :candidate, :match_result, :reason, :data_source,
             :reference_period_start, :reference_period_end, :retrieval_date,
-            :override_reason, :override_date)
+            :override_reason, :override_date, :beside_answer)
     RETURNING id
 ), assumed AS (
     INSERT INTO match_rule_answer_citizenship (answer, citizenship)
@@ -711,8 +716,10 @@ SELECT id FROM version;
 
 -- name: lock_match_rule_result(match_rule, candidate)^
 -- The live answer of one pair, locked, and whether a person gave it. Read before a re-check's
--- finding is stored beside it, so a person cannot replace it between the check and the write.
-SELECT (SELECT s.source_kind <> 'llm' FROM data_source AS s WHERE s.id = r.data_source)
+-- finding is stored beside it, so a person cannot replace it between the check and the write,
+-- and before a new answer is recorded, so the two writers to one pair take turns.
+SELECT r.answer,
+       (SELECT s.source_kind <> 'llm' FROM data_source AS s WHERE s.id = r.data_source)
            AS answered_by_a_person
 FROM   match_rule_result AS r
 WHERE  r.match_rule = :match_rule AND r.candidate = :candidate

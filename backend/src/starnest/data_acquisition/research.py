@@ -15,7 +15,7 @@ The port is declared here and implemented in `data_sources/llm/`, like every oth
 
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -187,7 +187,9 @@ async def research_gates(
     proposal is stored and before the next question is asked, so a pass that dies keeps the
     record of what it paid for. Given no ledger, the spend is reported and logged only.
     """
-    to_ask = gates_to_ask(rules, candidates, already_answered, recheck=recheck)
+    to_ask = gates_to_ask(
+        rules, candidates, already_answered, recheck=recheck, citizenships=citizenships
+    )
     refuse_unless_capped(
         costs_money=researcher.costs_money and bool(to_ask),
         cap_eur=spend_cap_eur,
@@ -306,6 +308,7 @@ def gates_to_ask(
     already_answered: Sequence[MatchRuleResult] = (),
     *,
     recheck: Sequence[GatePair] | None = None,
+    citizenships: Collection[str] = (),
 ) -> tuple[tuple[MatchRule, Candidate], ...]:
     """Every (gate, candidate) a pass would ask about, in the order it would ask.
 
@@ -324,6 +327,10 @@ def gates_to_ask(
     a bill -- **unless a person asks for it** (D53). Given `recheck`, those confirmed pairs are
     the whole scope, still narrowed by what research can answer; one nobody confirmed is refused
     before anything is asked.
+
+    **Nor a pair the household's citizenships clear** (Q239): a British household's UK route is
+    decided by its passport, so a model asked about it is billed for an answer the ranking never
+    reads. `pairs_cleared_by_citizenship` counts what this leaves out.
     """
     confirmed = {
         (str(answer.match_rule), str(answer.candidate))
@@ -340,7 +347,23 @@ def gates_to_ask(
         for candidate in candidates
         if rule.applies_at(str(candidate.id.level_id))
         and rule.concerns(str(candidate.id))
+        and not rule.is_cleared_for(str(candidate.id), citizenships)
         and _is_asked((str(rule.id), str(candidate.id)), confirmed, rechecked)
+    )
+
+
+def pairs_cleared_by_citizenship(
+    rules: Sequence[MatchRule],
+    candidates: Sequence[Candidate],
+    already_answered: Sequence[MatchRuleResult] = (),
+    *,
+    recheck: Sequence[GatePair] | None = None,
+    citizenships: Collection[str] = (),
+) -> int:
+    """How many pairs a pass would have asked about, but the household's citizenships clear."""
+    asked = gates_to_ask(rules, candidates, already_answered, recheck=recheck)
+    return sum(
+        1 for rule, candidate in asked if rule.is_cleared_for(str(candidate.id), citizenships)
     )
 
 
@@ -378,6 +401,7 @@ def plan_research(
     candidates: Sequence[Candidate],
     already_answered: Sequence[MatchRuleResult] = (),
     recheck: Sequence[GatePair] | None = None,
+    citizenships: Collection[str] = (),
 ) -> Estimate:
     """What a research pass would cost, without asking anything.
 
@@ -386,5 +410,9 @@ def plan_research(
     only thing that knows what it charges.
     """
     return researcher.estimate_for(
-        len(gates_to_ask(rules, candidates, already_answered, recheck=recheck))
+        len(
+            gates_to_ask(
+                rules, candidates, already_answered, recheck=recheck, citizenships=citizenships
+            )
+        )
     )
