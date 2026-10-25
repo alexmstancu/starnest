@@ -2,8 +2,9 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
+import { replaceSettings } from "../../api/endpoints";
 import type { components } from "../../api/schema";
-import { ATTRIBUTES } from "../../mocks/fixtures";
+import { ATTRIBUTES, SETTINGS } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 
@@ -237,19 +238,30 @@ describe("the comparison", () => {
     expect(card).toHaveTextContent("Not comparable, no data: Economy, Safety, Family");
   });
 
-  it("tags no line when the criteria set cannot be read", async () => {
+  /**
+   * PL-001, from review. **The set's weights are a read like any other**: they were silence
+   * when they failed, so every Weight read "—" and no line carried "#N priority", with nothing
+   * to say why and no way to read them again.
+   */
+  it("says the set's weights could not be loaded, and draws them once read again", async () => {
     mockServer.use(
-      http.get(`${BASE}/criteria-sets/:id`, () =>
-        HttpResponse.json({ code: "internal_error", message: "broke" }, { status: 500 }),
-      ),
+      http.get(`${BASE}/criteria-sets/:id`, () => new HttpResponse(null, { status: 503 })),
     );
     renderShell("/compare");
 
     await compare("Portugal", "Netherlands");
 
-    const card = await cardOf("Netherlands");
-    expect(linesUnder(card, "Behind on")).toEqual(["Economy\u22121.8"]);
-    expect(screen.queryByText(/priority/)).toBeNull();
+    const comparison = within(screen.getByRole("region", { name: "Compare" }));
+    expect(await comparison.findByText(/weights could not be loaded/i)).toBeInTheDocument();
+    expect(comparison.queryByRole("table")).toBeNull();
+    expect(comparison.queryByText("\u2014")).toBeNull();
+
+    mockServer.resetHandlers();
+    await userEvent.click(comparison.getByRole("button", { name: "Try again" }));
+
+    const economy = (await screen.findByRole("button", { name: "Economy" })).closest("tr")!;
+    expect(economy).toHaveTextContent("40.0%");
+    expect(economy).toHaveTextContent("#1 priority");
   });
 
   it("reports a refusal from the server rather than showing an empty table", async () => {
@@ -885,6 +897,24 @@ describe("the attribute figures inside a pillar", () => {
 });
 
 describe("when a comparison cannot be drawn", () => {
+  /**
+   * PL-005. **A comparison is a difference between two scores**, so with no top of the score
+   * range there is nothing to compare -- said at once, from the settings, rather than after a
+   * reader has picked a focus and comparators the server was always going to refuse.
+   */
+  it("says Nothing to compare before anything is picked while the score range is unset", async () => {
+    await replaceSettings({ ...SETTINGS, score_scale_max: null });
+    renderShell("/compare");
+
+    const compareScreen = within(screen.getByRole("region", { name: "Compare" }));
+    expect(
+      await compareScreen.findByRole("heading", { name: "Nothing to compare" }),
+    ).toBeInTheDocument();
+    expect(compareScreen.queryByRole("combobox", { name: /focus/i })).toBeNull();
+    expect(compareScreen.queryByRole("button", { name: /^compare$/i })).toBeNull();
+    expect(compareScreen.queryByRole("alert")).toBeNull();
+  });
+
   it("says what to choose before anything is selected in the sidebar", async () => {
     mockServer.use(
       http.get(`${BASE}/criteria-sets`, () => HttpResponse.json({ items: [] })),

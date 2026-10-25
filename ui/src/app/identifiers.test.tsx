@@ -281,7 +281,7 @@ const ARRANGEMENTS: Record<ScreenState, () => Promise<void>> = {
   "Compare, the score range unset": async () => {
     await scoreRangeUnset();
     renderShell("/compare");
-    await askForAComparison();
+    // No picker to ask with: the card stands in its place from the start (PL-005).
     await screen.findByRole("region", { name: "Nothing to compare" });
   },
   "Compare, nothing compared yet": async () => {

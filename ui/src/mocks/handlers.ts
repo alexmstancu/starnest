@@ -34,7 +34,6 @@ import {
   RUNS,
   RUN_PLAN,
   SETTINGS,
-  MOCK_SCORE_SCALE,
   STARTED_RUN,
   STARTED_RUN_DETAIL,
   STORED_VALUES,
@@ -451,6 +450,8 @@ export const handlers = [
     if (missing) return missing;
     const criteriaSet = query.get("criteria_set")!;
     const level = query.get("level")!;
+    const unset = refusedForAnUnsetScale();
+    if (unset) return unset;
 
     return HttpResponse.json(rankingFor(criteriaSet, level, scaleInForce()));
   }),
@@ -469,6 +470,8 @@ export const handlers = [
     const criteriaSet = query.get("criteria_set")!;
     const level = query.get("level")!;
 
+    const unset = refusedForAnUnsetScale();
+    if (unset) return unset;
     const candidateId = String(params["candidateId"]);
     const ranked = rankingFor(criteriaSet, level, scaleInForce()).candidates.find(
       (each) => each.candidate === candidateId,
@@ -494,6 +497,8 @@ export const handlers = [
       level: string;
       note?: string;
     };
+    const unset = refusedForAnUnsetScale();
+    if (unset) return unset;
     // Frozen with it: a saved ranking keeps the scale it was computed on, and the results it
     // computed, whatever the setting and the figures do afterwards.
     const ranking = rankingFor(body.criteria_set, body.level, scaleInForce());
@@ -640,7 +645,8 @@ export const handlers = [
 
   /**
    * **Refuses what the server refuses, in its order and with its codes** (PL-091): the required
-   * parameters first, then the limit being set (`comparisons.py`), then `compare`'s own checks
+   * parameters first, then the score range being set (`the_ranking`), then the limit being set
+   * (`comparisons.py`), then `compare`'s own checks
    * -- none, too many, the focus among them, one named twice, and a candidate this level's
    * ranking does not hold, which is how a mixed-level request is refused.
    */
@@ -652,6 +658,8 @@ export const handlers = [
     const level = query.get("level")!;
     const focus = query.get("focus")!;
     const comparators = query.getAll("comparators");
+    const unset = refusedForAnUnsetScale();
+    if (unset) return unset;
     if (settings.comparator_limit === null || settings.comparator_limit === undefined) {
       return HttpResponse.json(
         {
@@ -1010,15 +1018,31 @@ function missingFrom(query: URLSearchParams, required: readonly string[]) {
 }
 
 /**
- * The scale a live score is on: the setting, as the server reads it.
- *
- * **Kinder than the server when the setting is unset**, as these handlers already were: the
- * server refuses every score with `score_scale_not_set` there, and a test that needs that
- * refusal still arranges it itself. Made faithful, the sidebar's counts print the raw code --
- * a defect of its own, recorded with PL-062 rather than fixed under it.
+ * **What the server answers in place of a score while the top of the range is unset**
+ * (`rankings.py::the_ranking`): a 409 `score_scale_not_set`, after the request's own
+ * parameters and before anything else. Every handler that scores asks this first, so a mock
+ * that scored onto a range nobody chose can no longer hide a screen that mishandles the
+ * refusal (PL-005).
  */
+function refusedForAnUnsetScale(): Response | null {
+  if (settings.score_scale_max !== null && settings.score_scale_max !== undefined) return null;
+  return HttpResponse.json(
+    {
+      code: "score_scale_not_set",
+      message:
+        "score_scale_max is not set, so there is no scale to score onto. Set it in Settings; " +
+        "it is provisional by design and has no default.",
+    },
+    { status: 409 },
+  );
+}
+
+/** The scale a live score is on: the setting, which `refusedForAnUnsetScale` has checked. */
 function scaleInForce(): number {
-  return settings.score_scale_max ?? MOCK_SCORE_SCALE;
+  if (settings.score_scale_max === null || settings.score_scale_max === undefined) {
+    throw new Error("a handler scored before refusing an unset score range");
+  }
+  return settings.score_scale_max;
 }
 
 type FieldProblem = components["schemas"]["FieldProblem"];

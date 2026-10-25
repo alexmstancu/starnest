@@ -15,13 +15,17 @@ import {
   type Candidate,
   type Comparison,
 } from "../../api/endpoints";
-import { useResource } from "../../api/useResource";
+import { ApiError, hasErrorCode } from "../../api/ApiError";
+import { combine, map, type Idle, type Read } from "../../api/read";
+import { useRead } from "../../api/useRead";
 import { usePillarNames } from "../../api/usePillarNames";
 import type { RouteDefinition } from "../../navigation/routes";
 import { deltaTone, formatSigned, pillarName } from "../../format/display";
+import { LoadedRegion } from "../../shell/LoadedRegion";
 import { NothingSelected } from "../../shell/NothingSelected";
+import { SCORE_SCALE_NOT_SET } from "../../shell/refusalRemedy";
 import { NO_COMPARATOR_LIMIT, UnsetSetting } from "../../shell/UnsetSetting";
-import { useSelection } from "../../shell/SelectionContext";
+import { type SelectionLists, useSelection } from "../../shell/SelectionContext";
 
 /**
  * One focus candidate against comparators (`reqs.md` 8.5).
@@ -69,6 +73,7 @@ function TheComparison({
   criteriaSetId: string | null;
   levelId: string | null;
 }) {
+  const selection = useSelection();
   const [focus, setFocus] = useState<string | null>(null);
   const [comparators, setComparators] = useState<string[]>([]);
   // How the attribute rows read: the normalised score, or the figure in its own unit.
@@ -76,32 +81,29 @@ function TheComparison({
   const [measure, setMeasure] = useState<Measure>("points");
   const [asked, setAsked] = useState<ComparisonRequest | null>(null);
 
-  const candidates = useResource(
+  const candidates = useRead(
     useCallback(
       (signal: AbortSignal) => fetchCandidates(levelId ?? "", { signal }),
       [levelId],
     ),
-    levelId !== null,
+    { enabled: levelId !== null },
   );
-  const settings = useResource(
+  const settings = useRead(
     useCallback((signal: AbortSignal) => fetchSettings({ signal }), []),
   );
   // **The set's configured pillar weights** (PL-104), read as Rank reads them: what the Weight
-  // column shows and what "#N priority" ranks, so neither moves when only the focus changes. A
-  // failure is silence -- the comparison stands without its weights and tags.
-  const criteriaSet = useResource(
+  // column shows and what "#N priority" ranks, so neither moves when only the focus changes.
+  // **A read like the others** (PL-001): the comparison is drawn once they are read, and says
+  // so when they could not be, rather than standing without them.
+  const criteriaSet = useRead(
     useCallback(
       (signal: AbortSignal) => fetchCriteriaSet(criteriaSetId ?? "", { signal }),
       [criteriaSetId],
     ),
-    criteriaSetId !== null,
-  );
-  const pillarWeights = pillarWeightsAt(
-    criteriaSet.resource.status === "ready" ? criteriaSet.resource.data : null,
-    levelId,
+    { enabled: criteriaSetId !== null },
   );
 
-  const comparison = useResource(
+  const comparison = useRead(
     useCallback(
       async (signal: AbortSignal): Promise<Comparison> => {
         if (!criteriaSetId || !levelId || !asked)
@@ -116,119 +118,193 @@ function TheComparison({
       },
       [criteriaSetId, levelId, asked],
     ),
-    asked !== null,
+    { enabled: asked !== null },
   );
 
-  const roster =
-    candidates.resource.status === "ready"
-      ? candidates.resource.data.items
-      : [];
-  const limit =
-    settings.resource.status === "ready"
-      ? settings.resource.data.comparator_limit
-      : null;
+  // Names for a refusal that lists candidates (PL-007), from the roster once it is read.
+  const rosterNames = new Map(
+    (candidates.read.state === "ready" ? candidates.read.data.items : []).map((each) => [
+      each.id,
+      each.name,
+    ]),
+  );
 
-  // **Trimmed as it is rendered, not on a click.** The limit was enforced only when adding, so
-  // lowering it in Configure left a selection above it in place -- and `/comparisons` answers
-  // 409 above the limit, so that was a request this application could never make (R4).
-  const kept = withinLimit(comparators, limit);
-  const dropped = droppedByLimit(comparators, limit);
-  const request = requestFor(focus, kept);
+  if (criteriaSetId === null || levelId === null) {
+    return <SelectionNotReady lists={selection.read} />;
+  }
+
+  // **No score range, nothing to compare** (PL-005): known from the settings before anything
+  // is picked, and from the comparison's refusal when the range was cleared meanwhile.
+  const unsetScale =
+    settings.read.state === "ready" && settings.read.data.score_scale_max === null
+      ? UNSET_SCORE_RANGE
+      : comparison.read.state === "failed" &&
+          hasErrorCode(comparison.read.error, "score_scale_not_set")
+        ? comparison.read.error
+        : null;
+  if (unsetScale !== null) {
+    return <UnsetSetting error={unsetScale} title="Nothing to compare" detail={UNSET_DETAIL} />;
+  }
 
   return (
     <>
-      {criteriaSetId === null || levelId === null ? (
-        <NothingSelected toSee="to compare candidates" />
-      ) : settings.resource.status === "ready" && limit === null ? (
-        <UnsetSetting error={NO_COMPARATOR_LIMIT} title="Nothing to compare" detail="" />
-      ) : (
-        <ComparisonPicker
-          roster={roster}
-          focus={focus}
-          comparators={kept}
-          request={request}
-          limit={limit ?? null}
-          dropped={dropped}
-          choices={
-            <ViewChoices
-              shownAs={shownAs}
-              onShownAs={setShownAs}
-              measure={measure}
-              onMeasure={setMeasure}
-            />
-          }
-          // **Choosing a focus drops it from the comparators** (P81). The chips already hide
-          // the focus, so a candidate ticked first and then made the focus vanished from the
-          // screen while staying in the request -- and the server refuses comparing a
-          // candidate with itself, so every Compare answered 409 with nothing on screen to
-          // untick. Pruning here keeps what is sent and what is shown the same list.
-          onFocus={(candidate) => {
-            setFocus(candidate);
-            setComparators((chosen) => chosen.filter((each) => each !== candidate));
-          }}
-          onToggleComparator={(candidate) =>
-            setComparators((chosen) =>
-              chosen.includes(candidate)
-                ? chosen.filter((each) => each !== candidate)
-                : [...chosen, candidate],
-            )
-          }
-          onCompare={setAsked}
-        />
-      )}
+      {/* **Drawn from a read roster and a read limit, never from their absence** (PL-001): a
+          pending roster was an empty Focus list, and a pending limit "No comparator limit is
+          configured". */}
+      <LoadedRegion
+        read={combine(asRead(candidates.read), asRead(settings.read))}
+        what="The candidates and the comparator limit"
+        skeleton="compare-picker"
+        onRetry={async () => {
+          await Promise.all([candidates.reload(), settings.reload()]);
+        }}
+      >
+        {([roster, { comparator_limit: limit }]) =>
+          // **An unset limit is a state, said before anything is picked** (PL-019).
+          limit === null || limit === undefined ? (
+            <UnsetSetting error={NO_COMPARATOR_LIMIT} title="Nothing to compare" detail="" />
+          ) : (
+          <ComparisonPicker
+            roster={roster.items}
+            focus={focus}
+            chosen={comparators}
+            limit={limit ?? null}
+            choices={
+              <ViewChoices
+                shownAs={shownAs}
+                onShownAs={setShownAs}
+                measure={measure}
+                onMeasure={setMeasure}
+              />
+            }
+            // **Choosing a focus drops it from the comparators** (P81). The chips already hide
+            // the focus, so a candidate ticked first and then made the focus vanished from the
+            // screen while staying in the request -- and the server refuses comparing a
+            // candidate with itself, so every Compare answered 409 with nothing on screen to
+            // untick. Pruning here keeps what is sent and what is shown the same list.
+            onFocus={(candidate) => {
+              setFocus(candidate);
+              setComparators((chosen) => chosen.filter((each) => each !== candidate));
+            }}
+            onToggleComparator={(candidate) =>
+              setComparators((chosen) =>
+                chosen.includes(candidate)
+                  ? chosen.filter((each) => each !== candidate)
+                  : [...chosen, candidate],
+              )
+            }
+            onCompare={setAsked}
+          />
+          )
+        }
+      </LoadedRegion>
 
-      {comparison.resource.status === "loading" && (
-        <p className="screen__note">Comparing…</p>
-      )}
-      {/* A comparison is a difference between two scores, so it goes the same way a score
-          does when the range it is measured on has not been decided. */}
-      {comparison.resource.status === "error" && (
+      {comparison.read.state === "failed" && (
         <UnsetSetting
-          error={comparison.resource.error}
+          error={comparison.read.error}
           title="Nothing to compare"
-          detail="A comparison is a difference between two scores, and no score can be computed without a top of the range. Set it and the comparison returns."
-          onRetry={comparison.reload}
-          names={{ candidate: (id) => roster.find((each) => each.id === id)?.name }}
+          detail={UNSET_DETAIL}
+          onRetry={() => void comparison.reload()}
+          names={{ candidate: (id) => rosterNames.get(id) }}
         />
       )}
-      {comparison.resource.status === "ready" && (
-        <ComparisonTable
-          comparison={comparison.resource.data}
-          shownAs={shownAs}
-          measure={measure}
-          pillarWeights={pillarWeights}
-        />
+      {(comparison.read.state === "pending" || comparison.read.state === "ready") && (
+        <LoadedRegion
+          read={combine(
+            comparison.read,
+            map(asRead(criteriaSet.read), (set) => pillarWeightsAt(set, levelId)),
+          )}
+          what="The criteria set's weights"
+          skeleton="rank-table"
+          onRetry={criteriaSet.reload}
+        >
+          {([drawn, pillarWeights]) => (
+            <ComparisonTable
+              comparison={drawn}
+              shownAs={shownAs}
+              measure={measure}
+              pillarWeights={pillarWeights}
+            />
+          )}
+        </LoadedRegion>
       )}
     </>
   );
 }
 
+/**
+ * The refusal the server gives a comparison while the score range is unset, known from the
+ * settings before one is asked for: the same card for the same state, whichever said it first.
+ */
+const UNSET_SCORE_RANGE = new ApiError({
+  code: SCORE_SCALE_NOT_SET,
+  message: "The top of the score range is not set.",
+  status: 409,
+});
+
+const UNSET_DETAIL =
+  "A comparison is a difference between two scores, and no score can be computed without a top of the range. Set it and the comparison returns.";
+
+/** A read always asked for here, as a `Read`: it is idle only before its prerequisite exists. */
+function asRead<T>(read: Read<T> | Idle): Read<T> {
+  return read.state === "idle" ? PENDING : read;
+}
+
+/**
+ * Nothing chosen in the sidebar. **While its lists are coming, or hold a set and a level the
+ * selection is about to choose**, the screen is still being read (PL-009); once they failed or
+ * hold nothing to choose, the shell's `NothingSelected` says which (PL-002).
+ */
+function SelectionNotReady({ lists }: { lists: Read<SelectionLists> }) {
+  const choosing =
+    lists.state === "ready" &&
+    lists.data.levels.length > 0 &&
+    lists.data.criteriaSets.length > 0;
+  if (lists.state === "pending" || choosing) {
+    return (
+      <LoadedRegion
+        read={PENDING}
+        what="The criteria sets and levels"
+        skeleton="compare-picker"
+        onRetry={() => undefined}
+      >
+        {() => null}
+      </LoadedRegion>
+    );
+  }
+  return <NothingSelected toSee="to compare candidates" />;
+}
+
+const PENDING: Read<never> = { state: "pending" };
+
 function ComparisonPicker({
   roster,
   focus,
-  comparators,
-  request,
+  chosen,
   limit,
   onFocus,
   onToggleComparator,
   onCompare,
-  dropped,
   choices,
 }: {
   roster: Candidate[];
   focus: string | null;
-  comparators: string[];
-  /** What Compare would send, or null while there is nothing to compare. */
-  request: ComparisonRequest | null;
+  /** Every comparator ticked, before the limit trims them. */
+  chosen: string[];
   limit: number | null;
   onFocus: (candidate: string | null) => void;
   onToggleComparator: (candidate: string) => void;
   onCompare: (request: ComparisonRequest) => void;
-  /** How many the limit is holding back, so the screen says so rather than losing them. */
-  dropped: number;
   /** The two questions about how to read the comparison, answered before it is drawn. */
   choices: ReactNode;
 }) {
+  // **Trimmed as it is rendered, not on a click.** The limit was enforced only when adding, so
+  // lowering it in Configure left a selection above it in place -- and `/comparisons` answers
+  // 409 above the limit, so that was a request this application could never make (R4).
+  const comparators = withinLimit(chosen, limit);
+  // How many the limit is holding back, so the screen says so rather than losing them.
+  const dropped = droppedByLimit(chosen, limit);
+  const request = requestFor(focus, comparators);
   const full = limit !== null && comparators.length >= limit;
 
   return (
