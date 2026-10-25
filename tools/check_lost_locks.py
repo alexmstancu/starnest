@@ -24,10 +24,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+import psycopg
+
 ROOT = Path(__file__).resolve().parents[1]
 
 #: The backup service names each dump by the moment it was taken, in the container's UTC.
 DUMP_NAME = re.compile(r"(\d{8}-\d{6})\.dump")
+
+
+class CannotCheckError(Exception):
+    """What stops the check, as a reason that holds no credential: never "lost"."""
 
 
 @dataclass(frozen=True)
@@ -131,8 +137,6 @@ class Live:
 
 
 def read_live(url: str) -> Live:
-    import psycopg
-
     migrations = [replacement.migration for replacement in REPLACEMENTS]
     with psycopg.connect(url, options="-c default_transaction_read_only=on") as connection:
         applied = connection.execute(
@@ -175,6 +179,17 @@ def restore_criteria(dump: Path) -> str:
     return done.stdout
 
 
+def reading_the_dump(dump: Path) -> str:
+    try:
+        return restore_criteria(dump)
+    except subprocess.CalledProcessError as failed:
+        raise CannotCheckError(
+            f"pg_restore in the backup container failed on {dump.name} (exit {failed.returncode})"
+        ) from None
+    except OSError as error:
+        raise CannotCheckError(f"docker could not be run ({type(error).__name__})") from None
+
+
 def check(
     live: Live, dumps: list[Path], read_dump: Callable[[Path], str], say: Callable[[str], None]
 ) -> int:
@@ -191,7 +206,11 @@ def check(
             unchecked += 1
             continue
         say(f"{replacement.migration}: applied {applied:%Y-%m-%d %H:%M} UTC, read {dump.name}")
-        lost += what_was_lost(replacement, criteria_in(read_dump(dump)), live.criteria)
+        try:
+            before = criteria_in(read_dump(dump))
+        except ValueError as unreadable:
+            raise CannotCheckError(f"{dump.name}: {unreadable}") from None
+        lost += what_was_lost(replacement, before, live.criteria)
     for line in lost:
         say(f"  LOST {line}")
     if lost:
@@ -207,7 +226,20 @@ def main(env_file: Path = ROOT / ".env", backups: Path = ROOT / "backups") -> in
     if not url:
         print(f"check_lost_locks: no DATABASE_URL in {env_file} -- run make env")
         return 2
-    return check(read_live(url), sorted(backups.glob("*.dump")), restore_criteria, print)
+    try:
+        live = reading_the_database(url)
+        return check(live, sorted(backups.glob("*.dump")), reading_the_dump, print)
+    except CannotCheckError as reason:
+        print(f"check_lost_locks: cannot check -- {reason}")
+        return 2
+
+
+def reading_the_database(url: str) -> Live:
+    try:
+        return read_live(url)
+    except psycopg.Error as error:
+        # The driver's message can quote a malformed URL, password included (P100).
+        raise CannotCheckError(f"the database could not be read ({type(error).__name__})") from None
 
 
 if __name__ == "__main__":

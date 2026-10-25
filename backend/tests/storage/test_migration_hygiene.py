@@ -627,7 +627,9 @@ UNREADABLE: tuple[Unreadable, ...] = (
     Unreadable(
         name="a copy written without SELECT",
         # `TABLE t` is `SELECT * FROM t`, and the copy check knows a copy only by its SELECT.
-        pattern=r"(?:(?:\A|;)\s*|\bas\s+|\binto\s+\"?\w+\"?(?:\s*\([^)]*\))?\s+)table\b",
+        # After `AS` or a target's name, schema-qualified or quoted, a parenthesis may open it.
+        pattern=r"(?:(?:\A|;)\s*|\bas\b\s*\(?\s*|\binto\s+"
+        r"(?:\"[^\"]*\"|\w+)(?:\s*\.\s*(?:\"[^\"]*\"|\w+))*\s*(?:\([^)]*\)\s*)?\(?\s*)\btable\b",
         searched_in=anywhere,
         instead="write `SELECT * FROM <table>`",
     ),
@@ -817,6 +819,26 @@ WITH_COPY = (
             "INSERT INTO kept (attribute) TABLE criterion;\nDELETE FROM criterion;\n",
             ["a copy written without SELECT"],
             id="INSERT INTO ... TABLE",
+        ),
+        pytest.param(
+            "CREATE TEMP TABLE kept AS (TABLE criterion);\nDELETE FROM criterion;\n",
+            ["a copy written without SELECT"],
+            id="CREATE TABLE AS (TABLE)",
+        ),
+        pytest.param(
+            "INSERT INTO kept (TABLE criterion);\nDELETE FROM criterion;\n",
+            ["a copy written without SELECT"],
+            id="INSERT INTO ... (TABLE)",
+        ),
+        pytest.param(
+            "INSERT INTO public.kept TABLE criterion;\nDELETE FROM criterion;\n",
+            ["a copy written without SELECT"],
+            id="INSERT INTO schema.name TABLE",
+        ),
+        pytest.param(
+            'INSERT INTO "public"."kept" (attribute) TABLE criterion;\nDELETE FROM criterion;\n',
+            ["a copy written without SELECT"],
+            id="INSERT INTO quoted names TABLE",
         ),
         pytest.param(
             "TABLE criterion;\nLOCK TABLE criterion;\nCOMMENT ON TABLE criterion IS 'x';\n"

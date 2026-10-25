@@ -18,8 +18,9 @@
 -- **Locked before it counts** (FU-A5, following 0478/0503). The count reads the three tables; a
 -- save committed between the read and the drop would escape the refusal. SHARE ROW EXCLUSIVE
 -- waits for a write in flight and holds off new ones until this commits, while reads go on.
-LOCK TABLE evaluation_match_rule, evaluation_compound_rule, non_match_input,
-           evaluation_criterion, candidate_warning_input IN SHARE ROW EXCLUSIVE MODE;
+-- **In the order a save writes them** (`EvaluationStore.save`), so the two never deadlock.
+LOCK TABLE evaluation_criterion, evaluation_match_rule, evaluation_compound_rule,
+           candidate_warning_input, non_match_input IN SHARE ROW EXCLUSIVE MODE;
 
 DO $$
 DECLARE

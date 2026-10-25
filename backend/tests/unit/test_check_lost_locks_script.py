@@ -1,6 +1,7 @@
 """`tools/check_lost_locks.py` finds a lock or an exclusion a replacement dropped (P97)."""
 
 import importlib.util
+import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
@@ -124,3 +125,57 @@ def test_without_a_database_url_it_refuses(tmp_path: Path) -> None:
     (tmp_path / ".env").write_text("LOG_LEVEL=info\n")
 
     assert script.main(env_file=tmp_path / ".env", backups=tmp_path) == 2
+
+
+def with_a_url(tmp_path: Path) -> Path:
+    (tmp_path / ".env").write_text("DATABASE_URL=postgresql://u:secret@127.0.0.1:5432/appdb\n")
+    (tmp_path / "20260911-115959.dump").write_text("")
+    return tmp_path / ".env"
+
+
+def unreadable_database(url: str) -> object:
+    raise script.psycopg.OperationalError("connection to server failed: secret")
+
+
+def failing_restore(dump: Path) -> str:
+    raise subprocess.CalledProcessError(1, ["docker"])
+
+
+def missing_docker(dump: Path) -> str:
+    raise FileNotFoundError("docker")
+
+
+@pytest.mark.parametrize(
+    ("database", "restore", "reason"),
+    [
+        pytest.param(unreadable_database, None, "the database could not be read", id="database"),
+        pytest.param(
+            None, failing_restore, "pg_restore in the backup container failed", id="restore"
+        ),
+        pytest.param(None, missing_docker, "docker could not be run", id="no docker"),
+        pytest.param(
+            None,
+            lambda dump: "-- an empty dump\n",
+            "20260911-115959.dump: the dump holds no criterion rows",
+            id="no table",
+        ),
+    ],
+)
+def test_what_it_cannot_read_is_cannot_check_never_lost(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    database: object,
+    restore: object,
+    reason: str,
+) -> None:
+    monkeypatch.setattr(script, "read_live", database or (lambda url: live()))
+    if restore is not None:
+        monkeypatch.setattr(script, "restore_criteria", restore)
+
+    code = script.main(env_file=with_a_url(tmp_path), backups=tmp_path)
+
+    said = capsys.readouterr().out
+    assert code == 2
+    assert f"check_lost_locks: cannot check -- {reason}" in said
+    assert "secret" not in said

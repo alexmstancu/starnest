@@ -13,6 +13,7 @@ under test is the lock taken before the read, and that reads the same tables eit
 """
 
 import asyncio
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -572,3 +573,31 @@ async def test_an_edit_written_as_the_application_writes_it_is_carried_through_i
         f"{migration} should have carried the edit the application committed while it waited, "
         f"and came to {outcome!r}"
     )
+
+
+def test_0507_locks_the_tables_a_save_writes_in_the_order_the_save_writes_them() -> None:
+    """**Two writers that take the same locks in opposite orders can deadlock.** A save writes
+    a ranking's frozen criteria, then its rule lists, then its warning and non-match inputs;
+    `0507`'s rollback locks those tables before it counts them, and in the same order, so
+    whichever starts first finishes first."""
+    root = MIGRATIONS.parent
+    store = (root.parent / "backend/src/starnest/storage/evaluation_store.py").read_text()
+    queries = (root / "queries" / "evaluation.sql").read_text()
+    written_by = dict(
+        re.findall(r"-- name: (\w+)\(?[^\n]*\n(?:--[^\n]*\n)*\s*INSERT INTO (\w+)", queries)
+    )
+    save_order = [
+        written_by[query]
+        for query in re.findall(r"self\._queries\.(insert_\w+)\(", store)
+        if query in written_by
+    ]
+    lock = re.search(
+        r"LOCK TABLE ([^;]*?) IN SHARE ROW EXCLUSIVE MODE",
+        (
+            MIGRATIONS / "0507-freeze-the-rest-of-what-a-ranking-was-computed-with.rollback.sql"
+        ).read_text(),
+    )
+    assert lock is not None
+    locked = [name.strip() for name in lock.group(1).split(",")]
+
+    assert locked == [table for table in save_order if table in locked]
