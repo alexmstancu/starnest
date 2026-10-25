@@ -299,12 +299,15 @@ export function useRunScreen(
   );
 
   // Every run, not the newest ten: the history and the diff's choices read this list as every
-  // run there has been (UI-17). The month's spend is the server's (PL-052).
+  // run there has been (UI-17). The month's spend is the server's (PL-052). **Read again on every
+  // end the shell sees**, so a run that ends while the card shows another stops holding the
+  // starts it held.
   const history = useRead(
     useCallback(
       async (signal: AbortSignal) => (await fetchEveryRun({ signal })).items,
       [],
     ),
+    { freshness },
   );
   const historyRead = alwaysAsked(history.read);
   // The month starts where the reader's calendar says, worked out at each read so a read after

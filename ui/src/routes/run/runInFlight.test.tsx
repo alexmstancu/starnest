@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { renderHook, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -7,6 +7,7 @@ import type { RunDetail } from "../../api/endpoints";
 import { mockServer } from "../../mocks/server";
 import { expectHeld, expectNotHeld } from "../../testing/keyboard";
 import { renderShell } from "../../testing/renderShell";
+import { useRunScreen } from "./useRunScreen";
 
 /**
  * UF-080 (PL-119): **Start is held while a run is in flight**, and says which, with a way to it.
@@ -149,5 +150,42 @@ describe("a start refused as in flight", () => {
     );
     expect(refusal.queryByRole("button", { name: /open acquisition/i })).toBeNull();
     expect(refusal.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Review finding 4: **a run the card is not showing ends, and the history hears of it.** The shell
+ * signals every end it sees; read again on it, the history stops calling run 9 running, and the
+ * starts held for it are let go.
+ */
+describe("a run that ends while the card shows another", () => {
+  it("reads the history again when the shell says an acquisition ended", async () => {
+    let ended = false;
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, () =>
+        HttpResponse.json({
+          items: [
+            { ...RUNS[0]!, id: 9, run_status: ended ? "completed" : "running", finished_at: null },
+            ...RUNS,
+          ],
+          total: RUNS.length + 1,
+        }),
+      ),
+    );
+    const { result, rerender } = renderHook(
+      ({ ends }: { ends: number }) => useRunScreen("country", () => undefined, ends),
+      { initialProps: { ends: 0 } },
+    );
+    await waitFor(() => expect(result.current.history.state).toBe("ready"));
+    const statusOf9 = () =>
+      result.current.history.state === "ready"
+        ? result.current.history.data.find((run) => run.id === 9)?.run_status
+        : undefined;
+    expect(statusOf9()).toBe("running");
+
+    ended = true;
+    rerender({ ends: 1 });
+
+    await waitFor(() => expect(statusOf9()).toBe("completed"));
   });
 });
