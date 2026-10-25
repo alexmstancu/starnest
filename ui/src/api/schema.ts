@@ -947,6 +947,7 @@ export interface components {
             code: components["schemas"]["ErrorCode"];
             /** @description For a person reading the API; an interface words `code` and `details` and never shows this. It names things rather than printing their ids where a name is known, and carries no driver or SQL text. */
             message: string;
+            /** @description Left out when the refusal has nothing to add, never null. */
             details?: {
                 [key: string]: unknown;
             };
@@ -1152,7 +1153,9 @@ export interface components {
             number_adults: number;
             /** @description Under 18. */
             number_children: number;
+            /** @description Left out while unset, never null. */
             target_monthly_spend?: number;
+            /** @description Left out while unset, never null. */
             max_rent?: number;
             home_country_candidate: string;
             home_city_candidate?: string | null;
@@ -1260,6 +1263,7 @@ export interface components {
          *     `set_2026_plan`, "Ελλάδα" `set` -- and the first of `<stem>`, `<stem>_2`, `<stem>_3`...
          *     that no set, live or deleted, has ever held. Given, it is used as it is, and refused with
          *     409 `criteria_set_exists` when a set, live or deleted, holds it.
+         *     Never null: leave it out to have it derived.
          * @example partner
          */
         NewCriteriaSetId: string;
@@ -1320,7 +1324,7 @@ export interface components {
             reference_period?: components["schemas"]["ReferencePeriod"] | null;
             /**
              * Format: date-time
-             * @description When the gate was checked. Defaults to now.
+             * @description When the gate was checked. Left out, it is now; null is refused.
              */
             retrieval_date?: string;
             /** @description An override is audited: the server records the moment it was given as override_date. */
@@ -2995,7 +2999,7 @@ export interface operations {
                 "application/json": {
                     criteria_set: string;
                     level: string;
-                    /** @description Why this one was kept */
+                    /** @description Why this one was kept. Left out when there is none; null is refused. */
                     note?: string;
                 };
             };
