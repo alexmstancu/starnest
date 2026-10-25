@@ -355,6 +355,24 @@ export function fetchValuesFromRun(
 }
 
 /**
+ * Every stored value one acquisition re-confirmed rather than stored again (PL-049): a re-read
+ * that restates a figure on record writes no row, so `fetchValuesFromRun` cannot see it.
+ * Together, the two are what the run produced.
+ */
+export function fetchValuesReconfirmedByRun(
+  run: number,
+  options?: RequestOptions,
+): Promise<{ items: StoredValue[]; total: number }> {
+  return everyPage(A_PAGE_OF_VALUES, (page) =>
+    getJson(
+      "/values",
+      { reconfirmed_by_run: run, include_superseded: true, ...page },
+      options,
+    ),
+  );
+}
+
+/**
  * Every row of a paged list, following the pages until there are none left.
  *
  * - **Stops on a short page as well as on the count.** A server that reported a `total` larger

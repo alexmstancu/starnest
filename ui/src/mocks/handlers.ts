@@ -32,6 +32,7 @@ import {
   RESEARCH_CALL_COST_EUR,
   RESEARCH_PLAN,
   RUNS,
+  RUN_REUSES,
   RUN_PLAN,
   SETTINGS,
   STARTED_RUN,
@@ -50,6 +51,7 @@ type CriteriaSet = components["schemas"]["CriteriaSet"];
 type CriteriaSetSummary = components["schemas"]["CriteriaSetSummary"];
 type PillarWeight = components["schemas"]["PillarWeight"];
 type Settings = components["schemas"]["Settings"];
+type RunDetail = components["schemas"]["RunDetail"];
 type Household = components["schemas"]["HouseholdInput"];
 type EvaluationSummary = components["schemas"]["EvaluationSummary"];
 type CandidateResult = components["schemas"]["CandidateResult"];
@@ -838,7 +840,7 @@ export const handlers = [
   ),
 
   http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
-    HttpResponse.json({ ...STARTED_RUN_DETAIL, id: Number(params["runId"]) }),
+    HttpResponse.json(runDetailOf(Number(params["runId"]))),
   ),
 
   /**
@@ -851,8 +853,7 @@ export const handlers = [
   http.post(`${BASE}/data-acquisition-runs/:runId/stop`, ({ params }) =>
     HttpResponse.json(
       {
-        ...STARTED_RUN_DETAIL,
-        id: Number(params["runId"]),
+        ...runDetailOf(Number(params["runId"])),
         run_status: "running",
         stop_requested_at: STOPPED_AT,
       },
@@ -908,12 +909,30 @@ export const handlers = [
     // Which run produced it. This is what makes an acquisition diff two requests rather than
     // a walk of the whole corpus.
     const fromRun = query.get("data_acquisition_run");
+    // What a run re-confirmed rather than stored: the rows its `reconfirmed` names (PL-049).
+    // Refused beside `data_acquisition_run`, as the server refuses it (`values.py`).
+    const reconfirmedBy = query.get("reconfirmed_by_run");
+    if (fromRun !== null && reconfirmedBy !== null) {
+      return HttpResponse.json(
+        invalidRequest({
+          location: ["query", "reconfirmed_by_run"],
+          problem: "cannot be asked for together with data_acquisition_run",
+          kind: "mutually_exclusive",
+        }),
+        { status: 422 },
+      );
+    }
+    const restated =
+      reconfirmedBy === null
+        ? null
+        : (runDetailOf(Number(reconfirmedBy)).reconfirmed ?? []).map((each) => each.value);
     const items = STORED_VALUES.filter(
       (value) =>
         (candidate === null || value.candidate === candidate) &&
         (attribute === null || value.attribute === attribute) &&
         (fromRun === null ||
           String(value.data_acquisition_run ?? "") === fromRun) &&
+        (restated === null || restated.includes(value.id)) &&
         (superseded || value.is_active),
     );
     // **Paged as the server pages.** `limit` and `offset` were read from nobody, so every
@@ -1391,6 +1410,30 @@ function againstHome(
         ? null
         : each.score - homeScore,
   }));
+}
+
+/**
+ * A run's detail. **What it re-confirmed is limited to its own items**, as `select_run` serves
+ * it: a reuse recorded for a pair outside the run's scope is nothing the run produced.
+ */
+function runDetailOf(id: number): RunDetail {
+  const detail: RunDetail = { ...STARTED_RUN_DETAIL, id };
+  const inScope = (listed: string[] | null | undefined, item: string) =>
+    listed === null || listed === undefined || listed.includes(item);
+  return {
+    ...detail,
+    reconfirmed: RUN_REUSES.filter(
+      (reuse) =>
+        reuse.data_acquisition_run === id &&
+        inScope(detail.scope?.candidates, reuse.candidate) &&
+        inScope(detail.scope?.attributes, reuse.attribute),
+    ).map(({ data_source, candidate, attribute, value }) => ({
+      data_source,
+      candidate,
+      attribute,
+      value,
+    })),
+  };
 }
 
 function notFound(id: string) {

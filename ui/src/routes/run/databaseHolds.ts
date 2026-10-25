@@ -152,6 +152,7 @@ export function scoredFigure(counts: MatchCounts, setName: string): Tile {
 export interface RunReach {
   scope_candidates?: number;
   scope_attributes?: number;
+  items_total?: number;
   items_completed?: number;
   items_failed?: number;
 }
@@ -161,12 +162,21 @@ export interface RunReach {
  *
  * **Its size, not its contents.** The scope is stored expanded -- one row per candidate and
  * one per attribute -- so a history row carries two counts, and "32 candidates over 41
- * attributes" is what those two mean.
+ * attributes" is what those two mean. **A pass over exact pairs asked for fewer values than
+ * their cross product** (C04-N14), so it is counted in values: a two-item retry over two
+ * candidates and two attributes is "2 values over 2 candidates", never four.
  */
 export function describeScope(run: RunReach): string {
   const candidates = run.scope_candidates ?? 0;
   const attributes = run.scope_attributes ?? 0;
   if (candidates === 0 || attributes === 0) return "—";
+  const items = run.items_total;
+  if (items !== undefined && items < candidates * attributes) {
+    return (
+      `${String(items)} ${items === 1 ? "value" : "values"}` +
+      ` over ${String(candidates)} ${candidates === 1 ? "candidate" : "candidates"}`
+    );
+  }
   return (
     `${String(candidates)} ${candidates === 1 ? "candidate" : "candidates"}` +
     ` over ${String(attributes)} ${attributes === 1 ? "attribute" : "attributes"}`

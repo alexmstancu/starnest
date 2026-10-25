@@ -5,13 +5,14 @@ import {
   fetchCriteriaSet,
   fetchHoldings,
   fetchRanking,
+  fetchRun,
   replaceHousehold,
   replaceSettings,
   researchMatchRules,
   updateCriterionRule,
   type CriterionRule,
 } from "../api/endpoints";
-import { HOUSEHOLD, RESEARCH_CALL_COST_EUR, SETTINGS } from "./fixtures";
+import { HOUSEHOLD, RESEARCH_CALL_COST_EUR, RUN_REUSES, SETTINGS, STORED_VALUES } from "./fixtures";
 
 /**
  * The mock is a stand-in for the backend, so it has to fail the way the backend will: with the
@@ -474,5 +475,67 @@ describe("the mock's scored reads while the score range is unset", () => {
 
   it.each(Object.entries(ASKED))("%s names a set that does not exist with 404 first", async (_name, ask) => {
     expect(await refusalOf(() => ask("no-such-set"))).toEqual([404, "not_found"]);
+  });
+});
+
+/**
+ * PL-049. **What a run re-confirmed, served as the server serves it**: in its detail, limited to
+ * its own items, and as the values `reconfirmed_by_run` lists -- which the server refuses beside
+ * `data_acquisition_run`, since a run re-confirms only what it did not store.
+ */
+describe("the mock's re-confirmed figures", () => {
+  const PORTUGAL_AIR = {
+    data_source: "eurostat",
+    candidate: "country.portugal",
+    attribute: "country.european_air_connectivity",
+  };
+
+  it("names what a run re-confirmed, with the stored figure it restated", async () => {
+    expect((await fetchRun(6)).reconfirmed).toEqual([{ ...PORTUGAL_AIR, value: 499 }]);
+    expect((await fetchRun(7)).reconfirmed).toEqual([]);
+  });
+
+  it("restates a figure the fixtures hold, for the same pair and source", () => {
+    for (const reuse of RUN_REUSES) {
+      expect(STORED_VALUES.find((value) => value.id === reuse.value)).toMatchObject({
+        candidate: reuse.candidate,
+        attribute: reuse.attribute,
+        data_source: reuse.data_source,
+      });
+    }
+  });
+
+  it("lists exactly the values a run re-confirmed, superseded ones only when asked", async () => {
+    const listed = (query: Record<string, unknown>) =>
+      getJson("/values", query as never) as Promise<{ items: { id: number }[]; total: number }>;
+
+    expect(
+      (await listed({ reconfirmed_by_run: 6, include_superseded: true })).items.map(
+        (value) => value.id,
+      ),
+    ).toEqual([499]);
+    expect((await listed({ reconfirmed_by_run: 6 })).total).toBe(0);
+    expect(
+      (await listed({ reconfirmed_by_run: 7, include_superseded: true })).total,
+    ).toBe(0);
+  });
+
+  it("refuses both run filters together, located at the second", async () => {
+    const error = (await getJson("/values", {
+      data_acquisition_run: 6,
+      reconfirmed_by_run: 6,
+    }).catch((thrown: unknown) => thrown)) as ApiError;
+
+    expect(error.status).toBe(422);
+    expect(error.code).toBe("invalid_request");
+    expect(error.details).toEqual({
+      errors: [
+        {
+          location: ["query", "reconfirmed_by_run"],
+          problem: "cannot be asked for together with data_acquisition_run",
+          kind: "mutually_exclusive",
+        },
+      ],
+    });
   });
 });

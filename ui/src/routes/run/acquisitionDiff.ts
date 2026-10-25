@@ -1,22 +1,40 @@
 /**
  * What changed between two acquisitions.
  *
- * **It compares what the two runs produced, not what the store holds.** A value keeps the run
- * that produced it for the life of the row, so this is a question about two runs rather than
- * about the database — and "went missing" means the later run did not produce a figure for
- * that pair, never that the figure is gone. The earlier value is still stored, still visible
- * in the drill-down, and may well still be the active one. Saying otherwise would be the
- * screen claiming a deletion this application never performs (`reqs.md` 3.6).
+ * **It compares what the two runs produced, not what the store holds**: the figures each stored
+ * and the ones it re-confirmed (PL-049), over the values the later one asked for (PL-060). So
+ * "went missing" means the later run asked and produced no usable figure for that pair, never
+ * that the figure is gone. The earlier value is still stored, still visible in the drill-down,
+ * and may well still be the active one. Saying otherwise would be the screen claiming a deletion
+ * this application never performs (`reqs.md` 3.6).
  */
 
 import { describeFigure, type FigureOptions } from "../../format/figure";
 
-export interface ProducedValue {
+export interface Pair {
   candidate: string;
   attribute: string;
+}
+
+export interface ProducedValue extends Pair {
+  id?: number;
   data_source?: string;
-  retrieval_date?: string | null;
   payload?: unknown;
+  rejection_reason?: string | null;
+}
+
+/** A figure a run re-read and found already on record. `value` is null where it is not known. */
+export interface Reconfirmation extends Pair {
+  data_source: string;
+  value: number | null;
+}
+
+/** What one run produced, as the server serves it: its value rows and its re-confirmations. */
+export interface RunRecord {
+  stored: readonly ProducedValue[];
+  reconfirmed: readonly Reconfirmation[];
+  /** The rows `reconfirmed` names, as `GET /values?reconfirmed_by_run=` lists them. */
+  reconfirmedValues: readonly ProducedValue[];
 }
 
 /**
@@ -36,9 +54,8 @@ export interface DiffRow {
   candidate: string;
   attribute: string;
   change: Change;
-  /** The source that answered in the later run, or in the earlier one when it went missing. */
   data_source?: string | undefined;
-  /** The figure as each run produced it. Null where that run produced none. */
+  /** The figure as each run produced it, "rejected" where it was. Null where it produced none. */
   earlier: string | null;
   later: string | null;
 }
@@ -49,18 +66,66 @@ export interface Diff {
   refreshed: number;
   unchanged: number;
   wentMissing: number;
+  /** Figures the earlier run produced for values the later one did not ask for. */
+  leftOut: number;
 }
 
-/** A pair is the unit: one candidate, one attribute. */
+/**
+ * Everything a run produced. **A re-confirmation is a figure the run produced**, restated rather
+ * than stored again; where the server does not know which figure it restated, its payload stays
+ * unknown, and an unknown figure is never called unchanged (`samePayload`).
+ */
+export function producedBy(run: RunRecord): ProducedValue[] {
+  const restated = new Map(run.reconfirmedValues.map((value) => [value.id, value]));
+  return [
+    ...run.stored,
+    ...run.reconfirmed.map((reconfirmation): ProducedValue => {
+      const { candidate, attribute, data_source } = reconfirmation;
+      const figure = reconfirmation.value === null ? undefined : restated.get(reconfirmation.value);
+      return { ...figure, candidate, attribute, data_source };
+    }),
+  ];
+}
+
+/**
+ * The values a run asked for, as far as its record shows: what it produced, failed on, or left
+ * unanswered. Once its items are partitioned these are all of them (`describeRecord` says when
+ * they are not).
+ */
+export function askedBy(
+  produced: readonly Pair[],
+  run: { failures?: readonly Pair[]; unanswered?: readonly Pair[] },
+): Pair[] {
+  const asked = new Map<string, Pair>();
+  for (const pair of [...produced, ...(run.failures ?? []), ...(run.unanswered ?? [])]) {
+    const key = pairKey(pair);
+    if (!asked.has(key)) asked.set(key, { candidate: pair.candidate, attribute: pair.attribute });
+  }
+  return [...asked.values()];
+}
+
+function pairKey(pair: Pair): string {
+  return `${pair.candidate}|${pair.attribute}`;
+}
+
+/** C04-N8. **The unit is a pair and its source**: two sources answering one pair are two rows. */
 function keyOf(value: ProducedValue): string {
-  return `${value.candidate}|${value.attribute}`;
+  return `${pairKey(value)}|${value.data_source ?? ""}`;
 }
 
-function byPair(values: readonly ProducedValue[]): Map<string, ProducedValue> {
-  // Last wins, which is only reached when one run produced two figures for one pair -- from
-  // two sources. Either answers the question this screen asks, which is whether the run
-  // produced anything for that pair at all.
-  return new Map(values.map((value) => [keyOf(value), value]));
+/** A rejected figure is no usable figure (C04-N8). */
+function usable(value: ProducedValue | undefined): value is ProducedValue {
+  return value !== undefined && !value.rejection_reason;
+}
+
+function byKey(values: readonly ProducedValue[]): Map<string, ProducedValue> {
+  const keyed = new Map<string, ProducedValue>();
+  for (const value of values) {
+    // A usable figure is never hidden behind a rejected one from the same run.
+    if (!usable(value) && usable(keyed.get(keyOf(value)))) continue;
+    keyed.set(keyOf(value), value);
+  }
+  return keyed;
 }
 
 /**
@@ -80,31 +145,25 @@ const ORDER: Record<Change, number> = {
 export function diffAcquisitions(
   earlier: readonly ProducedValue[],
   later: readonly ProducedValue[],
+  asked: readonly Pair[],
 ): Diff {
-  const before = byPair(earlier);
-  const after = byPair(later);
+  const askedFor = new Set(asked.map(pairKey));
+  const before = byKey(earlier);
+  const after = byKey(later);
 
   const rows: DiffRow[] = [];
-  for (const [key, value] of after) {
-    const earlier = before.get(key);
+  for (const key of new Set([...after.keys(), ...before.keys()])) {
+    const one = before.get(key);
+    const other = after.get(key);
+    const pair = other ?? one;
+    if (pair === undefined || !askedFor.has(pairKey(pair))) continue;
+    const change = changeOf(one, other);
+    if (change === null) continue;
     rows.push({
-      candidate: value.candidate,
-      attribute: value.attribute,
-      data_source: value.data_source,
-      ...(earlier === undefined
-        ? { change: "newly acquired", earlier: null, later: figureOf(value) }
-        : compared(earlier, value)),
-    });
-  }
-  for (const [key, value] of before) {
-    if (after.has(key)) continue;
-    rows.push({
-      candidate: value.candidate,
-      attribute: value.attribute,
-      change: "went missing",
-      data_source: value.data_source,
-      earlier: figureOf(value),
-      later: null,
+      candidate: pair.candidate,
+      attribute: pair.attribute,
+      data_source: pair.data_source,
+      ...change,
     });
   }
 
@@ -112,7 +171,8 @@ export function diffAcquisitions(
     (one, other) =>
       ORDER[one.change] - ORDER[other.change] ||
       one.candidate.localeCompare(other.candidate) ||
-      one.attribute.localeCompare(other.attribute),
+      one.attribute.localeCompare(other.attribute) ||
+      (one.data_source ?? "").localeCompare(other.data_source ?? ""),
   );
 
   return {
@@ -121,7 +181,72 @@ export function diffAcquisitions(
     refreshed: rows.filter((row) => row.change === "refreshed").length,
     unchanged: rows.filter((row) => row.change === "unchanged").length,
     wentMissing: rows.filter((row) => row.change === "went missing").length,
+    leftOut: [...before.values()].filter(
+      (value) => usable(value) && !askedFor.has(pairKey(value)),
+    ).length,
   };
+}
+
+/** What became of one pair and source, or nothing where neither run produced a usable figure. */
+function changeOf(
+  earlier: ProducedValue | undefined,
+  later: ProducedValue | undefined,
+): Pick<DiffRow, "change" | "earlier" | "later"> | null {
+  if (usable(later)) {
+    return usable(earlier)
+      ? compared(earlier, later)
+      : { change: "newly acquired", earlier: cellOf(earlier), later: figureOf(later) };
+  }
+  if (usable(earlier)) {
+    return { change: "went missing", earlier: figureOf(earlier), later: cellOf(later) };
+  }
+  return null;
+}
+
+/** A side that produced no usable figure: "rejected" where it produced one, else nothing. */
+function cellOf(value: ProducedValue | undefined): string | null {
+  return value === undefined ? null : "rejected";
+}
+
+/** The line under the counts for figures that were not compared, or nothing when none were. */
+export function describeLeftOut(leftOut: number): string | null {
+  if (leftOut === 0) return null;
+  return leftOut === 1
+    ? "1 figure from the earlier acquisition is for a value the later one did not ask for, so it is not compared."
+    : `${String(leftOut)} figures from the earlier acquisition are for values the later one did not ask for, so they are not compared.`;
+}
+
+/**
+ * What the later run's record does not account for: still running, or its asked values falling
+ * short of the items it planned. Nothing where they agree.
+ */
+export function describeRecord(
+  asked: number,
+  run: { id: number; run_status: string; progress?: { items_total?: number } },
+): string | null {
+  if (run.run_status === "running") {
+    return `Acquisition ${String(run.id)} is still running, so this compares what it has settled so far.`;
+  }
+  const total = run.progress?.items_total;
+  if (total === undefined || total === asked) return null;
+  return `Acquisition ${String(run.id)}'s record accounts for ${String(asked)} of the ${String(total)} values it asked for, so this comparison may be incomplete.`;
+}
+
+/** Whether the earlier pick started after the later one. Drawn all the same, with a warning. */
+export function readsBackwards(
+  runs: readonly { id: number; started_at: string }[],
+  earlier: number,
+  later: number,
+): boolean {
+  const startOf = (id: number) => runs.find((run) => run.id === id)?.started_at;
+  const [from, to] = [startOf(earlier), startOf(later)];
+  return from !== undefined && to !== undefined && Date.parse(from) > Date.parse(to);
+}
+
+/** The table's first heading: the level the later run covered, as a word. */
+export function levelHeading(level: string | undefined): string {
+  if (level === undefined || level === "") return "Candidate";
+  return level.charAt(0).toUpperCase() + level.slice(1);
 }
 
 /**
@@ -200,17 +325,15 @@ function sameShape(one: unknown, other: unknown): boolean {
 }
 
 /**
- * The figure a run produced, as one line, or nothing where it produced no payload.
+ * The figure a run produced, as one line, or "not recorded" where its payload is not known -- a
+ * re-confirmation the server could not tie to one stored figure.
  *
  * **What a reader sees, not what decides.** Whether a pair moved is the payloads' question
  * (`samePayload`); this only fills the Earlier and Later cells.
  */
-function figureOf(
-  value: ProducedValue,
-  options?: FigureOptions,
-): string | null {
+function figureOf(value: ProducedValue, options?: FigureOptions): string {
   return value.payload === undefined || value.payload === null
-    ? null
+    ? "not recorded"
     : describeFigure({ payload: value.payload }, options);
 }
 

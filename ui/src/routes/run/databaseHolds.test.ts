@@ -169,6 +169,26 @@ describe("how big a pass was", () => {
     );
   });
 
+  /**
+   * C04-N14. **A pass over exact pairs is not their cross product.** A two-item retry over two
+   * candidates and two attributes asked for two values, not four, and "2 candidates over 2
+   * attributes" claimed the other two.
+   */
+  it("counts the values a pass over exact pairs asked for", () => {
+    expect(
+      describeScope({ scope_candidates: 2, scope_attributes: 2, items_total: 2 }),
+    ).toBe("2 values over 2 candidates");
+    expect(
+      describeScope({ scope_candidates: 1, scope_attributes: 3, items_total: 1 }),
+    ).toBe("1 value over 1 candidate");
+  });
+
+  it("keeps the cross product where the pass asked for all of it", () => {
+    expect(
+      describeScope({ scope_candidates: 32, scope_attributes: 41, items_total: 1312 }),
+    ).toBe("32 candidates over 41 attributes");
+  });
+
   /** A scope of nothing is not a scope, so it reads as absent rather than as zero by zero. */
   it("says nothing rather than zero where there is no scope", () => {
     expect(describeScope({})).toBe("—");

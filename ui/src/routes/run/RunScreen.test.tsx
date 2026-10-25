@@ -1504,14 +1504,54 @@ describe("what changed between two acquisitions", () => {
     ).toBeInTheDocument();
   });
 
-  it("counts what appeared, what moved and what stopped coming", async () => {
+  /** The count a tile states, by the label over it. */
+  function tile(panel: Awaited<ReturnType<typeof diffPanel>>, label: string): HTMLElement {
+    return panel.getByText(label, { selector: "dt" }).closest<HTMLElement>(".tile")!;
+  }
+
+  const PORTUGAL = "country.portugal";
+  const COST_OF_LIVING = "country.cost_of_living_index";
+
+  /**
+   * Run 6 as it would read had it asked about Portugal's cost of living: `failures` for a source
+   * that broke on it, `values` for what it stored.
+   */
+  function runSixAskedAboutTheCostOfLiving({
+    failures = [],
+    values = [],
+  }: {
+    failures?: NonNullable<typeof STARTED_RUN_DETAIL.failures>;
+    values?: typeof STORED_VALUES;
+  }): void {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) => {
+        if (params["runId"] !== "6") return;
+        return HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: 6,
+          failures,
+          unanswered: [],
+          reconfirmed: [],
+        });
+      }),
+      http.get(`${BASE}/values`, ({ request }) => {
+        if (new URL(request.url).searchParams.get("data_acquisition_run") !== "6") return;
+        return HttpResponse.json({ items: values, total: values.length });
+      }),
+    );
+  }
+
+  it("counts what appeared, what moved, what stayed and what stopped coming", async () => {
     renderShell("/acquire");
+    // Run 5 produced the air connectivity and the cost of living; run 7 produced the first
+    // again as it was, moved the second, and added the tax rate.
     const panel = await compare("5", "7");
 
-    // Run 5 produced the cost of living; run 7 produced it again and added the tax rate.
-    expect(await panel.findByText("Newly acquired")).toBeInTheDocument();
-    const rows = await panel.findAllByRole("row");
-    expect(rows.length).toBeGreaterThan(1);
+    await panel.findByRole("table", { name: "What changed" });
+    expect(tile(panel, "Newly acquired")).toHaveTextContent("1");
+    expect(tile(panel, "Refreshed")).toHaveTextContent("1");
+    expect(tile(panel, "Unchanged")).toHaveTextContent("1");
+    expect(tile(panel, "Went missing")).toHaveTextContent("0");
   });
 
   it("names a pair the later run produced and the earlier one did not", async () => {
@@ -1555,6 +1595,19 @@ describe("what changed between two acquisitions", () => {
     ).not.toHaveTextContent(/\beurostat(_estimate)?\b/);
   });
 
+  /** The design's table, with the source kept beside the attribute (C04-N8). */
+  it("heads the table with the level, the attribute, the source and the two figures", async () => {
+    renderShell("/acquire");
+    const panel = await compare("5", "7");
+
+    const table = await panel.findByRole("table", { name: "What changed" });
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((header) => header.textContent),
+    ).toEqual(["Country", "Attribute", "Source", "Earlier", "Later", "What happened"]);
+  });
+
   it("names a pair both runs produced as refreshed", async () => {
     renderShell("/acquire");
     const panel = await compare("5", "7");
@@ -1566,17 +1619,62 @@ describe("what changed between two acquisitions", () => {
   });
 
   /**
+   * PL-049, AQ-01. **A re-read that restates a stored figure writes no value**, so the diff
+   * called it "went missing" and left it out of "Unchanged". Run 6 re-read Portugal's air
+   * connectivity and found the figure run 5 stored.
+   */
+  it("reads a figure the later acquisition re-confirmed as unchanged, with it on both sides", async () => {
+    renderShell("/acquire");
+    const panel = await compare("5", "6");
+
+    const row = await panel.findByRole("row", { name: /Portugal.*air connectivity/i });
+    expect(row).toHaveTextContent("unchanged");
+    expect(within(row).getAllByRole("cell", { name: "31" })).toHaveLength(2);
+  });
+
+  /**
    * "Went missing" is about the run, never about the store: this application does not delete
    * values, and the earlier figure may still be the active one.
    */
-  it("says a pair the later run did not produce went missing", async () => {
-    renderShell("/acquire");
-    const panel = await compare("7", "5");
-
-    const row = await panel.findByRole("row", {
-      name: /Total effective tax rate/i,
+  it("says a pair the later acquisition asked about and produced nothing for went missing", async () => {
+    runSixAskedAboutTheCostOfLiving({
+      failures: [
+        {
+          data_source: "eurostat",
+          candidate: PORTUGAL,
+          attribute: COST_OF_LIVING,
+          error_message: "the source did not answer",
+        },
+      ],
     });
+    renderShell("/acquire");
+    const panel = await compare("5", "6");
+
+    const row = await panel.findByRole("row", { name: /Cost of living index/i });
     expect(row).toHaveTextContent("went missing");
+    expect(within(row).getByRole("cell", { name: "92.1 EU27 = 100" })).toBeInTheDocument();
+  });
+
+  /** C04-N8. A rejected figure is no usable figure, and its cell says it was rejected. */
+  it("says a figure the later acquisition rejected went missing, and reads its cell as rejected", async () => {
+    runSixAskedAboutTheCostOfLiving({
+      values: [
+        {
+          ...STORED_VALUES.find((value) => value.id === 502)!,
+          id: 9100,
+          payload: { magnitude: 920, unit: "index_eu27_100" },
+          rejection_reason: "Cost of living index is outside its credible range",
+          is_active: false,
+          data_acquisition_run: 6,
+        },
+      ],
+    });
+    renderShell("/acquire");
+    const panel = await compare("5", "6");
+
+    const row = await panel.findByRole("row", { name: /Cost of living index/i });
+    expect(row).toHaveTextContent("went missing");
+    expect(within(row).getByRole("cell", { name: "rejected" })).toBeInTheDocument();
   });
 
   it("states that a missing pair is still stored", async () => {
@@ -1588,33 +1686,95 @@ describe("what changed between two acquisitions", () => {
     ).toBeInTheDocument();
   });
 
-  /**
-   * Comparing a run to itself is not an empty diff: every pair it produced reads as
-   * refreshed. The empty case is two runs that produced nothing.
-   */
-  it("reads a run against itself as entirely unchanged", async () => {
-    // **The figure is what decides, not the pair.** Comparing a run with itself produces the
-    // same figure on both sides for every pair, which is "unchanged" -- and the reason that
-    // distinction is worth drawing: this used to read as a run that refreshed everything.
+  /** PL-060. Run 6 never asked about the cost of living, so run 5's figure for it is not compared. */
+  it("leaves out what the later acquisition never asked about, and says how much", async () => {
+    renderShell("/acquire");
+    const panel = await compare("5", "6");
+
+    await panel.findByRole("row", { name: /Portugal.*air connectivity/i });
+    expect(panel.queryByRole("row", { name: /Cost of living index/i })).toBeNull();
+    expect(
+      panel.getByText(
+        "1 figure from the earlier acquisition is for a value the later one did not ask for, so it is not compared.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  /** PL-060. The same acquisition twice is not a comparison, and nothing is read for it. */
+  it("asks for two different acquisitions when the same one is picked twice", async () => {
     renderShell("/acquire");
     const panel = await compare("7", "7");
 
-    const row = await panel.findByRole("row", {
-      name: /Cost of living index/i,
-    });
-    expect(row).toHaveTextContent("unchanged");
-    // And the figure itself in both columns, so the verdict is checkable rather than trusted.
-    expect(within(row).getAllByText("94.5 EU27 = 100")).toHaveLength(2);
-    expect(panel.queryByText(/newly acquired/i)).toBeInTheDocument();
+    expect(panel.getByText("Pick two different acquisitions.")).toBeInTheDocument();
+    expect(panel.queryByRole("table", { name: "What changed" })).toBeNull();
+    expect(panel.queryByText("Unchanged", { selector: "dt" })).toBeNull();
+  });
+
+  it("reads nothing for the same acquisition picked twice", async () => {
+    const valueReads: string[] = [];
+    mockServer.use(
+      http.get(`${BASE}/values`, ({ request }) => {
+        const query = new URL(request.url).searchParams;
+        const run = query.get("data_acquisition_run") ?? query.get("reconfirmed_by_run");
+        if (run !== null) valueReads.push(run);
+      }),
+    );
+    renderShell("/acquire");
+    const panel = await compare("7", "7");
+
+    // Then a real pair, whose two runs are the only ones read: two lists for each.
+    await userEvent.selectOptions(
+      panel.getByRole("combobox", { name: /earlier acquisition/i }),
+      "5",
+    );
+    await panel.findByRole("table", { name: "What changed" });
+    expect(valueReads.sort()).toEqual(["5", "5", "7", "7"]);
+  });
+
+  it("warns when the earlier pick started after the later one, and still compares them", async () => {
+    renderShell("/acquire");
+    const panel = await compare("7", "5");
+
+    expect(
+      await panel.findByText(
+        "Acquisition 7 started after acquisition 5, so this reads backwards in time.",
+      ),
+    ).toBeInTheDocument();
+    expect(await panel.findByRole("table", { name: "What changed" })).toBeInTheDocument();
+  });
+
+  /** C04-N14. A picker names how big each acquisition was, in values for exact pairs. */
+  it("names each acquisition's scope in the pickers", async () => {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, ({ request }) => {
+        if (new URL(request.url).searchParams.get("limit") === "1") return;
+        const runs: Run[] = RUNS.map((run) =>
+          run.id === 6
+            ? { ...run, scope_candidates: 2, scope_attributes: 2, items_total: 2 }
+            : run,
+        );
+        return HttpResponse.json({ items: runs, total: runs.length });
+      }),
+    );
+    renderShell("/acquire");
+    const panel = await diffPanel();
+
+    expect(
+      within(
+        await panel.findByRole("combobox", { name: /later acquisition/i }),
+      ).getByRole("option", { name: /^Acquisition 6 — .* \(2 values over 2 candidates\)$/ }),
+    ).toBeInTheDocument();
   });
 
   it("says so when neither acquisition produced anything", async () => {
+    mockServer.use(
+      http.get(`${BASE}/values`, () => HttpResponse.json({ items: [], total: 0 })),
+    );
     renderShell("/acquire");
-    // Run 6 halted on its spend cap and stored nothing.
-    const panel = await compare("6", "6");
+    const panel = await compare("5", "7");
 
     expect(
-      await panel.findByText(/neither acquisition produced a figure/i),
+      await panel.findByText(/neither acquisition produced a usable figure/i),
     ).toBeInTheDocument();
   });
 });
@@ -1977,9 +2137,10 @@ describe("the two acquisitions chosen in the diff", () => {
     run.storeAnotherSourceForACountedPair();
     await refreshTheCard();
 
+    // Compared source by source (C04-N8), so the second source's figure is a row of its own.
     await waitFor(() =>
       expect(
-        theDiff().getByRole("row", { name: /Portugal.*air connectivity/i }),
+        theDiff().getByRole("row", { name: /Portugal.*air connectivity.*Manual entry/i }),
       ).toHaveTextContent("35"),
     );
   });

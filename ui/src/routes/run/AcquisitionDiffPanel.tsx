@@ -1,5 +1,10 @@
 import { useCallback, useId, useState } from "react";
-import { type Run, fetchValuesFromRun } from "../../api/endpoints";
+import {
+  type Run,
+  fetchRun,
+  fetchValuesFromRun,
+  fetchValuesReconfirmedByRun,
+} from "../../api/endpoints";
 import { useAttributeNames } from "../../api/useAttributeNames";
 import { useCandidateNames } from "../../api/useCandidateNames";
 import { useRead } from "../../api/useRead";
@@ -12,17 +17,47 @@ import {
   sourceName,
 } from "../../format/display";
 import { LoadedRegion } from "../../shell/LoadedRegion";
-import { diffAcquisitions, progressOf, runIdFrom } from "./acquisitionDiff";
+import {
+  askedBy,
+  describeLeftOut,
+  describeRecord,
+  diffAcquisitions,
+  levelHeading,
+  producedBy,
+  progressOf,
+  readsBackwards,
+  runIdFrom,
+} from "./acquisitionDiff";
+import { describeScope } from "./databaseHolds";
 import { useVersionOf } from "./useVersionOf";
+
+/**
+ * One run's record, as the diff reads it (PL-049): its detail, the values it stored and the
+ * values it re-confirmed -- a re-read that restates a figure on record writes no row.
+ */
+async function readRun(run: number, signal: AbortSignal) {
+  const [detail, stored, reconfirmed] = await Promise.all([
+    fetchRun(run, { signal }),
+    fetchValuesFromRun(run, { signal }),
+    fetchValuesReconfirmedByRun(run, { signal }),
+  ]);
+  const produced = producedBy({
+    stored: stored.items,
+    reconfirmed: detail.reconfirmed ?? [],
+    reconfirmedValues: reconfirmed.items,
+  });
+  return { detail, produced };
+}
 
 /**
  * What changed between two acquisitions.
  *
- * **It compares what the two runs produced, not what the store holds.** "Went missing" means
- * the later run did not produce a figure for that pair -- never that the figure is gone. The
- * earlier value is still stored, still in the drill-down, and may still be the active one;
- * this application does not delete values (`reqs.md` 3.6), and a screen implying otherwise
- * would be claiming a thing that never happens.
+ * **It compares what the two runs produced, not what the store holds**, and only over the values
+ * the later one asked for (PL-060). "Went missing" means the later run asked and produced no
+ * usable figure for that pair -- never that the figure is gone. The earlier value is still
+ * stored, still in the drill-down, and may still be the active one; this application does not
+ * delete values (`reqs.md` 3.6), and a screen implying otherwise would be claiming a thing that
+ * never happens.
  */
 export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
   const headingId = useId();
@@ -33,6 +68,7 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
   const attributes = useAttributeNames();
   const candidates = useCandidateNames();
   const sources = useSourceNames();
+  const samePick = earlier !== null && earlier === later;
 
   // Read again when either run may have moved on, which a refresh of the history reveals
   // (UIR-A1, RB-3). `runs` is a new list only when the history has been read again.
@@ -43,17 +79,22 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
     useCallback(
       async (signal: AbortSignal) => {
         if (earlier === null || later === null) throw new Error("no pair chosen");
-        // Two requests, one per run. The filter is what keeps this from being a walk of the
-        // whole corpus.
         const [before, after] = await Promise.all([
-          fetchValuesFromRun(earlier, { signal }),
-          fetchValuesFromRun(later, { signal }),
+          readRun(earlier, signal),
+          readRun(later, signal),
         ]);
-        return diffAcquisitions(before.items, after.items);
+        const asked = askedBy(after.produced, after.detail);
+        const diff = diffAcquisitions(before.produced, after.produced, asked);
+        return {
+          ...diff,
+          leftOutNote: describeLeftOut(diff.leftOut),
+          record: describeRecord(asked.length, after.detail),
+          level: after.detail.scope?.level,
+        };
       },
       [earlier, later],
     ),
-    { enabled: earlier !== null && later !== null, freshness },
+    { enabled: earlier !== null && later !== null && !samePick, freshness },
   );
 
   return (
@@ -62,9 +103,11 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
         What changed between two acquisitions
       </h2>
       <p className="panel__hint">
-        What each run produced, compared. &ldquo;Went missing&rdquo; means the
-        later run did not produce a figure for that pair — the earlier figure is
-        still stored and may still be the one being scored.
+        What each acquisition produced — the figures it stored and the ones it
+        re-confirmed — compared over the values the later one asked for.
+        &ldquo;Went missing&rdquo; means the later acquisition asked and produced
+        no usable figure — the earlier figure is still stored and may still be
+        the one being scored.
       </p>
 
       <div className="diff__pick">
@@ -106,7 +149,11 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
         </label>
       </div>
 
-      {values.read.state === "idle" ? (
+      {samePick ? (
+        <p className="notice notice--error" role="alert">
+          Pick two different acquisitions.
+        </p>
+      ) : values.read.state === "idle" ? (
         <p className="screen__note">Choose two acquisitions to compare.</p>
       ) : (
         <LoadedRegion
@@ -118,6 +165,13 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
         >
           {(diff) => (
             <>
+              {earlier !== null && later !== null && readsBackwards(runs, earlier, later) && (
+                <p className="notice notice--warning">
+                  Acquisition {earlier} started after acquisition {later}, so this
+                  reads backwards in time.
+                </p>
+              )}
+              {diff.record !== null && <p className="screen__note">{diff.record}</p>}
               {/* **Four counts, not three.** "Refreshed" used to mean both "the figure moved" and
                   "the same figure came back", which are different answers to the only question
                   this panel asks. A run that re-fetched a thousand figures and moved none of them
@@ -126,37 +180,40 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
                 <Tile
                   label="Newly acquired"
                   value={formatCount(diff.newlyAcquired)}
-                  note="No figure for that pair before this run"
+                  note="No figure in the earlier acquisition, one in the later"
                 />
                 <Tile
                   label="Refreshed"
                   value={formatCount(diff.refreshed)}
-                  note="A figure that moved"
+                  note="Asked again and the figure moved"
                 />
                 <Tile
                   label="Unchanged"
                   value={formatCount(diff.unchanged)}
-                  note="Re-fetched and identical"
+                  note="Asked again and the same figure came back"
                 />
                 <Tile
                   label="Went missing"
                   value={formatCount(diff.wentMissing)}
-                  note="The later run produced none — the earlier figure is still stored"
+                  note="The later acquisition produced none; the earlier figure is still stored"
                 />
               </dl>
+              {diff.leftOutNote !== null && (
+                <p className="screen__note">{diff.leftOutNote}</p>
+              )}
 
               {diff.rows.length === 0 ? (
                 <p className="screen__note">
-                  Neither acquisition produced a figure for any candidate, so there
-                  is nothing to compare. Two runs that produced the same pairs are
-                  not empty — every pair reads as refreshed or unchanged.
+                  Neither acquisition produced a usable figure for anything the
+                  later one asked for, so there is nothing to compare. Two runs that
+                  produced the same figures are not empty — each reads as unchanged.
                 </p>
               ) : (
                 <div className="table-card">
                   <table className="table" aria-label="What changed">
                     <thead>
                       <tr>
-                        <th scope="col">Candidate</th>
+                        <th scope="col">{levelHeading(diff.level)}</th>
                         <th scope="col">Attribute</th>
                         <th scope="col">Source</th>
                         {/* The two figures themselves, which is what makes the verdict in the
@@ -172,7 +229,7 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
                     </thead>
                     <tbody>
                       {diff.rows.map((row) => (
-                        <tr key={`${row.candidate}-${row.attribute}-${row.change}`}>
+                        <tr key={`${row.candidate}-${row.attribute}-${row.data_source ?? ""}`}>
                           <th scope="row">
                             {candidateName(candidates, row.candidate)}
                           </th>
@@ -212,8 +269,11 @@ function chipFor(change: string): string {
   return "chip--not_matching";
 }
 
+/** The design's picker line: the acquisition, when, and how big it was (C04-N14). */
 function labelFor(run: Run): string {
-  return `Acquisition ${run.id} — ${formatDateTime(run.started_at)}`;
+  const scope = describeScope(run);
+  const label = `Acquisition ${run.id} — ${formatDateTime(run.started_at)}`;
+  return scope === "—" ? label : `${label} (${scope})`;
 }
 
 /** A count with what it counts said underneath, because "refreshed" alone is ambiguous. */

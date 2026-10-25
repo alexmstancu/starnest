@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  askedBy,
+  describeLeftOut,
+  describeRecord,
   diffAcquisitions,
+  levelHeading,
+  producedBy,
   progressOf,
+  readsBackwards,
   runIdFrom,
   type ProducedValue,
 } from "./acquisitionDiff";
@@ -12,6 +18,14 @@ const value = (
   data_source = "eurostat",
 ): ProducedValue => ({ candidate, attribute, data_source });
 
+/** Every pair either side holds counts as asked: the cases below are about classification. */
+function compareAll(
+  earlier: readonly ProducedValue[],
+  later: readonly ProducedValue[],
+) {
+  return diffAcquisitions(earlier, later, [...earlier, ...later]);
+}
+
 const RENT = "country.rent";
 const TAX = "country.tax";
 const PT = "country.portugal";
@@ -19,7 +33,7 @@ const ES = "country.spain";
 
 describe("what changed between two acquisitions", () => {
   it("calls a pair only the later run produced newly acquired", () => {
-    const diff = diffAcquisitions([], [value(PT, RENT)]);
+    const diff = compareAll([], [value(PT, RENT)]);
 
     expect(diff.newlyAcquired).toBe(1);
     expect(diff.rows[0]).toMatchObject({
@@ -30,7 +44,7 @@ describe("what changed between two acquisitions", () => {
   });
 
   it("calls a pair both runs produced refreshed", () => {
-    const diff = diffAcquisitions([value(PT, RENT)], [value(PT, RENT)]);
+    const diff = compareAll([value(PT, RENT)], [value(PT, RENT)]);
 
     expect(diff.refreshed).toBe(1);
     expect(diff.rows[0]?.change).toBe("refreshed");
@@ -41,14 +55,14 @@ describe("what changed between two acquisitions", () => {
    * stored and may still be the active one -- this application never deletes a value.
    */
   it("calls a pair only the earlier run produced went missing", () => {
-    const diff = diffAcquisitions([value(PT, RENT)], []);
+    const diff = compareAll([value(PT, RENT)], []);
 
     expect(diff.wentMissing).toBe(1);
     expect(diff.rows[0]?.change).toBe("went missing");
   });
 
   it("counts each kind separately", () => {
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [value(PT, RENT), value(PT, TAX)],
       [value(PT, RENT), value(ES, TAX)],
     );
@@ -61,37 +75,38 @@ describe("what changed between two acquisitions", () => {
   });
 
   it("finds nothing between two runs that produced the same pairs", () => {
-    const diff = diffAcquisitions([value(PT, RENT)], [value(PT, RENT)]);
+    const diff = compareAll([value(PT, RENT)], [value(PT, RENT)]);
 
     expect(diff.newlyAcquired).toBe(0);
     expect(diff.wentMissing).toBe(0);
   });
 
   it("finds nothing at all between two empty runs", () => {
-    expect(diffAcquisitions([], [])).toEqual({
+    expect(compareAll([], [])).toEqual({
       rows: [],
       newlyAcquired: 0,
       refreshed: 0,
       unchanged: 0,
       wentMissing: 0,
+      leftOut: 0,
     });
   });
 
   /** A candidate and an attribute together are the unit; neither identifies a pair alone. */
   it("treats the same attribute for two candidates as two pairs", () => {
-    const diff = diffAcquisitions([], [value(PT, RENT), value(ES, RENT)]);
+    const diff = compareAll([], [value(PT, RENT), value(ES, RENT)]);
 
     expect(diff.newlyAcquired).toBe(2);
   });
 
   it("treats two attributes for one candidate as two pairs", () => {
-    const diff = diffAcquisitions([], [value(PT, RENT), value(PT, TAX)]);
+    const diff = compareAll([], [value(PT, RENT), value(PT, TAX)]);
 
     expect(diff.newlyAcquired).toBe(2);
   });
 
   it("reads in a fixed order, so the same two runs always look the same", () => {
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [value(ES, TAX)],
       [value(PT, TAX), value(ES, RENT)],
     );
@@ -107,18 +122,247 @@ describe("what changed between two acquisitions", () => {
   });
 
   it("names the source that answered", () => {
-    const diff = diffAcquisitions([], [value(PT, RENT, "oecd")]);
+    const diff = compareAll([], [value(PT, RENT, "oecd")]);
 
     expect(diff.rows[0]?.data_source).toBe("oecd");
   });
 
-  it("copes with one run producing two figures for one pair", () => {
-    const diff = diffAcquisitions(
-      [],
-      [value(PT, RENT, "eurostat"), value(PT, RENT, "oecd")],
+  /**
+   * C04-N8. **The unit is the pair and its source.** Keyed without the source, the last of two
+   * figures for one pair won, so OECD's tax rate and the estimate's read as one row with
+   * whichever arrived last.
+   */
+  it("compares a pair two sources answered source by source", () => {
+    const diff = compareAll(
+      [{ ...value(PT, TAX, "oecd"), payload: { count: 40 } }],
+      [
+        { ...value(PT, TAX, "oecd"), payload: { count: 40 } },
+        { ...value(PT, TAX, "eurostat_estimate"), payload: { count: 42 } },
+      ],
     );
 
-    expect(diff.newlyAcquired).toBe(1);
+    expect(
+      diff.rows.map((row) => [row.data_source, row.change]),
+    ).toEqual([
+      ["eurostat_estimate", "newly acquired"],
+      ["oecd", "unchanged"],
+    ]);
+  });
+});
+
+/**
+ * PL-060. **Only what the later acquisition asked about is compared.** Built from value rows
+ * alone, a two-item retry against a sweep listed every other pair of the sweep as "went
+ * missing" -- 624 rows about pairs the retry never asked.
+ */
+describe("what the later acquisition asked about", () => {
+  const sweep = [value(PT, RENT), value(PT, TAX), value(ES, RENT)];
+
+  it("compares no pair the later acquisition never asked about", () => {
+    const diff = diffAcquisitions(sweep, [value(PT, RENT)], [value(PT, RENT)]);
+
+    expect(diff.rows.map((row) => [row.candidate, row.attribute])).toEqual([
+      [PT, RENT],
+    ]);
+    expect(diff.wentMissing).toBe(0);
+    expect(diff.leftOut).toBe(2);
+  });
+
+  it("says a pair it asked about and produced nothing for went missing", () => {
+    const diff = diffAcquisitions(sweep, [], [value(PT, TAX)]);
+
+    expect(diff.rows).toMatchObject([
+      { candidate: PT, attribute: TAX, change: "went missing" },
+    ]);
+  });
+
+  it("asks about what it produced, failed on and left unanswered", () => {
+    const asked = askedBy([value(PT, RENT), value(PT, RENT, "oecd")], {
+      failures: [{ candidate: PT, attribute: TAX }],
+      unanswered: [{ candidate: ES, attribute: RENT }],
+    });
+
+    expect(asked.map((pair) => `${pair.candidate}|${pair.attribute}`)).toEqual([
+      `${PT}|${RENT}`,
+      `${PT}|${TAX}`,
+      `${ES}|${RENT}`,
+    ]);
+  });
+
+  it("says how many earlier figures were left out", () => {
+    expect(describeLeftOut(0)).toBeNull();
+    expect(describeLeftOut(1)).toBe(
+      "1 figure from the earlier acquisition is for a value the later one did not ask for, so it is not compared.",
+    );
+    expect(describeLeftOut(624)).toBe(
+      "624 figures from the earlier acquisition are for values the later one did not ask for, so they are not compared.",
+    );
+  });
+});
+
+/**
+ * PL-049. **A re-read that restates a stored figure writes no value**, so a diff built from
+ * value rows alone called every re-confirmed figure "went missing" -- run 132 against itself
+ * read "Neither acquisition produced a figure" over a run that said "1 figure stored".
+ */
+describe("a figure the later acquisition re-confirmed", () => {
+  const stored = {
+    id: 41,
+    candidate: PT,
+    attribute: RENT,
+    data_source: "rsf",
+    payload: { count: 7 },
+  };
+  const reconfirmation = {
+    candidate: PT,
+    attribute: RENT,
+    data_source: "rsf",
+    value: 41,
+  };
+
+  it("reads as unchanged, with the same figure on both sides", () => {
+    const later = producedBy({
+      stored: [],
+      reconfirmed: [reconfirmation],
+      reconfirmedValues: [stored],
+    });
+
+    const diff = diffAcquisitions([stored], later, askedBy(later, {}));
+
+    expect(diff.rows).toMatchObject([
+      { change: "unchanged", earlier: "7", later: "7" },
+    ]);
+  });
+
+  it("reads a re-confirmation of a newer transcription as refreshed", () => {
+    const newer = { ...stored, id: 42, payload: { count: 9 } };
+    const later = producedBy({
+      stored: [],
+      reconfirmed: [{ ...reconfirmation, value: 42 }],
+      reconfirmedValues: [newer],
+    });
+
+    const diff = diffAcquisitions([stored], later, askedBy(later, {}));
+
+    expect(diff.rows).toMatchObject([
+      { change: "refreshed", earlier: "7", later: "9" },
+    ]);
+  });
+
+  it("never calls a re-confirmation whose figure is unknown unchanged", () => {
+    const later = producedBy({
+      stored: [],
+      reconfirmed: [{ ...reconfirmation, value: null }],
+      reconfirmedValues: [],
+    });
+
+    const diff = diffAcquisitions([stored], later, askedBy(later, {}));
+
+    expect(diff.rows).toMatchObject([
+      { change: "refreshed", earlier: "7", later: "not recorded" },
+    ]);
+  });
+
+  it("keeps what the run stored beside what it re-confirmed", () => {
+    const fresh = { ...value(ES, TAX), id: 50, payload: { count: 3 } };
+    const produced = producedBy({
+      stored: [fresh],
+      reconfirmed: [reconfirmation],
+      reconfirmedValues: [stored],
+    });
+
+    expect(produced).toMatchObject([fresh, stored]);
+  });
+});
+
+/**
+ * C04-N8. **A rejected figure is no usable figure.** It has nothing a reader could rely on, so
+ * a later rejection over a stored figure went missing -- and its cell says why, rather than
+ * leaving an empty one that reads as "not asked".
+ */
+describe("a rejected figure", () => {
+  const usable = { ...value(PT, RENT), payload: { count: 5 } };
+  const rejected = {
+    ...value(PT, RENT),
+    payload: { count: 500 },
+    rejection_reason: "outside the credible range",
+  };
+
+  it("went missing when the later acquisition rejected it, and its cell reads rejected", () => {
+    const diff = compareAll([usable], [rejected]);
+
+    expect(diff.rows).toMatchObject([
+      { change: "went missing", earlier: "5", later: "rejected" },
+    ]);
+  });
+
+  it("is newly acquired once a later acquisition produced a usable one", () => {
+    const diff = compareAll([rejected], [usable]);
+
+    expect(diff.rows).toMatchObject([
+      { change: "newly acquired", earlier: "rejected", later: "5" },
+    ]);
+  });
+
+  it("is not compared when neither side has a usable figure", () => {
+    expect(compareAll([rejected], [rejected]).rows).toEqual([]);
+  });
+
+  it("does not hide a usable figure the same run produced beside it", () => {
+    const diff = compareAll([usable], [usable, rejected]);
+
+    expect(diff.rows).toMatchObject([{ change: "unchanged" }]);
+  });
+});
+
+describe("what is said about the later acquisition's record", () => {
+  it("says nothing when its asked values account for every item", () => {
+    expect(
+      describeRecord(3, { id: 7, run_status: "completed", progress: { items_total: 3 } }),
+    ).toBeNull();
+  });
+
+  it("says the comparison may be incomplete when they do not", () => {
+    expect(
+      describeRecord(6, { id: 7, run_status: "completed", progress: { items_total: 96 } }),
+    ).toBe(
+      "Acquisition 7's record accounts for 6 of the 96 values it asked for, so this comparison may be incomplete.",
+    );
+  });
+
+  it("says a run still going is compared on what it has settled", () => {
+    expect(
+      describeRecord(1, { id: 7, run_status: "running", progress: { items_total: 96 } }),
+    ).toBe(
+      "Acquisition 7 is still running, so this compares what it has settled so far.",
+    );
+  });
+});
+
+describe("two acquisitions picked out of order", () => {
+  const runs = [
+    { id: 5, started_at: "2025-09-11T08:00:00Z" },
+    { id: 7, started_at: "2026-08-29T18:02:00Z" },
+  ];
+
+  it("reads backwards when the earlier pick started after the later one", () => {
+    expect(readsBackwards(runs, 7, 5)).toBe(true);
+  });
+
+  it("reads forwards otherwise, and for a run the history does not list", () => {
+    expect(readsBackwards(runs, 5, 7)).toBe(false);
+    expect(readsBackwards(runs, 9, 5)).toBe(false);
+  });
+});
+
+describe("the heading over the candidates", () => {
+  it("names the level the later acquisition covered", () => {
+    expect(levelHeading("country")).toBe("Country");
+    expect(levelHeading("city")).toBe("City");
+  });
+
+  it("falls back to a candidate where the level is not known", () => {
+    expect(levelHeading(undefined)).toBe("Candidate");
   });
 });
 
@@ -147,7 +391,7 @@ describe("a figure that moved, and one that did not", () => {
   const pair = { candidate: "country.portugal", attribute: "country.rent" };
 
   it("calls a pair unchanged when both runs produced the same figure", () => {
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [{ ...pair, payload: { magnitude: 780, unit: "EUR" } }],
       [{ ...pair, payload: { magnitude: 780, unit: "EUR" } }],
     );
@@ -157,7 +401,7 @@ describe("a figure that moved, and one that did not", () => {
   });
 
   it("calls it refreshed when the figure moved", () => {
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [{ ...pair, payload: { magnitude: 780, unit: "EUR" } }],
       [{ ...pair, payload: { magnitude: 812, unit: "EUR" } }],
     );
@@ -167,7 +411,7 @@ describe("a figure that moved, and one that did not", () => {
   });
 
   it("carries both figures, so the verdict can be checked rather than trusted", () => {
-    const [row] = diffAcquisitions(
+    const [row] = compareAll(
       [{ ...pair, payload: { magnitude: 780, unit: "EUR" } }],
       [{ ...pair, payload: { magnitude: 812, unit: "EUR" } }],
     ).rows;
@@ -177,7 +421,7 @@ describe("a figure that moved, and one that did not", () => {
   });
 
   it("leaves the later figure empty for a pair that went missing", () => {
-    const [row] = diffAcquisitions(
+    const [row] = compareAll(
       [{ ...pair, payload: { magnitude: 780, unit: "EUR" } }],
       [],
     ).rows;
@@ -191,14 +435,14 @@ describe("a figure that moved, and one that did not", () => {
     // Inventing agreement out of ignorance is the one thing this application exists not to
     // do. With no payload on either side the weaker, true claim is that the pair was
     // produced again.
-    const diff = diffAcquisitions([{ ...pair }], [{ ...pair }]);
+    const diff = compareAll([{ ...pair }], [{ ...pair }]);
 
     expect(diff.refreshed).toBe(1);
     expect(diff.unchanged).toBe(0);
   });
 
   it("puts the rows nobody has to act on last", () => {
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [
         { candidate: "a", attribute: "x", payload: { count: 1 } },
         { candidate: "b", attribute: "x", payload: { count: 1 } },
@@ -226,7 +470,7 @@ describe("what decides that a figure did not move", () => {
   const pair = { candidate: "country.portugal", attribute: "country.life_satisfaction" };
 
   it("calls a pair refreshed when the figure moved by less than the displayed precision", () => {
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [{ ...pair, payload: { magnitude: 1.071, unit: "ladder_points" } }],
       [{ ...pair, payload: { magnitude: 1.074, unit: "ladder_points" } }],
     );
@@ -236,7 +480,7 @@ describe("what decides that a figure did not move", () => {
   });
 
   it("shows the exact figures when the rounded ones would read the same", () => {
-    const [row] = diffAcquisitions(
+    const [row] = compareAll(
       [{ ...pair, payload: { magnitude: 1.071, unit: "ladder_points" } }],
       [{ ...pair, payload: { magnitude: 1.074, unit: "ladder_points" } }],
     ).rows;
@@ -246,7 +490,7 @@ describe("what decides that a figure did not move", () => {
   });
 
   it("keeps the rounded figures where they already tell the two apart", () => {
-    const [row] = diffAcquisitions(
+    const [row] = compareAll(
       [{ ...pair, payload: { magnitude: 30.80604044947752, unit: "ladder_points" } }],
       [{ ...pair, payload: { magnitude: 31.2, unit: "ladder_points" } }],
     ).rows;
@@ -261,7 +505,7 @@ describe("what decides that a figure did not move", () => {
    */
   it("shows the euro equivalents when a converted amount moved only in euros", () => {
     const rent = { ...pair, attribute: "country.rent_one_bedroom_centre" };
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [{ ...rent, payload: { amount: 1000, currency: "CHF", amount_eur: 1061.2 } }],
       [{ ...rent, payload: { amount: 1000, currency: "CHF", amount_eur: 1063.5 } }],
     );
@@ -275,7 +519,7 @@ describe("what decides that a figure did not move", () => {
   it("calls the same converted amount unchanged, and shows both its amounts", () => {
     const rent = { ...pair, attribute: "country.rent_one_bedroom_centre" };
     const payload = { amount: 1000, currency: "CHF", amount_eur: 1061.2 };
-    const diff = diffAcquisitions([{ ...rent, payload }], [{ ...rent, payload }]);
+    const diff = compareAll([{ ...rent, payload }], [{ ...rent, payload }]);
     const [row] = diff.rows;
 
     expect(diff.unchanged).toBe(1);
@@ -285,7 +529,7 @@ describe("what decides that a figure did not move", () => {
 
   it("stays at readable precision where the amounts already tell the two apart", () => {
     const rent = { ...pair, attribute: "country.rent_one_bedroom_centre" };
-    const [row] = diffAcquisitions(
+    const [row] = compareAll(
       [{ ...rent, payload: { amount: 1000, currency: "CHF", amount_eur: 1061.2 } }],
       [{ ...rent, payload: { amount: 1100, currency: "CHF", amount_eur: 1167.324 } }],
     ).rows;
@@ -296,7 +540,7 @@ describe("what decides that a figure did not move", () => {
 
   it("shows every digit where two converted amounts read the same at readable precision", () => {
     const rent = { ...pair, attribute: "country.rent_one_bedroom_centre" };
-    const [row] = diffAcquisitions(
+    const [row] = compareAll(
       [{ ...rent, payload: { amount: 1000, currency: "CHF", amount_eur: 1061.2341 } }],
       [{ ...rent, payload: { amount: 1000, currency: "CHF", amount_eur: 1061.2349 } }],
     ).rows;
@@ -323,7 +567,7 @@ describe("what decides that a figure did not move", () => {
     });
 
     it("shows the rationales when two scores differ in nothing else", () => {
-      const diff = diffAcquisitions(
+      const diff = compareAll(
         [score("Permits take three months")],
         [score("Permits take six weeks")],
       );
@@ -339,7 +583,7 @@ describe("what decides that a figure did not move", () => {
     });
 
     it("shows a rationale given to a score that had none", () => {
-      const [row] = diffAcquisitions(
+      const [row] = compareAll(
         [score()],
         [score("Permits take six weeks")],
       ).rows;
@@ -352,7 +596,7 @@ describe("what decides that a figure did not move", () => {
     });
 
     it("calls the same score unchanged, and shows it as it always has", () => {
-      const diff = diffAcquisitions(
+      const diff = compareAll(
         [score("Permits take six weeks")],
         [score("Permits take six weeks")],
       );
@@ -364,7 +608,7 @@ describe("what decides that a figure did not move", () => {
     });
 
     it("keeps the scores alone where their numbers already tell the two apart", () => {
-      const [row] = diffAcquisitions(
+      const [row] = compareAll(
         [score("Permits take three months", 6)],
         [score("Permits take six weeks", 7)],
       ).rows;
@@ -375,7 +619,7 @@ describe("what decides that a figure did not move", () => {
   });
 
   it("calls the same payload unchanged whatever the order of its keys", () => {
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [{ ...pair, payload: { magnitude: 7.1, unit: "ladder_points" } }],
       [{ ...pair, payload: { unit: "ladder_points", magnitude: 7.1 } }],
     );
@@ -384,7 +628,7 @@ describe("what decides that a figure did not move", () => {
   });
 
   it("calls a changed unit with the same magnitude a move", () => {
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [{ ...pair, payload: { magnitude: 7.1, unit: "ladder_points" } }],
       [{ ...pair, payload: { magnitude: 7.1, unit: "pisa_points" } }],
     );
@@ -393,7 +637,7 @@ describe("what decides that a figure did not move", () => {
   });
 
   it("calls a field the later payload gained a move", () => {
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [{ ...pair, payload: { count: 412 } }],
       [{ ...pair, payload: { count: 412, basis: "per_capita" } }],
     );
@@ -402,7 +646,7 @@ describe("what decides that a figure did not move", () => {
   });
 
   it("never calls a payload missing on one side unchanged", () => {
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [{ ...pair, payload: null }, { ...pair, candidate: "country.spain" }],
       [
         { ...pair, payload: { count: 412 } },
@@ -416,7 +660,7 @@ describe("what decides that a figure did not move", () => {
 
   /** A label set's order is what the source served, so a reordering is a move -- on purpose. */
   it("counts a label set served in a different order as moved", () => {
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [{ ...pair, payload: { labels: ["Siemens", "OutSystems"] } }],
       [{ ...pair, payload: { labels: ["OutSystems", "Siemens"] } }],
     );
@@ -425,7 +669,7 @@ describe("what decides that a figure did not move", () => {
   });
 
   it("calls the same label set unchanged", () => {
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [{ ...pair, payload: { labels: ["Siemens", "OutSystems"] } }],
       [{ ...pair, payload: { labels: ["Siemens", "OutSystems"] } }],
     );
@@ -434,7 +678,7 @@ describe("what decides that a figure did not move", () => {
   });
 
   it("calls a label set that lost a label a move", () => {
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [{ ...pair, payload: { labels: ["Siemens", "OutSystems"] } }],
       [{ ...pair, payload: { labels: ["Siemens"] } }],
     );
@@ -443,7 +687,7 @@ describe("what decides that a figure did not move", () => {
   });
 
   it("does not mistake a list for a record with the same entries", () => {
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [{ ...pair, payload: { count: 412, basis: ["per_capita"] } }],
       [{ ...pair, payload: { count: 412, basis: { 0: "per_capita" } } }],
     );
@@ -458,7 +702,7 @@ describe("what decides that a figure did not move", () => {
         { label: "fossil", share: 100 - renewable },
       ],
     });
-    const diff = diffAcquisitions(
+    const diff = compareAll(
       [
         { ...pair, payload: shares(61) },
         { ...pair, candidate: "country.spain", payload: shares(61) },

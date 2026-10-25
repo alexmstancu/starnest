@@ -1227,6 +1227,31 @@ export const STORED_VALUES: StoredValue[] = [
   },
 ];
 
+/**
+ * What runs re-confirmed rather than stored (PL-049): a re-read that restates a figure already
+ * on record writes no value, and the run keeps a reuse row naming the figure instead.
+ *
+ * **Run 6 re-read Portugal's air connectivity and found the figure run 5 stored** (499), so the
+ * acquisition diff has a re-confirmation to read as unchanged -- the case it once called "went
+ * missing". The server serves these in the run's `reconfirmed` and through
+ * `GET /values?reconfirmed_by_run=`.
+ */
+export const RUN_REUSES: {
+  data_acquisition_run: number;
+  data_source: string;
+  candidate: string;
+  attribute: string;
+  value: number | null;
+}[] = [
+  {
+    data_acquisition_run: 6,
+    data_source: "eurostat",
+    candidate: "country.portugal",
+    attribute: "country.european_air_connectivity",
+    value: 499,
+  },
+];
+
 export const EXTERNAL_SCORES: ExternalScore[] = [
   {
     candidate: "country.portugal",
