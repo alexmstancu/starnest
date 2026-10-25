@@ -420,7 +420,18 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Whether this set enforces a gate */
+        /**
+         * Whether this set enforces a gate, and as a gate or as a warning
+         * @description Whether the gate counts in this set, and what it does when a candidate fails it (D56):
+         *     `not_matching` rules the candidate out, `warning` flags it and keeps it matching. Both
+         *     are the set's preference; the answer belongs to the candidate. Switching the outcome
+         *     changes nothing else about the set.
+         *
+         *     **Only a gate that is on holds an outcome.** Left out, the outcome already held is kept,
+         *     and a gate newly enforced is a gate (`not_matching`). Releasing a gate drops its outcome
+         *     with it, so enforced again it is a gate again; an `outcome` sent with `is_enforced: false`
+         *     is refused with `invalid_criteria_set`.
+         */
         put: operations["setMatchRuleEnforcement"];
         post?: never;
         delete?: never;
@@ -437,7 +448,13 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Whether this set applies a compound rule */
+        /**
+         * Whether this set applies a compound rule, and as a gate or as a warning
+         * @description As for a gate (D56): the outcome the rule has in this set, which may differ from the
+         *     catalog's. Left out, the outcome already held is kept, and a rule newly applied takes the
+         *     catalog's. Dropping the rule drops its outcome; an `outcome` sent with
+         *     `is_applied: false` is refused with `invalid_criteria_set`.
+         */
         put: operations["setCompoundRuleApplication"];
         post?: never;
         delete?: never;
@@ -1271,7 +1288,20 @@ export interface components {
             criteria?: components["schemas"]["Criterion"][];
             enforced_match_rules?: string[];
             applied_compound_rules?: string[];
+            /** @description What each enforced gate does in this set when a candidate fails it, keyed by gate: one entry per gate in `enforced_match_rules`, and none for a gate that is off (D56). */
+            match_rule_outcomes?: {
+                [key: string]: components["schemas"]["RuleOutcome"];
+            };
+            /** @description What each applied compound rule does in this set when it fires, keyed by rule: one entry per rule in `applied_compound_rules`, which may differ from the catalog's outcome (D56). */
+            compound_rule_outcomes?: {
+                [key: string]: components["schemas"]["RuleOutcome"];
+            };
         };
+        /**
+         * @description What a rule does when it fires: `not_matching` rules the candidate out, `warning` flags it and leaves it matching, its score untouched.
+         * @enum {string}
+         */
+        RuleOutcome: "warning" | "not_matching";
         MatchRule: {
             id: string;
             name: string;
@@ -1495,8 +1525,12 @@ export interface components {
                 }[];
             };
         };
+        /** @description Exactly one of compound_rule or match_rule is set: a compound rule whose outcome is a warning, or a gate the criteria set holds as a warning (D56). */
         Warning: {
-            compound_rule: string;
+            compound_rule?: string | null;
+            match_rule?: string | null;
+            /** @description The answer a gate held as a warning read, as it stood then, as for a refusal (D46). Null for a compound rule. */
+            gate_answer?: components["schemas"]["MatchRuleResult"] | null;
             /** @description In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved. */
             detail: string;
             /** @description The figures the rule read, each with its source and both dates, in the order the rule names them -- for a saved ranking, the rows it read when it was saved, never today's (D46). Empty when the ranking was saved before its evidence was kept. */
@@ -2374,6 +2408,7 @@ export interface operations {
             content: {
                 "application/json": {
                     is_enforced: boolean;
+                    outcome?: components["schemas"]["RuleOutcome"];
                 };
             };
         };
@@ -2402,6 +2437,7 @@ export interface operations {
             content: {
                 "application/json": {
                     is_applied: boolean;
+                    outcome?: components["schemas"]["RuleOutcome"];
                 };
             };
         };
