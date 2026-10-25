@@ -239,6 +239,20 @@ export function describeEnd(end: PassEnd): string {
   }
 }
 
+/**
+ * Whether the estimate the pass started from still holds once it has ended (PL-160): it was
+ * refused, or could not start, before it asked or spent anything -- so nothing the household
+ * agreed to was used, and asking for the same estimate again would only cost a step.
+ */
+export function leavesEstimateUnspent(end: PassEnd): boolean {
+  const { tally } = end.pass;
+  return (
+    (end.kind === "refused" || end.kind === "unread") &&
+    tally.calls === 0 &&
+    tally.spentMicroEur === 0
+  );
+}
+
 /** An end the reader did not ask for, which left gates unasked or money unaccounted for. */
 export function endIsWarning(end: PassEnd): boolean {
   return end.kind !== "finished" && end.kind !== "stopped";

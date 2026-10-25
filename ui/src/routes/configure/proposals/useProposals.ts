@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   fetchMatchRuleResults,
+  fetchSettings,
   planMatchRuleResearch,
   putMatchRuleResult,
   type MatchRuleResult,
@@ -45,6 +46,11 @@ export interface Proposals {
   stale: boolean;
   /** What a pass would ask and cost. Null until asked for, and once a pass has spent it. */
   plan: ResearchPlan | null;
+  /**
+   * `run_spend_cap_eur`, read with the estimate (PL-160), so the panel states the cap a pass
+   * will halt at, and offers an uncapped pass only when there is none. Null when none is set.
+   */
+  capEur: number | null;
   busy: "estimating" | "confirming" | null;
   /** The last refusal from an estimate or a confirmation. Shown, never swallowed. */
   failure: unknown;
@@ -55,6 +61,8 @@ export interface Proposals {
   estimate: (level: string) => void;
   /** The pass the estimate allowed has started, so it allows no other (UI-14). */
   forgetPlan: () => void;
+  /** That pass spent nothing before it was refused, so its estimate is offered again (PL-160). */
+  restorePlan: () => void;
   confirm: (proposal: MatchRuleResult) => void;
   reload: () => Promise<void>;
 }
@@ -79,7 +87,14 @@ export function useProposals(
   const read = answersRead.read.state === "idle" ? PENDING : answersRead.read;
   const reload = answersRead.reload;
 
-  const [plan, setPlan] = useState<ResearchPlan | null>(null);
+  const [estimate, setEstimate] = useState<Estimate | null>(null);
+  // The estimate the last pass started from, kept until that pass ends: offered again when it
+  // was refused before spending anything, rather than asked for again.
+  const startedFrom = useRef<Estimate | null>(null);
+  const restorePlan = useCallback(() => {
+    if (startedFrom.current !== null) setEstimate(startedFrom.current);
+    startedFrom.current = null;
+  }, []);
   const [busy, setBusy] = useState<Proposals["busy"]>(null);
   const [failure, setFailure] = useState<unknown>(null);
   const [failed, setFailed] = useState<{ act: Proposals["busy"]; work: () => Promise<unknown> } | null>(null);
@@ -121,7 +136,8 @@ export function useProposals(
     confirmedCount: answers.filter((answer) => answer.is_proposal !== true)
       .length,
     stale,
-    plan,
+    plan: estimate?.plan ?? null,
+    capEur: estimate?.capEur ?? null,
     busy,
     failure,
     failedAct: failed?.act === "confirming" ? "The confirmation" : "The estimate",
@@ -134,9 +150,17 @@ export function useProposals(
         : null,
     estimate: (level) =>
       attempt("estimating", async () => {
-        setPlan(await planMatchRuleResearch({ level }));
+        const [plan, settings] = await Promise.all([
+          planMatchRuleResearch({ level }),
+          fetchSettings(),
+        ]);
+        setEstimate({ plan, capEur: settings.run_spend_cap_eur ?? null });
       }),
-    forgetPlan: () => setPlan(null),
+    forgetPlan: () => {
+      startedFrom.current = estimate;
+      setEstimate(null);
+    },
+    restorePlan,
     confirm: (proposal) =>
       attempt("confirming", async () => {
         await putMatchRuleResult(proposal.match_rule, proposal.candidate, {
@@ -162,6 +186,12 @@ export function useProposals(
 }
 
 const PENDING: Read<never> = { state: "pending" };
+
+/** An estimate as the panel shows it: the plan, and the cap a pass would halt at. */
+interface Estimate {
+  plan: ResearchPlan;
+  capEur: number | null;
+}
 
 /**
  * The answers about candidates at this level (PL-151). The answers are read for every level,

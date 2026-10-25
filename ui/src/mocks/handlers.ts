@@ -400,6 +400,7 @@ export const handlers = [
     const scope = (await request.json()) as {
       level: string;
       match_rules?: string[] | null;
+      accept_uncapped_spend?: boolean;
     };
     const named =
       scope.match_rules ??
@@ -413,6 +414,21 @@ export const handlers = [
           (stored) => isSameAnswer(stored, finding) && stored.is_proposal !== true,
         ),
     );
+    // **Refused before anything is asked**, as the server refuses (`refuse_unless_capped`): a
+    // request that would spend, with no cap set and no acceptance in it.
+    if (
+      asked.length > 0 &&
+      settings.run_spend_cap_eur == null &&
+      scope.accept_uncapped_spend !== true
+    ) {
+      return HttpResponse.json(
+        {
+          code: "spend_cap_not_set",
+          message: "this run would ask a source that charges, and no spend cap is set.",
+        },
+        { status: 409 },
+      );
+    }
     // A proposal replaces an earlier one for the same gate and candidate, as the store's does.
     matchRuleResults = [
       ...matchRuleResults.filter(

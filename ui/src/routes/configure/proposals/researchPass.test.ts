@@ -8,6 +8,7 @@ import {
   describeProgress,
   endIsWarning,
   failedOn,
+  leavesEstimateUnspent,
   shouldReadAnswersAgain,
   nextStep,
   reachedCap,
@@ -333,6 +334,22 @@ describe("stopping and failing", () => {
 
   it("reads them again after a failure, which may follow a write it never reported", () => {
     expect(shouldReadAnswersAgain(failedOn(aPass(), UNREACHABLE))).toBe(true);
+  });
+});
+
+/** PL-160. An estimate nothing was spent from is offered again, never one a pass used. */
+describe("whether a pass left its estimate unspent", () => {
+  it("leaves it unspent when refused, or unable to start, before asking anything", () => {
+    expect(leavesEstimateUnspent(failedOn(aPass(), REFUSED))).toBe(true);
+    expect(leavesEstimateUnspent(couldNotStart(UNREAD_SCOPE, UNREACHABLE))).toBe(true);
+  });
+
+  it("spends it once anything was asked, or when a failure's spend is not known", () => {
+    expect(leavesEstimateUnspent(failedOn(after(aPass(), answer(0.04)), REFUSED))).toBe(false);
+    expect(leavesEstimateUnspent(failedOn(aPass(), UNREACHABLE))).toBe(false);
+    expect(leavesEstimateUnspent(endOf(after(aPass(), answer(0), answer(0), answer(0))))).toBe(
+      false,
+    );
   });
 });
 

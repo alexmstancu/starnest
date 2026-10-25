@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { replaceSettings } from "../../../api/endpoints";
 import { SETTINGS } from "../../../mocks/fixtures";
 import { mockServer } from "../../../mocks/server";
 import {
@@ -84,13 +85,12 @@ async function passSays(text: string | RegExp): Promise<void> {
   await waitFor(() => expect(statusLine()).toHaveTextContent(text));
 }
 
-/** The spend cap the pass reads at its start. */
-function capAt(eur: number | null): void {
-  mockServer.use(
-    http.get(`${BASE}/settings`, () =>
-      HttpResponse.json({ ...SETTINGS, run_spend_cap_eur: eur }),
-    ),
-  );
+/**
+ * The spend cap, stored as the settings panel would store it: the pass and the estimate read it,
+ * and the mock's research refuses a pass with none, as the server does.
+ */
+async function capAt(eur: number | null): Promise<void> {
+  await replaceSettings({ ...SETTINGS, run_spend_cap_eur: eur });
 }
 
 /** One request's answer, as the server sends it. */
@@ -288,6 +288,7 @@ describe("spending money on research", () => {
     await researched();
     await passSays(ALL_ASKED);
 
+    await capAt(null);
     await estimated();
     await userEvent.click(
       theProposals().getByRole("checkbox", { name: /accept an uncapped spend/i }),
@@ -308,6 +309,7 @@ describe("spending money on research", () => {
     // **Per pass, never remembered** -- which the panel's own comment claimed while the
     // checkbox stayed ticked, so one agreement authorised every later pass in silence.
     const research = watchResearch();
+    await capAt(null);
     renderShell("/configure");
     await settled();
     await estimated();
@@ -326,12 +328,83 @@ describe("spending money on research", () => {
     await userEvent.click(
       theProposals().getByRole("button", { name: "Research the gates" }),
     );
-    await waitFor(() => expect(research.answered).toBe(10));
+    // Refused at the first gate research can answer, as the server refuses a pass with no cap
+    // and no acceptance: nothing after it is asked.
+    await passSays(/was refused at A visa route exists, which spent nothing/);
 
     expect(research.sent.map((body) => body.accept_uncapped_spend)).toEqual([
       ...Array<boolean>(5).fill(true),
-      ...Array<boolean>(5).fill(false),
+      false,
     ]);
+  });
+
+  /** PL-160. The cap a pass halts at is said with the estimate, and an uncapped pass is not offered. */
+  it("states the cap with the estimate, and offers no uncapped pass when a cap is set", async () => {
+    await capAt(2.5);
+    renderShell("/configure");
+    await settled();
+    await estimated();
+
+    expect(theProposals().getByText("Halts at the €2.50 spend cap.")).toBeInTheDocument();
+    expect(
+      theProposals().queryByRole("checkbox", { name: /accept an uncapped spend/i }),
+    ).toBeNull();
+  });
+
+  it("offers an uncapped pass, saying no cap is set, only when none is", async () => {
+    await capAt(null);
+    renderShell("/configure");
+    await settled();
+    await estimated();
+
+    expect(
+      theProposals().getByRole("checkbox", { name: /no spend cap is set/i }),
+    ).not.toBeChecked();
+    expect(theProposals().queryByText(/spend cap\.$/)).toBeNull();
+  });
+
+  /**
+   * PL-160. **A refusal that spent nothing keeps the estimate**: refused for want of a cap, the
+   * answer is to tick the box and press Research again, which a lost estimate made two steps.
+   */
+  it("keeps the estimate after a pass refused for want of a cap, and the next press accepts", async () => {
+    const research = watchResearch();
+    await capAt(null);
+    renderShell("/configure");
+    await settled();
+    await researched();
+    await passSays(/was refused at A visa route exists, which spent nothing/);
+
+    expect(theProposals().getByText(/3 questions to research/i)).toBeInTheDocument();
+    await userEvent.click(
+      theProposals().getByRole("checkbox", { name: /accept an uncapped spend/i }),
+    );
+    await userEvent.click(
+      theProposals().getByRole("button", { name: "Research the gates" }),
+    );
+    await passSays(ALL_ASKED);
+    expect(research.sent.at(-1)?.accept_uncapped_spend).toBe(true);
+  });
+
+  it("asks for a fresh estimate after a refusal that came once the pass had spent", async () => {
+    watchResearch({
+      answer: (_body, index) =>
+        index === 1
+          ? answered({ cost_eur: 0.04, calls: 1 })
+          : HttpResponse.json(
+              { code: "spend_cap_not_set", message: "no spend cap is set" },
+              { status: 409 },
+            ),
+    });
+    renderShell("/configure");
+    await settled();
+    await researched();
+    await passSays(/was refused at Free movement applies, which spent nothing/);
+
+    expect(theProposals().queryByText(/questions to research/i)).toBeNull();
+    expect(
+      theProposals().queryByRole("button", { name: "Research the gates" }),
+    ).toBeNull();
   });
 
   it("shows the refusal when no spend cap is set", async () => {
@@ -582,7 +655,7 @@ describe("a research pass, one gate at a time", () => {
   });
 
   it("stops before the next gate once the pass has spent the cap", async () => {
-    capAt(0.08);
+    await capAt(0.08);
     const research = watchResearch();
     renderShell("/configure");
     await settled();
@@ -600,7 +673,7 @@ describe("a research pass, one gate at a time", () => {
   });
 
   it("asks every gate with no cap set, once the reader has accepted an uncapped pass", async () => {
-    capAt(null);
+    await capAt(null);
     const research = watchResearch();
     renderShell("/configure");
     await settled();
@@ -1722,6 +1795,7 @@ describe("the gate proposals while a write is in flight", () => {
     const user = userEvent.setup();
     const research = watchResearch();
     const confirmations = hold("put", CONFIRMATIONS);
+    await capAt(null);
     renderShell("/configure");
     await settled();
     await estimated();

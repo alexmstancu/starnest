@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MatchRuleResult } from "../../../api/endpoints";
 import { useCandidateNames } from "../../../api/useCandidateNames";
 import { useMatchRuleNames } from "../../../api/useMatchRuleNames";
@@ -13,6 +13,7 @@ import { ActRefusal } from "../../../shell/ActRefusal";
 import { CheckboxField } from "../../../shell/CheckboxField";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { describePeriod } from "./proposalReading";
+import { leavesEstimateUnspent } from "./researchPass";
 import { proposalKey, useFocusAfterConfirm } from "./useFocusAfterConfirm";
 import { useFocusAfterPass } from "./useFocusAfterPass";
 import { useProposals } from "./useProposals";
@@ -71,6 +72,15 @@ export function ProposalsPanel({
   // answers are read again, it still lists a row just confirmed, or one a pass has replaced.
   const confirmHeld = held || proposals.stale;
   const plan = proposals.plan;
+  // **A refusal that spent nothing keeps the estimate** (PL-160): a pass refused for want of a
+  // cap is answered by ticking the box below and pressing Research again, not by a new estimate.
+  const { end } = pass;
+  const { restorePlan } = proposals;
+  useEffect(() => {
+    if (end !== null && end.pass.level === levelId && leavesEstimateUnspent(end)) {
+      restorePlan();
+    }
+  }, [end, levelId, restorePlan]);
 
   return (
     <section className="panel" aria-labelledby="proposals-heading">
@@ -155,13 +165,19 @@ export function ProposalsPanel({
               The cost is a ceiling, not a forecast: {plan.estimate_basis}
             </p>
           )}
-          <CheckboxField
-            id="accept-uncapped"
-            checked={acceptUncapped}
-            onChange={setAcceptUncapped}
-          >
-            Accept an uncapped spend for this pass
-          </CheckboxField>
+          {proposals.capEur !== null ? (
+            <p className="screen__note">
+              Halts at the {formatMoney(proposals.capEur, "EUR")} spend cap.
+            </p>
+          ) : (
+            <CheckboxField
+              id="accept-uncapped"
+              checked={acceptUncapped}
+              onChange={setAcceptUncapped}
+            >
+              No spend cap is set. Accept an uncapped spend for this pass
+            </CheckboxField>
+          )}
         </>
       )}
 
