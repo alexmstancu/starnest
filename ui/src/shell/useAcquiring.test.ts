@@ -156,6 +156,7 @@ describe("a run nobody saw running", () => {
     newest = 43;
     await wait(30_000);
     expect(ended).toHaveBeenCalledTimes(1);
+    expect(ended).toHaveBeenCalledWith(43);
 
     await wait(30_000);
     expect(ended).toHaveBeenCalledTimes(1);

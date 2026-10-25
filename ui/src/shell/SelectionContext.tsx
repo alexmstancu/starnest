@@ -72,7 +72,9 @@ export interface Selection {
    * the authority on what they now say.
    */
   acquisitionsEnded: number;
-  noteAcquisitionEnded: () => void;
+  /** The run that last ended, when the shell knows which; a figure typed by hand is none. */
+  lastEndedRun: number | null;
+  noteAcquisitionEnded: (runId?: number) => void;
   /**
    * Bumped whenever a screen starts an acquisition (PL-132), so the shell's watch looks at once
    * and follows it closely, rather than at its idle pace of every thirty seconds.
@@ -135,10 +137,11 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
     [],
   );
   const [acquisitionsEnded, setAcquisitionsEnded] = useState(0);
-  const noteAcquisitionEnded = useCallback(
-    () => setAcquisitionsEnded((ended) => ended + 1),
-    [],
-  );
+  const [lastEndedRun, setLastEndedRun] = useState<number | null>(null);
+  const noteAcquisitionEnded = useCallback((runId?: number) => {
+    setLastEndedRun(runId ?? null);
+    setAcquisitionsEnded((ended) => ended + 1);
+  }, []);
   const [acquisitionsStarted, setAcquisitionsStarted] = useState(0);
   const noteAcquisitionStarted = useCallback(
     () => setAcquisitionsStarted((started) => started + 1),
@@ -269,6 +272,7 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
       savedRankingsVersion,
       noteSavedRanking,
       acquisitionsEnded,
+      lastEndedRun,
       noteAcquisitionEnded,
       acquisitionsStarted,
       noteAcquisitionStarted,
@@ -288,6 +292,7 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
       savedRankingsVersion,
       noteSavedRanking,
       acquisitionsEnded,
+      lastEndedRun,
       noteAcquisitionEnded,
       acquisitionsStarted,
       noteAcquisitionStarted,

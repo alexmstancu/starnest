@@ -296,7 +296,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
       {/* **A stored figure is read back where it counts** (PL-015): what the database holds,
           whether anything is stored, and the sidebar's counts move as an acquisition's end
           moves them, so they are read again the same way. */}
-      {levelId !== null && <OpenToHandEntry level={levelId} onStored={noteAcquisitionEnded} />}
+      {levelId !== null && <OpenToHandEntry level={levelId} onStored={() => noteAcquisitionEnded()} />}
 
       {/* **Kept through a re-read of the history** (NEW-11, PL-010): every act reads it again,
           and the diff left the screen for each re-read and came back with nothing chosen. Not

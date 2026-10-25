@@ -43,6 +43,13 @@ const READS: Record<string, SweptRead> = {
   "GET /values?attribute": {
     matches: (url) => url.pathname === "/v1/values" && url.searchParams.has("attribute"),
   },
+  // Whether anything is stored at all (PL-011).
+  "GET /values?limit=1": {
+    matches: (url) =>
+      url.pathname === "/v1/values" &&
+      !url.searchParams.has("candidate") &&
+      !url.searchParams.has("attribute"),
+  },
   "GET /external-scores": {
     matches: (url) => url.pathname.startsWith("/v1/external-scores"),
   },

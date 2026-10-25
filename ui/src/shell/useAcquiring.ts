@@ -48,7 +48,10 @@ const QUICK_LOOKS_AFTER_A_START = 5;
 /**
  * @param started Changes whenever a run may just have been started: the shell looks at once.
  */
-export function useAcquiring(onEnded: () => void, started: number): AcquiringState {
+export function useAcquiring(
+  onEnded: (runId: number) => void,
+  started: number,
+): AcquiringState {
   const [acquiring, setAcquiring] = useState<Acquiring | null>(null);
   const [announcement, setAnnouncement] = useState("");
   // An effect event, so a caller's new callback is used without restarting the poll -- which
@@ -77,7 +80,11 @@ export function useAcquiring(onEnded: () => void, started: number): AcquiringSta
         const { items } = await fetchRuns(1, { signal: controller.signal });
         const newest = items[0];
         if (!live) return;
-        if (acquisitionEnded(seenRunning, newest, lastNewest)) reportEnded();
+        if (acquisitionEnded(seenRunning, newest, lastNewest)) {
+          // The run watched, or -- never seen running -- the one that started and ended unseen.
+          const ended = seenRunning ?? newest?.id;
+          if (ended !== undefined) reportEnded(ended);
+        }
         const said = announcementFor(seenRunning, newest, lastNewest);
         if (said !== null) setAnnouncement(said);
         seenRunning = runningRunOf(newest);

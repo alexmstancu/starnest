@@ -1,8 +1,11 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { fetchCandidates, fetchRanking, type Ranking } from "../../api/endpoints";
 import type { Idle, Read } from "../../api/read";
 import { useRead } from "../../api/useRead";
+import { useValueCount } from "../../api/useValueCount";
 import type { RouteDefinition } from "../../navigation/routes";
+import { EmptyCard, UnlessNothingStored } from "../../shell/EmptyCard";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { NothingSelected } from "../../shell/NothingSelected";
 import { UnsetSetting } from "../../shell/UnsetSetting";
@@ -83,7 +86,7 @@ function TheRanking({
   home: HomeRead;
   focusRegion: FocusRegion;
 }) {
-  const { acquisitionsEnded, criteriaSets } = useSelection();
+  const { acquisitionsEnded, lastEndedRun, criteriaSets } = useSelection();
   const fetcher = useCallback(
     async (signal: AbortSignal): Promise<Ranking> => {
       // Not reachable while disabled; the guard is here so the type is honest.
@@ -98,6 +101,10 @@ function TheRanking({
     enabled: criteriaSetId !== null && levelId !== null,
     freshness: acquisitionsEnded,
   });
+  const readAgain = useReadAgainAnnouncement(ranking.read, acquisitionsEnded, lastEndedRun);
+  // **Nothing stored, nothing to rank** (PL-011): every candidate would read No score.
+  const stored = useValueCount(acquisitionsEnded);
+  const nothingStored = stored.read.state === "ready" && stored.read.data === 0;
 
   // The roster, for the flag beside each name and the total the attribute panel counts
   // against. One read, and only once a level is chosen. **A failure is silence here**: a row
@@ -147,11 +154,11 @@ function TheRanking({
           </p>
         </div>
         <div className="screen__actions">
-          {drawn !== null && <RankingMeta ranking={drawn} sets={setNames} />}
+          {drawn !== null && !nothingStored && <RankingMeta ranking={drawn} sets={setNames} />}
           {/* **In the header, beside what identifies the ranking.** Saving is an act about
               the whole ranking rather than about anything under the table, and a control for
               it below 32 rows is a control nobody finds. */}
-          {drawn !== null && (
+          {drawn !== null && !nothingStored && (
             <SaveControl
               criteriaSetId={criteriaSetId}
               levelId={levelId}
@@ -161,65 +168,122 @@ function TheRanking({
         </div>
       </header>
 
+      {/* **Polite, and always there** (PL-015): rows may have moved under the reader, so the
+          re-read is said, once it has landed. */}
+      <p className="visually-hidden" role="status">
+        {readAgain}
+      </p>
+
       {ranking.read.state === "idle" ? (
         <NothingSelected
           toSee="to see the ranking"
           skeleton="rank-table"
           takesFocusFrom={focusRegion}
         />
-      ) : unset !== null ? (
-        <NoRanking error={unset} region={focusRegion} />
       ) : (
-        <>
-          <p className="rank-address" role="status">
-            {addressed.notice !== null && addressNoticeWords(addressed.notice, rosterNames)}
-          </p>
-          <LoadedRegion
-            read={ranking.read}
-            what="The ranking"
-            skeleton="rank-table"
-            onRetry={ranking.reload}
-            // In place of a Try again that read the selection again (NothingSelected).
-            takesFocusFrom={focusRegion}
-          >
-            {(data) => (
-              <RankingTable
-                ranking={data}
-                open={open}
-                onToggle={toggle}
-                codes={codes}
-                household={home}
-                onChoosePillar={choose}
-                arrivedAt={addressed.arrivedAt}
-                onArrived={addressed.arrived}
-                detail={(row) => (
-                  <CandidateDetail
-                    candidate={row.candidate}
-                    name={row.name}
-                    pillars={row.pillars}
-                    scaleMax={data.score_scale_max}
-                    chosen={row.chosenPillar ?? null}
-                    onChoose={(pillar) => choose(row, pillar)}
+        <UnlessNothingStored
+          stored={stored.read}
+          onRetry={stored.reload}
+          card={<NothingToRankYet />}
+        >
+          {unset !== null ? (
+            <NoRanking error={unset} region={focusRegion} />
+          ) : (
+            <>
+              <p className="rank-address" role="status">
+                {addressed.notice !== null && addressNoticeWords(addressed.notice, rosterNames)}
+              </p>
+              <LoadedRegion
+                read={ranking.read}
+                what="The ranking"
+                skeleton="rank-table"
+                onRetry={ranking.reload}
+                // In place of a Try again that read the selection again (NothingSelected).
+                takesFocusFrom={focusRegion}
+              >
+                {(data) => (
+                  <RankingTable
+                    ranking={data}
+                    open={open}
+                    onToggle={toggle}
+                    codes={codes}
+                    household={home}
+                    onChoosePillar={choose}
+                    arrivedAt={addressed.arrivedAt}
+                    onArrived={addressed.arrived}
+                    detail={(row) => (
+                      <CandidateDetail
+                        candidate={row.candidate}
+                        name={row.name}
+                        pillars={row.pillars}
+                        scaleMax={data.score_scale_max}
+                        chosen={row.chosenPillar ?? null}
+                        onChoose={(pillar) => choose(row, pillar)}
+                      />
+                    )}
                   />
                 )}
-              />
-            )}
-          </LoadedRegion>
+              </LoadedRegion>
 
-          {/* The other axis (`reqs.md` 8.4). A candidate's detail says what we know about one
-              country; this says who has a figure for one attribute at all -- the question
-              behind a pillar that scores badly for want of data rather than for want of merit.
-              **Not before the ranking has answered**, which may yet say there is no ranking. */}
-          {answeredOnce && (
-            <AttributeDrillDown
-              levelId={levelId}
-              criteriaSetId={criteriaSetId}
-              rosterSize={candidates?.length}
-            />
+              {/* The other axis (`reqs.md` 8.4). A candidate's detail says what we know about one
+                  country; this says who has a figure for one attribute at all -- the question
+                  behind a pillar that scores badly for want of data rather than for want of merit.
+                  **Not before the ranking has answered**, which may yet say there is no ranking. */}
+              {answeredOnce && (
+                <AttributeDrillDown
+                  levelId={levelId}
+                  criteriaSetId={criteriaSetId}
+                  rosterSize={candidates?.length}
+                />
+              )}
+            </>
           )}
-        </>
+        </UnlessNothingStored>
       )}
     </>
+  );
+}
+
+/**
+ * "The ranking was read again after acquisition N ended." -- said once the ranking a run's end
+ * made stale has been read again, never for the first read, and not for a re-read that failed:
+ * the stale line says that one.
+ */
+function useReadAgainAnnouncement(
+  read: Read<Ranking> | Idle,
+  acquisitionsEnded: number,
+  lastEndedRun: number | null,
+): string {
+  const [said, setSaid] = useState("");
+  const announced = useRef(acquisitionsEnded);
+  const landed = read.state === "ready" && read.refresh === "idle";
+  useEffect(() => {
+    if (!landed || announced.current === acquisitionsEnded) return;
+    announced.current = acquisitionsEnded;
+    setSaid(
+      lastEndedRun === null
+        ? "The ranking was read again after an acquisition ended."
+        : `The ranking was read again after acquisition ${String(lastEndedRun)} ended.`,
+    );
+  }, [landed, acquisitionsEnded, lastEndedRun]);
+  return said;
+}
+
+/** A database nothing has been acquired into (PL-011): Acquire is what fills it. */
+function NothingToRankYet() {
+  return (
+    <EmptyCard
+      title="Nothing to rank yet"
+      detail={
+        "No values have been acquired, so every candidate would read No score. A ranking " +
+        "built on nothing would look like an answer and mean nothing."
+      }
+      action={
+        <Link className="button button--primary" to="/acquire">
+          Go to Acquire
+        </Link>
+      }
+    />
   );
 }
 

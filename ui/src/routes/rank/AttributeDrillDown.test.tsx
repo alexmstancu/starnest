@@ -48,7 +48,12 @@ const A_FIGURE = STORED_VALUES.find((each) => each.id === 501)!;
 function serveFigures(figures: Partial<StoredValue>[]): void {
   const items = figures.map((each, index) => ({ ...A_FIGURE, id: 9000 + index, ...each }));
   mockServer.use(
-    http.get("/v1/values", () => HttpResponse.json({ items, total: items.length })),
+    // One attribute's figures; the count of everything stored (PL-011) is the mock's own.
+    http.get("/v1/values", ({ request }) =>
+      new URL(request.url).searchParams.has("attribute")
+        ? HttpResponse.json({ items, total: items.length })
+        : undefined,
+    ),
   );
 }
 
