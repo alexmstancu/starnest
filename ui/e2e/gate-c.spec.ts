@@ -5,6 +5,7 @@ import {
   type Locator,
   type Page,
 } from "@playwright/test";
+import { copyForThisWorker } from "./ownedSet";
 import { readSettings } from "./settings";
 
 /**
@@ -32,7 +33,9 @@ import { readSettings } from "./settings";
  * and independent opinion about the same attributes -- which is what a mutating test needs
  * and what sharing cannot give it.
  */
-const SCORING_SET = "e2e_gate_c";
+const SCORING_SET_BASE = "e2e_gate_c";
+/** This worker's own copy, made in `beforeAll` (`ownedSet.ts`). */
+let scoringSet = "";
 const SHIPPED_SOURCE = "minimal";
 
 test.beforeAll(async ({ playwright }, testInfo) => {
@@ -40,18 +43,7 @@ test.beforeAll(async ({ playwright }, testInfo) => {
   const api = await playwright.request.newContext({
     baseURL: testInfo.project.use.baseURL,
   });
-  await api.delete(`/v1/criteria-sets/${SCORING_SET}`);
-  const made = await api.post(`/v1/criteria-sets/${SHIPPED_SOURCE}/duplicate`, {
-    data: { id: SCORING_SET, name: SCORING_SET },
-  });
-  // **A set left by an earlier run of this spec is this spec's set.** The delete above is
-  // refused once anything has saved a ranking from it -- an evaluation holds its criteria set
-  // by foreign key, which is the point of freezing them -- so a run that saved one leaves the
-  // set behind for good. Insisting on a fresh copy would make the suite fail for ever after
-  // the first save. `beforeEach` puts the weight back regardless, which is what actually
-  // makes each test independent.
-  const already = made.status() === 409 && (await made.text()).includes("criteria_set_exists");
-  expect(made.ok() || already, await made.text()).toBe(true);
+  scoringSet = await copyForThisWorker(api, SHIPPED_SOURCE, SCORING_SET_BASE, testInfo.workerIndex);
   await api.dispose();
 });
 
@@ -60,7 +52,7 @@ test.afterAll(async ({ playwright }, testInfo) => {
   const api = await playwright.request.newContext({
     baseURL: testInfo.project.use.baseURL,
   });
-  await api.delete(`/v1/criteria-sets/${SCORING_SET}`);
+  await api.delete(`/v1/criteria-sets/${scoringSet}`);
   await api.dispose();
 });
 const A_CRITERION = "country.housing_cost_overburden_rate";
@@ -268,12 +260,16 @@ test.describe("switching criteria sets", () => {
     });
 
     await openTheRanking(page);
-    const before = await scoreOf(page, "Finland");
+    const before = await rankingRows(page);
 
     await page.getByLabel("Active criteria set").selectOption("local_employment");
+    // **The whole ranking, never one country's score.** Two sets can give one country the same
+    // score -- Finland scored 66 under both on 2026-10-25's figures -- and that is not a ranking
+    // left unchanged.
     await expect
-      .poll(async () => await scoreOf(page, "Finland"), { timeout: 10_000 })
-      .not.toBe(before);
+      .poll(async () => await rankingRows(page), { timeout: 10_000 })
+      .not.toEqual(before);
+    expect(rankings.some((url) => url.includes("criteria_set=local_employment"))).toBe(true);
 
     // The second ranking was computed, not fetched: scoring and acquisition are separate
     // operations, and a re-score that re-fetched would make every weight change cost money.
@@ -383,7 +379,7 @@ test.describe("a comparison", () => {
 // --- the arrangements, all of them reversible ---------------------------------------------
 
 async function chooseScoringSet(page: Page): Promise<void> {
-  await page.getByLabel("Active criteria set").selectOption(SCORING_SET);
+  await page.getByLabel("Active criteria set").selectOption(scoringSet);
 }
 
 async function openTheRanking(page: Page): Promise<void> {
@@ -393,36 +389,19 @@ async function openTheRanking(page: Page): Promise<void> {
   await expect(page.getByRole("row").filter({ hasText: "Finland" })).toHaveCount(1);
 }
 
-async function rankedOrder(page: Page): Promise<string[]> {
-  await openTheRanking(page);
+/**
+ * Every row of the ranking as it reads, once one is drawn: waits for the Score column, because a
+ * set switch replaces the table with a skeleton for a beat, and a read taken then would differ
+ * from any ranking at all.
+ */
+async function rankingRows(page: Page): Promise<string[]> {
+  await page.getByRole("columnheader", { name: "Score", exact: true }).waitFor();
   return page.getByRole("table", { name: "Ranked candidates" }).getByRole("row").allTextContents();
 }
 
-/**
- * A country's score, read by the heading of its column.
- *
- * **It read `cells[1]`, and `cells[1]` stopped being the score.** A `Pillars` column was
- * inserted before it, so this returned the pillar chart's tooltip text instead -- which differs
- * between criteria sets often enough that the test went on passing, and failed about one run in
- * three when two sets happened to weight their pillars alike. A heading cannot drift like that.
- */
-async function scoreOf(page: Page, country: string): Promise<string> {
-  // **Waits for the table rather than asserting on it.** Switching criteria sets replaces the
-  // table with a skeleton for a beat, so a read taken mid-swap saw no columns at all -- and
-  // asserting there aborted the poll that was meant to tolerate exactly this.
-  await page.getByRole("columnheader", { name: "Score", exact: true }).waitFor();
-  const headings = (await page.getByRole("columnheader").allTextContents()).map((each) =>
-    each.trim(),
-  );
-  const at = headings.indexOf("Score");
-
-  const row = page.getByRole("row").filter({ hasText: country }).first();
-  // Taken together with the rowheader, so the row lines up with its headings.
-  // **Visible cells only.** A column hidden at a narrow width leaves the accessibility tree
-  // but stays in the DOM, so the headings and the cells would count differently and every
-  // lookup would be off by one.
-  const cells = await row.locator("th:visible, td:visible").allTextContents();
-  return (cells[at] ?? "").trim();
+async function rankedOrder(page: Page): Promise<string[]> {
+  await openTheRanking(page);
+  return page.getByRole("table", { name: "Ranked candidates" }).getByRole("row").allTextContents();
 }
 
 /**
@@ -574,7 +553,7 @@ async function answerTheGate(
 
 async function enforceTheGate(request: APIRequestContext, enforced: boolean): Promise<void> {
   const response = await request.put(
-    `/v1/criteria-sets/${SCORING_SET}/match-rules/${THE_GATE}`,
+    `/v1/criteria-sets/${scoringSet}/match-rules/${THE_GATE}`,
     { data: { is_enforced: enforced } },
   );
   expect(response.ok()).toBe(true);

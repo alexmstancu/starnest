@@ -1,4 +1,5 @@
 import { type Locator, type Page, expect, test } from "@playwright/test";
+import { copyForThisWorker } from "./ownedSet";
 
 /**
  * minE2E's acceptance test, and the only one that counts (`docs/mine2e.md`):
@@ -31,7 +32,9 @@ import { type Locator, type Page, expect, test } from "@playwright/test";
  * and independent opinion about the same attributes -- which is what a mutating test needs
  * and what sharing cannot give it.
  */
-const MINIMAL_SET = "e2e_min";
+const MINIMAL_SET_BASE = "e2e_min";
+/** This worker's own copy, made in `beforeAll` (`ownedSet.ts`). */
+let minimalSet = "";
 const SHIPPED_SOURCE = "minimal";
 
 test.beforeAll(async ({ playwright }, testInfo) => {
@@ -39,11 +42,7 @@ test.beforeAll(async ({ playwright }, testInfo) => {
   const api = await playwright.request.newContext({
     baseURL: testInfo.project.use.baseURL,
   });
-  await api.delete(`/v1/criteria-sets/${MINIMAL_SET}`);
-  const made = await api.post(`/v1/criteria-sets/${SHIPPED_SOURCE}/duplicate`, {
-    data: { id: MINIMAL_SET, name: MINIMAL_SET },
-  });
-  expect(made.ok(), await made.text()).toBe(true);
+  minimalSet = await copyForThisWorker(api, SHIPPED_SOURCE, MINIMAL_SET_BASE, testInfo.workerIndex);
   await api.dispose();
 });
 
@@ -52,7 +51,7 @@ test.afterAll(async ({ playwright }, testInfo) => {
   const api = await playwright.request.newContext({
     baseURL: testInfo.project.use.baseURL,
   });
-  await api.delete(`/v1/criteria-sets/${MINIMAL_SET}`);
+  await api.delete(`/v1/criteria-sets/${minimalSet}`);
   await api.dispose();
 });
 const HOUSING_OVERBURDEN = "country.housing_cost_overburden_rate";
@@ -163,7 +162,7 @@ async function openTheRanking(page: import("@playwright/test").Page): Promise<vo
 
 /** The shipped set cannot score anything -- no anchors ship -- so the ranking uses `minimal`. */
 async function selectTheScoringSet(page: import("@playwright/test").Page): Promise<void> {
-  await page.getByLabel("Active criteria set").selectOption(MINIMAL_SET);
+  await page.getByLabel("Active criteria set").selectOption(minimalSet);
 }
 
 /**
