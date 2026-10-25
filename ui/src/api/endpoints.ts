@@ -82,9 +82,8 @@ const A_PAGE_OF_RUNS = 100;
 /**
  * Every run there has been, newest first, following the pages until there are none left.
  *
- * **All of them, not the newest ten.** Acquire's history, the diff's two choices and "Spent this
- * month" each read this list as every run, so a month with an eleventh run spent more than the
- * screen said (UI-17).
+ * **All of them, not the newest ten.** Acquire's history and the diff's two choices read this
+ * list as every run, so an eleventh run was missing from both (UI-17).
  */
 export function fetchEveryRun(
   options?: RequestOptions,
@@ -245,6 +244,22 @@ export function startRun(
     { accept_uncapped_spend: false, ...scope },
     options,
   );
+}
+
+export type Holdings = components["schemas"]["Holdings"];
+
+/**
+ * What the database holds at a level, and what this month has cost (PL-051, PL-052).
+ *
+ * **`since` is the reader's month start, with its zone** (C04-N10): the server sums spend from
+ * that moment and makes no clock decision of its own, and refuses a time without a zone.
+ */
+export function fetchHoldings(
+  level: string,
+  since: string,
+  options?: RequestOptions,
+): Promise<Holdings> {
+  return getJson("/holdings", { level, since }, options);
 }
 
 export function fetchRun(

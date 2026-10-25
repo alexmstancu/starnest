@@ -18,20 +18,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchEveryRun,
+  fetchHoldings,
   fetchRun,
   fetchSettings,
   planRun,
   startRun,
   stopRun,
+  type Holdings,
   type Run,
   type RunDetail,
   type RunPlan,
   type RunScope,
 } from "../../api/endpoints";
-import { newestRun } from "./databaseHolds";
+import { newestRun, startOfLocalMonth } from "./databaseHolds";
 import { type Commitment, describeCommitment } from "./spendCommitment";
 import { UNCLAIMED, useWatchedRun } from "./useWatchedRun";
-import type { Read } from "../../api/read";
+import type { Idle, Read } from "../../api/read";
 import { useRead } from "../../api/useRead";
 import { alwaysAsked } from "./alwaysAsked";
 import { isUnreachable } from "../../api/reachability";
@@ -121,6 +123,13 @@ export interface RunScreenState {
    */
   history: Read<Run[]>;
   reloadHistory: () => Promise<void>;
+  /**
+   * What the database holds at the level on screen (PL-051, PL-054): the panel's figures and the
+   * remedy cards' gaps, never one run's accounting. Idle while no level is chosen; read again
+   * after every act, as the history is, and whenever `freshness` moves.
+   */
+  holdings: Read<Holdings> | Idle;
+  reloadHoldings: () => Promise<void>;
   dismissFailure: () => void;
   estimate: (levelId: string) => void;
   start: (levelId: string) => void;
@@ -197,6 +206,7 @@ interface Failure {
 export function useRunScreen(
   levelId: string | null,
   onStarted: () => void = () => undefined,
+  freshness = 0,
 ): RunScreenState {
   const [plan, setPlan] = useState<RunPlan | null>(null);
   const [planOrigin, setPlanOrigin] = useState<GapKind | null>(null);
@@ -260,8 +270,8 @@ export function useRunScreen(
     [isCurrent],
   );
 
-  // Every run, not the newest ten: the history, the diff's choices and the month's spend all
-  // read this list as every run there has been (UI-17).
+  // Every run, not the newest ten: the history and the diff's choices read this list as every
+  // run there has been (UI-17). The month's spend is the server's (PL-052).
   const history = useRead(
     useCallback(
       async (signal: AbortSignal) => (await fetchEveryRun({ signal })).items,
@@ -269,6 +279,20 @@ export function useRunScreen(
     ),
   );
   const historyRead = alwaysAsked(history.read);
+  // The month starts where the reader's calendar says, worked out at each read so a read after
+  // midnight on the first asks about the new month (C04-N10).
+  const holdings = useRead(
+    useCallback(
+      async (signal: AbortSignal) => {
+        // Not reachable while disabled; the guard is here so the type is honest.
+        if (levelId === null) throw new Error("no level");
+        return fetchHoldings(levelId, startOfLocalMonth(new Date()), { signal });
+      },
+      [levelId],
+    ),
+    { enabled: levelId !== null, freshness },
+  );
+  const reloadHoldings = holdings.reload;
 
   const reloadHistory = history.reload;
   const act = useCallback(
@@ -284,6 +308,7 @@ export function useRunScreen(
       try {
         await action();
         void reloadHistory();
+        void reloadHoldings();
       } catch (error) {
         setFailure({ what, error, resend: resend ?? null, runId: runId ?? null });
       } finally {
@@ -291,7 +316,7 @@ export function useRunScreen(
         setBusy(going.current.at(-1)?.what ?? null);
       }
     },
-    [reloadHistory],
+    [reloadHistory, reloadHoldings],
   );
 
   /**
@@ -463,6 +488,8 @@ export function useRunScreen(
     refusal: failure === null ? null : refusalOf(failure),
     history: historyRead,
     reloadHistory,
+    holdings: holdings.read,
+    reloadHoldings,
     dismissFailure: () => setFailure(null),
     estimate: (levelId) => {
       const version = levelVersion.current;

@@ -11,13 +11,16 @@ import { HttpResponse, delay, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ATTRIBUTES,
+  HOLDINGS_GAPS,
+  HOLDINGS_PAIRS_TOTAL,
   PAID_RUN_PLAN,
   RUNS,
   RUN_PLAN,
+  SETTINGS,
   STARTED_RUN_DETAIL,
   STORED_VALUES,
 } from "../../mocks/fixtures";
-import type { Run } from "../../api/endpoints";
+import type { Holdings, Run } from "../../api/endpoints";
 import { formatMoney } from "../../format/display";
 import { mockServer } from "../../mocks/server";
 import {
@@ -37,6 +40,27 @@ import { useRunScreen } from "./useRunScreen";
  */
 
 const BASE = "/v1";
+
+/**
+ * What `GET /holdings` serves at country level, with `over` laid on top. **Values stored are
+ * worked out from the gaps**, as the server's one read closes them, so a test that changes the
+ * gaps cannot serve a total that does not add up.
+ */
+function holdingsServed(over: Partial<Holdings> = {}): Holdings {
+  const gaps = over.gaps ?? HOLDINGS_GAPS;
+  const pairsTotal = over.pairs_total ?? HOLDINGS_PAIRS_TOTAL;
+  return {
+    level: "country",
+    pairs_total: pairsTotal,
+    values_stored:
+      pairsTotal - gaps.failed.length - gaps.unanswered.length - gaps.not_reached.length,
+    values_past_allowed_age: 37,
+    values_older_than_refetch_age: null,
+    spent: { since: "2026-10-01T00:00:00+02:00", runs_eur: 0, research_eur: 0, total_eur: 0 },
+    ...over,
+    gaps,
+  };
+}
 
 async function estimate() {
   await userEvent.click(
@@ -702,14 +726,6 @@ describe("the run history", () => {
     expect(screen.getByRole("rowheader", { name: "1" })).toBeInTheDocument();
   });
 
-  it("adds every run this month into Spent this month", async () => {
-    twelveRunsThisMonth();
-    renderShell("/acquire");
-
-    const spent = await screen.findByText("Spent this month");
-    expect(spent.parentElement).toHaveTextContent(formatMoney(12, "EUR"));
-  });
-
   it("offers an older run in the diff dropdowns", async () => {
     twelveRunsThisMonth();
     renderShell("/acquire");
@@ -724,6 +740,148 @@ describe("the run history", () => {
         panel.getByRole("combobox", { name: /earlier acquisition/i }),
       ).getByRole("option", { name: /^acquisition 1 —/i }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * PL-051, PL-052. **The panel is the database, not the last acquisition**: every figure comes
+ * from the holdings read, so opening, dismissing or retrying a run moves none of them, and the
+ * month's spend is the server's sum over runs and gate research, which the run list cannot see.
+ */
+describe("what the database holds", () => {
+  async function thePanel(): Promise<HTMLElement> {
+    const panel = await screen.findByRole("region", { name: /what the database holds/i });
+    await within(panel).findByText("Values stored");
+    return panel;
+  }
+
+  function figure(panel: HTMLElement, label: string): HTMLElement {
+    return within(panel).getByText(label).parentElement!;
+  }
+
+  it("counts the values stored out of the pairs the level has, from the holdings read", async () => {
+    renderShell("/acquire");
+    const panel = await thePanel();
+
+    expect(figure(panel, "Values stored")).toHaveTextContent(/1,309\s*of 1,312 at country level/);
+    expect(figure(panel, "Past their allowed age")).toHaveTextContent("37");
+  });
+
+  it("does not change when a smaller acquisition is opened", async () => {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/6`, () =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: 6,
+          progress: {
+            items_total: 2,
+            items_completed: 2,
+            items_failed: 0,
+            items_unanswered: 0,
+            items_not_reached: 0,
+          },
+          failures: [],
+          unanswered: [],
+        }),
+      ),
+    );
+    renderShell("/acquire");
+    const panel = await thePanel();
+    const six = await screen.findByRole("rowheader", { name: "6" });
+
+    await userEvent.click(within(six).getByRole("button", { name: "6" }));
+    await screen.findByRole("region", { name: /^acquisition 6$/i });
+
+    expect(figure(panel, "Values stored")).toHaveTextContent(/1,309\s*of 1,312/);
+  });
+
+  it("names the newest acquisition that stored anything as the last to fill it", async () => {
+    renderShell("/acquire");
+    const panel = await thePanel();
+
+    await within(panel).findByText("Acquisition 7");
+  });
+
+  it("says this month's spend is the server's figure, research included", async () => {
+    let since: string | null = null;
+    mockServer.use(
+      http.get(`${BASE}/holdings`, ({ request }) => {
+        since = new URL(request.url).searchParams.get("since");
+        return HttpResponse.json(
+          holdingsServed({ spent: { since: since!, runs_eur: 0.04, research_eur: 0.42, total_eur: 0.46 } }),
+        );
+      }),
+    );
+    renderShell("/acquire");
+    const panel = await thePanel();
+
+    expect(figure(panel, "Spent this month")).toHaveTextContent(formatMoney(0.46, "EUR"));
+    // The reader's month start, with the reader's zone (C04-N10).
+    const now = new Date();
+    expect(new Date(since!).getTime()).toBe(
+      new Date(now.getFullYear(), now.getMonth(), 1).getTime(),
+    );
+    expect(since).toMatch(/[+-]\d{2}:\d{2}$/);
+  });
+
+  it("captions the cap as per acquisition and per research pass", async () => {
+    renderShell("/acquire");
+    const panel = await thePanel();
+
+    expect(figure(panel, "Spent this month")).toHaveTextContent(
+      `the cap is ${formatMoney(10, "EUR")} per acquisition and per research pass`,
+    );
+  });
+
+  it("never says an uncapped acquisition refuses, since the strip offers to accept it", async () => {
+    mockServer.use(
+      http.get(`${BASE}/settings`, () =>
+        HttpResponse.json({ ...SETTINGS, run_spend_cap_eur: null }),
+      ),
+    );
+    renderShell("/acquire");
+    const panel = await thePanel();
+
+    expect(figure(panel, "Spent this month")).toHaveTextContent(
+      /no cap is set: an acquisition that would spend asks you to accept going uncapped/,
+    );
+    expect(panel).not.toHaveTextContent(/refuses/);
+  });
+
+  it("counts the candidates scored as the sidebar does", async () => {
+    renderShell("/acquire");
+    const panel = await thePanel();
+    const sidebar = await screen.findByRole("region", { name: "Candidates" });
+    const count = async (label: string) =>
+      Number((await within(sidebar).findByText(label)).nextElementSibling!.textContent);
+    const scored = (await count("Matching")) + (await count("Not matching"));
+
+    expect(
+      await within(panel).findByText("Candidates scored"),
+    ).toBeInTheDocument();
+    expect(figure(panel, "Candidates scored")).toHaveTextContent(String(scored));
+  });
+
+  it("says why nothing is scored when the score range is not set", async () => {
+    mockServer.use(
+      http.get(`${BASE}/rankings`, () =>
+        HttpResponse.json(
+          {
+            code: "score_scale_not_set",
+            message: "the top of the score range is not set",
+            details: {},
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderShell("/acquire");
+    const panel = await thePanel();
+
+    expect(
+      await within(panel).findByText(/the top of the score range is not set yet/i),
+    ).toBeInTheDocument();
+    expect(within(panel).queryByText(/could not be loaded/i)).toBeNull();
   });
 });
 
@@ -1826,7 +1984,7 @@ describe("the acquisition card", () => {
   it("says how big the pass was, rather than leaving two counts to multiply", async () => {
     const card = await theCard();
 
-    expect(card.getByText(/32 candidates over 41 attributes/)).toBeInTheDocument();
+    expect(card.getByText(/32 candidates over 3 attributes/)).toBeInTheDocument();
   });
 
   it("names the status as a word, not only as a colour", async () => {
@@ -1986,7 +2144,7 @@ describe("the acquisition card the design asks for", () => {
     const card = within(await aRunWith("completed"));
 
     expect(
-      card.getByText(/Acquisition 7 asked for 32 candidates over 41 attributes/),
+      card.getByText(/Acquisition 7 asked for 32 candidates over 3 attributes/),
     ).toBeInTheDocument();
   });
 

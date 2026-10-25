@@ -20,6 +20,10 @@ import {
   CRITERIA_SETS,
   DATA_SOURCES,
   EXTERNAL_SCORES,
+  HOLDINGS_GAPS,
+  HOLDINGS_OLDER_THAN_REFETCH_AGE,
+  HOLDINGS_PAIRS_TOTAL,
+  HOLDINGS_PAST_ALLOWED_AGE,
   HOUSEHOLD,
   LEVELS,
   MATCH_RULES,
@@ -81,6 +85,11 @@ interface SavedEvaluation {
 }
 let savedEvaluations: SavedEvaluation[] = [];
 let nextEvaluationId = 1;
+/**
+ * Every research call billed, as the server's ledger keeps it (`match_rule_research_spend`): one
+ * row per call, dated when it was made. Never served row by row -- only `/holdings` sums it.
+ */
+let researchSpend: { researched_at: string; cost_eur: number }[] = [];
 /** When a stopped run records that somebody asked. Fixed, so a test can assert on it. */
 const STOPPED_AT = "2026-09-12T09:00:06Z";
 
@@ -93,6 +102,7 @@ export function resetMockData(): void {
   dataSources = DATA_SOURCES.map((each) => ({ ...each }));
   savedEvaluations = [];
   nextEvaluationId = 1;
+  researchSpend = [];
 }
 
 export const handlers = [
@@ -337,6 +347,11 @@ export const handlers = [
         (stored) => !asked.some((finding) => isSameAnswer(stored, finding)),
       ),
       ...asked.map((finding) => ({ ...finding })),
+    ];
+    const researchedAt = new Date().toISOString();
+    researchSpend = [
+      ...researchSpend,
+      ...asked.map(() => ({ researched_at: researchedAt, cost_eur: RESEARCH_CALL_COST_EUR })),
     ];
     return HttpResponse.json({
       proposals: asked,
@@ -744,6 +759,68 @@ export const handlers = [
     );
   }),
 
+  /**
+   * What the database holds at a level, refused as `api/holdings.py` refuses: a missing
+   * parameter, a `since` with no zone (the reader's month start, C04-N10), then an unknown
+   * level. The spend is summed from `since` over the runs and the research ledger; values
+   * stored are the pairs total less the gaps, the sum the server's one statement closes.
+   */
+  http.get(`${BASE}/holdings`, ({ request }) => {
+    const query = new URL(request.url).searchParams;
+    const missing = missingFrom(query, ["level", "since"]);
+    if (missing) return missing;
+    const level = query.get("level")!;
+    const since = zonedMoment(query.get("since")!);
+    if (since === null) {
+      return HttpResponse.json(
+        invalidRequest({
+          location: ["query", "since"],
+          problem: "Input should have timezone info",
+          kind: "timezone_aware",
+        }),
+        { status: 422 },
+      );
+    }
+    if (!LEVELS.some((each) => each.id === level)) {
+      return HttpResponse.json(
+        {
+          code: "unknown_scope",
+          message: `the scope names 1 id(s) that exist at no row at level ${level}: ${level}. Nothing runs until every named id exists.`,
+          details: { level, unknown_levels: [level] },
+        },
+        { status: 422 },
+      );
+    }
+    const atCountry = level === "country";
+    const gaps = atCountry ? HOLDINGS_GAPS : { failed: [], unanswered: [], not_reached: [] };
+    const pairsTotal = atCountry ? HOLDINGS_PAIRS_TOTAL : 0;
+    const gapCount = gaps.failed.length + gaps.unanswered.length + gaps.not_reached.length;
+    const runsEur = sumFrom(since, RUNS.map((run) => ({ at: run.started_at, eur: run.cost_eur ?? 0 })));
+    const researchEur = sumFrom(
+      since,
+      researchSpend.map((call) => ({ at: call.researched_at, eur: call.cost_eur })),
+    );
+    return HttpResponse.json({
+      level,
+      pairs_total: pairsTotal,
+      values_stored: pairsTotal - gapCount,
+      values_past_allowed_age: atCountry ? HOLDINGS_PAST_ALLOWED_AGE : 0,
+      values_older_than_refetch_age:
+        settings.refetch_older_than_days === null || settings.refetch_older_than_days === undefined
+          ? null
+          : atCountry
+            ? HOLDINGS_OLDER_THAN_REFETCH_AGE
+            : 0,
+      spent: {
+        since: new Date(since).toISOString(),
+        runs_eur: runsEur,
+        research_eur: researchEur,
+        total_eur: runsEur + researchEur,
+      },
+      gaps,
+    });
+  }),
+
   http.post(`${BASE}/data-acquisition-runs/plan`, () =>
     HttpResponse.json(RUN_PLAN),
   ),
@@ -897,6 +974,20 @@ export const handlers = [
  * A required query parameter left out, refused as FastAPI refuses it and `errors.py` renders
  * it: 422 `invalid_request`, each missing one located in the query.
  */
+/** A time that names its zone, as `AwareDatetime` takes one; null for any other text. */
+function zonedMoment(text: string): number | null {
+  if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(text)) return null;
+  const moment = Date.parse(text);
+  return Number.isNaN(moment) ? null : moment;
+}
+
+/** What was spent at or after `since`, which is the server's comparison (`>=`). */
+function sumFrom(since: number, spends: readonly { at: string; eur: number }[]): number {
+  return spends
+    .filter((spend) => Date.parse(spend.at) >= since)
+    .reduce((total, spend) => total + spend.eur, 0);
+}
+
 function missingFrom(query: URLSearchParams, required: readonly string[]) {
   const missing = required.filter((name) => !query.has(name));
   if (missing.length === 0) return null;

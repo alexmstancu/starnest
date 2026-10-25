@@ -3,13 +3,15 @@ import { ApiError } from "../api/ApiError";
 import { getJson } from "../api/client";
 import {
   fetchCriteriaSet,
+  fetchHoldings,
   fetchRanking,
   replaceHousehold,
   replaceSettings,
+  researchMatchRules,
   updateCriterionRule,
   type CriterionRule,
 } from "../api/endpoints";
-import { HOUSEHOLD, SETTINGS } from "./fixtures";
+import { HOUSEHOLD, RESEARCH_CALL_COST_EUR, SETTINGS } from "./fixtures";
 
 /**
  * The mock is a stand-in for the backend, so it has to fail the way the backend will: with the
@@ -376,5 +378,69 @@ describe("the mock's refusal of a rule", () => {
       (criterion) => criterion.attribute === ANCHORED,
     );
     expect(stored).toMatchObject({ goal: "target_range", target_range_min: 10 });
+  });
+});
+
+/**
+ * PL-051, PL-052. **`/holdings` closes as the server's one statement does**, sums the month from
+ * the `since` it is given over runs and the research ledger, and refuses what `api/holdings.py`
+ * refuses: a parameter left out, a time with no zone, a level that does not exist.
+ */
+describe("the mock's holdings", () => {
+  const SINCE = "2026-08-01T00:00:00+02:00";
+
+  it("adds values stored and every gap up to the pairs total", async () => {
+    const held = await fetchHoldings("country", SINCE);
+    const { failed, unanswered, not_reached: notReached } = held.gaps;
+
+    expect(held.values_stored + failed.length + unanswered.length + notReached.length).toBe(
+      held.pairs_total,
+    );
+  });
+
+  it("sums the runs started at or after since, and every research call ledgered since", async () => {
+    const before = await fetchHoldings("country", SINCE);
+    const research = await researchMatchRules({ level: "country" });
+    const after = await fetchHoldings("country", SINCE);
+
+    // Runs 7 and 6 started in August; run 6 cost 2.50 and run 7 nothing.
+    expect(before.spent).toMatchObject({ runs_eur: 2.5, research_eur: 0, total_eur: 2.5 });
+    expect(research.calls).toBeGreaterThan(0);
+    expect(after.spent.research_eur).toBeCloseTo(research.calls * RESEARCH_CALL_COST_EUR, 6);
+    expect(after.spent.total_eur).toBeCloseTo(2.5 + after.spent.research_eur, 6);
+  });
+
+  it("leaves out what was spent before since", async () => {
+    const held = await fetchHoldings("country", "2026-09-01T00:00:00+02:00");
+
+    expect(held.spent.runs_eur).toBe(0);
+  });
+
+  it("refuses a since with no zone, locating it in the query", async () => {
+    const error = (await fetchHoldings("country", "2026-08-01T00:00:00").catch(
+      (thrown: unknown) => thrown,
+    )) as ApiError;
+
+    expect(error.status).toBe(422);
+    expect(error.code).toBe("invalid_request");
+    expect(error.details).toMatchObject({ errors: [{ location: ["query", "since"] }] });
+  });
+
+  it("refuses a request with neither parameter, naming both", async () => {
+    const error = (await getJson("/holdings").catch((thrown: unknown) => thrown)) as ApiError;
+
+    expect(error.code).toBe("invalid_request");
+    expect(error.details).toMatchObject({
+      errors: [{ location: ["query", "level"] }, { location: ["query", "since"] }],
+    });
+  });
+
+  it("refuses a level that does not exist, naming it", async () => {
+    const error = (await fetchHoldings("planet", SINCE).catch(
+      (thrown: unknown) => thrown,
+    )) as ApiError;
+
+    expect(error.code).toBe("unknown_scope");
+    expect(error.details).toEqual({ level: "planet", unknown_levels: ["planet"] });
   });
 });

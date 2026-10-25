@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   describeGaps,
   describeScope,
-  filledOf,
+  holdingsFigures,
+  lastFilledBy,
   newestRun,
   runningNow,
-  spentThisMonth,
+  scoredFigure,
+  startOfLocalMonth,
+  type HoldingsFigures,
   type RunSummary,
 } from "./databaseHolds";
+import { formatMoney } from "../../format/display";
 
 function run(over: Partial<RunSummary> & { id: number }): RunSummary {
   return {
@@ -54,72 +58,101 @@ describe("what is running", () => {
   });
 });
 
-describe("what has been spent this month", () => {
-  const now = new Date("2026-09-21T12:00:00Z");
-
-  it("adds up what the acquisitions since the first of the month cost", () => {
+describe("the acquisition that last filled the database", () => {
+  it("is the newest one that stored something", () => {
     expect(
-      spentThisMonth(
-        [
-          run({ id: 1, started_at: "2026-09-03T09:00:00Z", cost_eur: 0.4 }),
-          run({ id: 2, started_at: "2026-09-19T09:00:00Z", cost_eur: 0.21 }),
-        ],
-        now,
-      ),
-    ).toBeCloseTo(0.61, 5);
+      lastFilledBy([
+        { ...run({ id: 1, started_at: "2026-09-01T09:00:00Z" }), items_completed: 40 },
+        { ...run({ id: 2, started_at: "2026-09-21T09:00:00Z" }), items_completed: 0 },
+        { ...run({ id: 3, started_at: "2026-09-10T09:00:00Z" }), items_completed: 2 },
+      ])?.id,
+    ).toBe(3);
   });
 
-  /**
-   * The calendar month: a budget is held against a month, not a rolling thirty days.
-   *
-   * **The boundary is the reader's midnight, not UTC's.** A run stamped 31 August 23:00 UTC
-   * happened on 1 September in most of Europe, and telling somebody it belongs to last month
-   * because a server was on a different clock is the kind of accuracy nobody asked for.
-   */
-  it("leaves out last month, however recent it was", () => {
-    expect(
-      spentThisMonth(
-        [run({ id: 1, started_at: "2026-08-20T09:00:00Z", cost_eur: 9 })],
-        now,
-      ),
-    ).toBe(0);
-  });
-
-  it("treats a run with no recorded cost as free rather than as unknown", () => {
-    expect(
-      spentThisMonth([{ id: 1, run_status: "completed", started_at: "2026-09-04T09:00:00Z" }], now),
-    ).toBe(0);
-  });
-
-  it("ignores a date it cannot read rather than counting it as now", () => {
-    expect(
-      spentThisMonth(
-        [run({ id: 1, started_at: "not a date", cost_eur: 5 })],
-        now,
-      ),
-    ).toBe(0);
-  });
-
-  it("is nothing when nothing has been run", () => {
-    expect(spentThisMonth([], now)).toBe(0);
+  it("is nothing when no acquisition stored anything", () => {
+    expect(lastFilledBy([run({ id: 1 })])).toBeUndefined();
+    expect(lastFilledBy([])).toBeUndefined();
   });
 });
 
-describe("what an acquisition filled", () => {
-  it("reports what it reached of what it asked about", () => {
-    expect(filledOf({ items_total: 1312, items_completed: 1238 })).toEqual({
-      filled: 1238,
-      asked: 1312,
+/**
+ * C04-N10. **The reader's month, with the reader's zone written out**: the server sums spend
+ * from this moment and refuses a time with no zone, so a boundary at UTC midnight -- an
+ * evening of the last day for half the world -- can never be what was meant.
+ */
+describe("the start of the reader's month", () => {
+  it("is midnight on the first, local time, whatever day it is now", () => {
+    const now = new Date(2026, 9, 25, 10, 25);
+    const since = startOfLocalMonth(now);
+
+    expect(since).toMatch(/^2026-10-01T00:00:00[+-]\d{2}:\d{2}$/);
+    expect(new Date(since).getTime()).toBe(new Date(2026, 9, 1).getTime());
+  });
+
+  it("is the same moment on the first itself, a minute after midnight", () => {
+    expect(startOfLocalMonth(new Date(2026, 0, 1, 0, 1))).toMatch(/^2026-01-01T00:00:00/);
+  });
+});
+
+function holdings(over: Partial<HoldingsFigures> = {}): HoldingsFigures {
+  return {
+    level: "country",
+    pairs_total: 1312,
+    values_stored: 1247,
+    values_past_allowed_age: 37,
+    spent: { total_eur: 0.61 },
+    ...over,
+  };
+}
+
+describe("the database's figures", () => {
+  it("counts the values stored out of the pairs the level has", () => {
+    const { stored } = holdingsFigures(holdings(), 5);
+
+    expect(stored.value).toBe("1,247");
+    expect(stored.note).toMatch(/^of 1,312 at country level/);
+  });
+
+  it("marks values past their allowed age, and only when there are some", () => {
+    expect(holdingsFigures(holdings(), 5).aged).toMatchObject({ value: "37", tone: "warning" });
+    expect(holdingsFigures(holdings({ values_past_allowed_age: 0 }), 5).aged.tone).toBeUndefined();
+  });
+
+  it("says the month's spend is the server's total, and the cap a per-run and per-pass one", () => {
+    const { spent } = holdingsFigures(holdings(), 5);
+
+    expect(spent.value).toBe(formatMoney(0.61, "EUR"));
+    expect(spent.note).toBe(
+      `the cap is ${formatMoney(5, "EUR")} per acquisition and per research pass`,
+    );
+  });
+
+  /** PL-057. The strip offers to go uncapped, so nothing here may say such a run refuses. */
+  it("says an uncapped acquisition asks to go uncapped, never that it refuses", () => {
+    for (const cap of [null, undefined]) {
+      const { note } = holdingsFigures(holdings(), cap).spent;
+      expect(note).toMatch(/no cap is set: an acquisition that would spend asks you to accept/);
+      expect(note).not.toMatch(/refuses/);
+    }
+  });
+});
+
+describe("how many candidates are scored", () => {
+  it("counts matching and not matching as scored, under the set's name", () => {
+    expect(
+      scoredFigure({ matching: 20, notMatching: 8, insufficientData: 2 }, "Local employment"),
+    ).toMatchObject({
+      value: "28",
+      note: "under Local employment; 2 could not be scored",
+      tone: "warning",
     });
   });
 
-  /**
-   * A run that has reported progress and no counts in it yet has filled nothing of nothing.
-   * **No progress at all is not this**: a detail still being read is the caller's to draw as
-   * pending, never as zeros (PL-001), so `filledOf` takes no null.
-   */
-  it("reads a count the run has not reported yet as none", () => {
-    expect(filledOf({})).toEqual({ filled: 0, asked: 0 });
+  it("says so when every candidate could be scored", () => {
+    const figure = scoredFigure({ matching: 3, notMatching: 0, insufficientData: 0 }, "Remote");
+
+    expect(figure.note).toBe("under Remote, every candidate");
+    expect(figure.tone).toBeUndefined();
   });
 });
 

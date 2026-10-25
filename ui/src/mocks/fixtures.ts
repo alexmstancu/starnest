@@ -457,6 +457,10 @@ export const RUNS: Run[] = [
     finished_at: "2026-08-29T18:07:41Z",
     llm_call_count: 0,
     cost_eur: 0,
+    // What the server sends on every row, so "Last filled by" can name the run that stored.
+    items_total: 96,
+    items_completed: 93,
+    items_failed: 1,
   },
   {
     id: 6,
@@ -466,6 +470,9 @@ export const RUNS: Run[] = [
     finished_at: "2026-08-28T10:44:00Z",
     llm_call_count: 34,
     cost_eur: 2.5,
+    items_total: 96,
+    items_completed: 34,
+    items_failed: 0,
   },
   // **Run 5 exists because a stored value names it.** A value referencing a run the history
   // does not hold is a fixture that could not have happened, and it made the acquisition
@@ -711,9 +718,11 @@ export const STARTED_RUN: Run = {
   cost_eur: 0,
   // The size of the pass, which the server sends on every run and this fixture used to omit.
   // A mock narrower than the server certifies a screen that would be blank against the real
-  // one -- the fault the `is_enabled` switches shipped with.
+  // one -- the fault the `is_enabled` switches shipped with. **The scope is the items'**: 32
+  // candidates over the 3 attributes its failures and unanswered items name are its 96 items,
+  // where "41 attributes" claimed 1,312 the run never had.
   scope_candidates: 32,
-  scope_attributes: 41,
+  scope_attributes: 3,
   items_total: 96,
   items_completed: 93,
   items_failed: 1,
@@ -721,7 +730,15 @@ export const STARTED_RUN: Run = {
 
 export const STARTED_RUN_DETAIL: RunDetail = {
   ...STARTED_RUN,
-  scope: { level: "country", candidates: null, attributes: null },
+  scope: {
+    level: "country",
+    candidates: null,
+    attributes: [
+      "country.housing_cost_overburden_rate",
+      "country.overcrowding_rate",
+      "country.total_tax_rate_effective",
+    ],
+  },
   // The three counts sum to the total, which is the arithmetic Q217 closed: one item broke,
   // two produced neither a figure nor a failure.
   progress: {
@@ -780,6 +797,35 @@ export const STARTED_RUN_DETAIL: RunDetail = {
       items_asked: 1,
     },
   ],
+};
+
+type Holdings = components["schemas"]["Holdings"];
+
+/**
+ * What the database holds at country level, as `GET /holdings` serves it (PL-051, PL-054).
+ *
+ * **The gaps are the run detail's**, attributed to run 7 -- the newest in `RUNS`, whose detail
+ * the mock serves as `STARTED_RUN_DETAIL` -- so the remedy cards and the opened run describe
+ * the same three pairs. The handler works out values stored as the pairs total less the gaps,
+ * which is the sum the server's read closes by construction.
+ */
+export const HOLDINGS_PAIRS_TOTAL = 1312;
+export const HOLDINGS_PAST_ALLOWED_AGE = 37;
+/** What the refetch setting would leave out, once it is set; null while it is not. */
+export const HOLDINGS_OLDER_THAN_REFETCH_AGE = 12;
+export const HOLDINGS_GAPS: Holdings["gaps"] = {
+  failed: (STARTED_RUN_DETAIL.failures ?? []).map((failure) => ({
+    candidate: failure.candidate,
+    attribute: failure.attribute,
+    data_acquisition_run: 7,
+    failures: [{ data_source: failure.data_source, error_message: failure.error_message }],
+  })),
+  unanswered: (STARTED_RUN_DETAIL.unanswered ?? []).map((item) => ({
+    candidate: item.candidate,
+    attribute: item.attribute,
+    data_acquisition_run: 7,
+  })),
+  not_reached: [],
 };
 
 /**

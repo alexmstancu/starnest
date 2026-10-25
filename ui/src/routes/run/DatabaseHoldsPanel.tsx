@@ -1,16 +1,25 @@
 import { useCallback } from "react";
-import { fetchRun, fetchSettings, type Run } from "../../api/endpoints";
-import { combine, type Read } from "../../api/read";
+import {
+  fetchRanking,
+  fetchSettings,
+  type Holdings,
+  type Run,
+} from "../../api/endpoints";
+import { combine, type Idle, type Read } from "../../api/read";
 import { useRead } from "../../api/useRead";
-import { formatCount, formatDateTime, formatMoney } from "../../format/display";
+import { formatDateTime } from "../../format/display";
+import { noRankingBecause, tallyMatchStatus } from "../../shell/candidateCounts";
 import { LoadedRegion } from "../../shell/LoadedRegion";
+import { useSelection } from "../../shell/SelectionContext";
 import { alwaysAsked } from "./alwaysAsked";
 import {
-  filledOf,
-  newestRun,
+  holdingsFigures,
+  lastFilledBy,
   runningNow,
-  spentThisMonth,
+  scoredFigure,
+  type Tile,
 } from "./databaseHolds";
+import { useVersionOf } from "./useVersionOf";
 
 /**
  * What the database holds, at the top of Acquire.
@@ -20,22 +29,25 @@ import {
  * aged -- and none of them mean anything without the number they would change. The design
  * leads with this for that reason, and so does this.
  *
- * **Four figures, each one a sum over what the API returned.** Nothing here is estimated.
- * What the last acquisition filled and failed to fill is that acquisition's own accounting
- * (`items_completed`, `items_failed` and `items_unanswered` sum to `items_total`, derived in
- * SQL rather than stored, Q217); what has been spent this month is an addition of costs the
- * server recorded against each run.
+ * **Database facts, never one acquisition's accounting** (PL-051). Values stored, values past
+ * their allowed age and this month's spend -- runs and gate research together (PL-052) -- come
+ * whole from the holdings read; candidates scored is the ranking's tally, counted as the
+ * sidebar counts it (C04-N4). Opening, dismissing or retrying a run moves none of them.
  *
- * **Every figure waits for the read it comes from** (PL-001). A history, a detail or a setting
- * still on its way is a skeleton, and one that never came is said to have failed -- never "0 of
- * 0", never "no cap is set". Read again, the figures stay, marked busy (PL-010).
+ * **Every figure waits for the read it comes from** (PL-001). A read still on its way is a
+ * skeleton, and one that never came is said to have failed -- never "0 of 0", never "no cap is
+ * set". Read again, the figures stay, marked busy (PL-010).
  */
 export function DatabaseHoldsPanel({
   history,
-  onRetry,
+  holdings,
+  onRetryHistory,
+  onRetryHoldings,
 }: {
   history: Read<readonly Run[]>;
-  onRetry: () => Promise<void>;
+  holdings: Read<Holdings> | Idle;
+  onRetryHistory: () => Promise<void>;
+  onRetryHoldings: () => Promise<void>;
 }) {
   return (
     <section className="panel" aria-labelledby="database-holds">
@@ -43,37 +55,28 @@ export function DatabaseHoldsPanel({
         <h2 id="database-holds" className="panel__heading">
           What the database holds
         </h2>
-        {/* Drawn only from a history that has answered; its failure is said once, below. */}
-        {history.state === "ready" && <LastAcquisitions runs={history.data} />}
       </div>
+      {/* The screen's one full card when the history cannot be read (P1-06): every other
+          region on Acquire that fails with it says so in a line. */}
       <LoadedRegion
         read={history}
-        what="What the database holds"
-        skeleton="acquire-stats"
-        onRetry={onRetry}
+        what="The acquisition history"
+        skeleton="lines"
+        onRetry={onRetryHistory}
       >
-        {(runs) => {
-          const newestId = newestRun(runs)?.id;
-          // **Keyed by the acquisition it reads.** The figures belong to one run, so a newer
-          // one starts them again rather than leaving the previous run's counts on screen
-          // while the new ones arrive. Rendered only when there has been one, so the fetch
-          // never has to ask about a run that does not exist.
-          return newestId === undefined ? (
-            <p className="panel__hint">
-              Nothing has been acquired yet, so the database holds no values. An
-              estimate below says what a first acquisition would fetch.
-            </p>
-          ) : (
-            <Figures key={newestId} runId={newestId} runs={runs} />
-          );
-        }}
+        {(runs) => <LastAcquisitions runs={runs} />}
       </LoadedRegion>
+      {holdings.state === "idle" ? (
+        <p className="panel__hint">Choose a level to see what the database holds.</p>
+      ) : (
+        <Figures holdings={holdings} onRetryHoldings={onRetryHoldings} />
+      )}
     </section>
   );
 }
 
 function LastAcquisitions({ runs }: { runs: readonly Run[] }) {
-  const newest = newestRun(runs);
+  const newest = lastFilledBy(runs);
   const running = runningNow(runs);
   return (
     <dl className="meta-row">
@@ -96,63 +99,37 @@ function LastAcquisitions({ runs }: { runs: readonly Run[] }) {
 }
 
 /**
- * What one acquisition reached, and what the month has cost.
- *
- * Separate from the panel because it asks about a particular run: a component that fetches
- * only sometimes has to express "sometimes" as a rejected promise, and the memoisation the
- * React compiler wants cannot survive that.
+ * The four figures. Separate from the panel because the settings -- for the cap's caption --
+ * are read only once there is a level to read holdings at.
  */
-function Figures({ runId, runs }: { runId: number; runs: readonly Run[] }) {
-  const detail = useRead(
-    useCallback(
-      (signal: AbortSignal) => fetchRun(runId, { signal }),
-      [runId],
-    ),
-  );
+function Figures({
+  holdings,
+  onRetryHoldings,
+}: {
+  holdings: Read<Holdings>;
+  onRetryHoldings: () => Promise<void>;
+}) {
   const settings = useRead(
     useCallback((signal: AbortSignal) => fetchSettings({ signal }), []),
   );
   return (
     <LoadedRegion
-      read={combine(alwaysAsked(detail.read), alwaysAsked(settings.read))}
-      what="The last acquisition's figures"
+      read={combine(holdings, alwaysAsked(settings.read))}
+      what="What the database holds"
       skeleton="acquire-stats"
       prominence="region"
       onRetry={async () => {
-        await Promise.all([detail.reload(), settings.reload()]);
+        await Promise.all([onRetryHoldings(), settings.reload()]);
       }}
     >
-      {/* A detail with no progress is a run that has reported none, which is none of none. */}
-      {([{ progress = {} }, { run_spend_cap_eur: cap }]) => {
-        const { filled, asked } = filledOf(progress);
+      {([held, { run_spend_cap_eur: cap }]) => {
+        const { stored, aged, spent } = holdingsFigures(held, cap);
         return (
           <div className="big-stats">
-            <BigStat
-              label="Values filled"
-              value={formatCount(filled)}
-              note={`of ${formatCount(asked)} the last acquisition asked for`}
-            />
-            <BigStat
-              label="Nobody answered"
-              value={formatCount(progress.items_unanswered ?? 0)}
-              note="every source was asked and none had a row"
-              tone={(progress.items_unanswered ?? 0) > 0 ? "warning" : undefined}
-            />
-            <BigStat
-              label="Failed"
-              value={formatCount(progress.items_failed ?? 0)}
-              note="a source broke, so these are worth retrying"
-              tone={(progress.items_failed ?? 0) > 0 ? "danger" : undefined}
-            />
-            <BigStat
-              label="Spent this month"
-              value={formatMoney(spentThisMonth(runs, new Date()), "EUR")}
-              note={
-                cap == null
-                  ? "no cap is set, so an acquisition that would spend refuses"
-                  : `the cap is ${formatMoney(cap, "EUR")} per acquisition`
-              }
-            />
+            <BigStat {...stored} />
+            <ScoredStat holdings={held} />
+            <BigStat {...aged} />
+            <BigStat {...spent} />
           </div>
         );
       }}
@@ -160,17 +137,49 @@ function Figures({ runId, runs }: { runId: number; runs: readonly Run[] }) {
   );
 }
 
-function BigStat({
-  label,
-  value,
-  note,
-  tone,
-}: {
-  label: string;
-  value: string;
-  note: string;
-  tone?: "warning" | "danger";
-}) {
+/**
+ * How many candidates the active set scores, from the ranking the sidebar tallies (C04-N4), so
+ * the two can never disagree. Read again when the holdings are, since what is stored moved.
+ */
+function ScoredStat({ holdings }: { holdings: Holdings }) {
+  const { criteriaSetId, criteriaSets } = useSelection();
+  const level = holdings.level;
+  // Each new answer of the holdings is a new object, so a re-read of them reads this again.
+  const freshness = useVersionOf(holdings);
+  const ranking = useRead(
+    useCallback(
+      async (signal: AbortSignal) => {
+        // Not reachable while disabled; the guard is here so the type is honest.
+        if (criteriaSetId === null) throw new Error("no criteria set");
+        return tallyMatchStatus((await fetchRanking(criteriaSetId, level, { signal })).candidates);
+      },
+      [criteriaSetId, level],
+    ),
+    { enabled: criteriaSetId !== null, freshness },
+  );
+  const label = "Candidates scored";
+  if (ranking.read.state === "idle") {
+    return <BigStat label={label} value="—" note="choose a criteria set to score candidates" />;
+  }
+  // A ranking refused by design -- the score range unset -- is a state to say, not a fault.
+  const unranked = ranking.read.state === "failed" ? noRankingBecause(ranking.read.error) : null;
+  if (unranked !== null) return <BigStat label={label} value="—" note={unranked} />;
+  const setName =
+    criteriaSets.find((set) => set.id === criteriaSetId)?.name ?? criteriaSetId ?? "";
+  return (
+    <LoadedRegion
+      read={ranking.read}
+      what="Candidates scored"
+      skeleton="lines"
+      prominence="region"
+      onRetry={ranking.reload}
+    >
+      {(counts) => <BigStat {...scoredFigure(counts, setName)} />}
+    </LoadedRegion>
+  );
+}
+
+function BigStat({ label, value, note, tone }: Tile) {
   return (
     <div className={tone ? `big-stat big-stat--${tone}` : "big-stat"}>
       <span className="big-stat__label">{label}</span>

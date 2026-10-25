@@ -55,8 +55,9 @@ import {
  * `useRunScreen.ts`; the grouping and the counting are `failureGroups.ts`.
  */
 export function RunScreen({ route }: { route: RouteDefinition }) {
-  const { levelId, noteAcquisitionStarted } = useSelection();
-  const run = useRunScreen(levelId, noteAcquisitionStarted);
+  const { levelId, noteAcquisitionStarted, acquisitionsEnded } = useSelection();
+  // An acquisition the shell saw end has moved what the database holds.
+  const run = useRunScreen(levelId, noteAcquisitionStarted, acquisitionsEnded);
   // **Where Not yet hands focus back** (PL-128): the control that opened the strip, which
   // stays on screen when the strip goes.
   const opener = useRef<Element | null>(null);
@@ -134,7 +135,12 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           `run.close`. The failures live in the card below that can act on them. */}
       {report}
 
-      <DatabaseHoldsPanel history={run.history} onRetry={run.reloadHistory} />
+      <DatabaseHoldsPanel
+        history={run.history}
+        holdings={run.holdings}
+        onRetryHistory={run.reloadHistory}
+        onRetryHoldings={run.reloadHoldings}
+      />
 
       {/* ── What you can do about the gaps ───────────────────────────────────────────
           **Three cards, side by side, and the same shape each.** A failure, an item nobody

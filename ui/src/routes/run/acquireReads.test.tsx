@@ -38,6 +38,15 @@ const INVALID: Refusal = {
   },
 };
 
+const UNKNOWN_LEVEL: Refusal = {
+  status: 422,
+  body: {
+    code: "unknown_scope",
+    message: "the scope names 1 id(s) that exist at no row at level country: country.",
+    details: { level: "country", unknown_levels: ["country"] },
+  },
+};
+
 interface ScreenRead {
   what: string;
   path: string;
@@ -61,21 +70,33 @@ const READS: ScreenRead[] = [
     path: `${BASE}/data-acquisition-runs`,
     refusal: INVALID,
     owners: [HOLDS, /every acquisition so far/i],
-    facts: [
-      /Nothing yet/,
-      /None — one at a time/,
-      /nothing has been acquired yet/i,
-      /no acquisition has been started yet/i,
-    ],
-    drawnFromIt: [/last filled by/i, /running now/i, /spent this month/i],
+    facts: [/Nothing yet/, /None — one at a time/, /no acquisition has been started yet/i],
+    drawnFromIt: [/last filled by/i, /running now/i],
   },
   {
     what: "the last acquisition",
     path: `${BASE}/data-acquisition-runs/:runId`,
     refusal: NOT_FOUND,
-    owners: [HOLDS, LAST_ACQUISITION],
+    // The panel and the remedy cards read the database, never this run (PL-051, PL-054).
+    owners: [LAST_ACQUISITION],
     facts: [],
-    drawnFromIt: [/values filled/i, /nobody answered/i, /a source broke/i],
+    drawnFromIt: [/figures stored/i],
+  },
+  {
+    what: "what the database holds",
+    path: `${BASE}/holdings`,
+    refusal: UNKNOWN_LEVEL,
+    owners: [HOLDS],
+    facts: [],
+    drawnFromIt: [/values stored/i, /past their allowed age/i, /spent this month/i],
+  },
+  {
+    what: "the ranking",
+    path: `${BASE}/rankings`,
+    refusal: INVALID,
+    owners: [HOLDS],
+    facts: [],
+    drawnFromIt: [/could not be scored/i, /every candidate/i],
   },
   {
     what: "the settings",
@@ -222,15 +243,15 @@ describe("what the database holds while the history is read again", () => {
     try {
       renderShell("/acquire");
       await within(await screen.findByRole("region", { name: HOLDS })).findByText(
-        /values filled/i,
+        /last filled by/i,
       );
 
       await userEvent.click(
-        screen.getByRole("button", { name: /estimate an acquisition/i }),
+        await screen.findByRole("button", { name: /estimate an acquisition/i }),
       );
       await waitFor(() => expect(waiting).toBe(true));
 
-      expect(region(HOLDS)).toHaveTextContent(/values filled/i);
+      expect(region(HOLDS)).toHaveTextContent(/last filled by/i);
       expect(region(HOLDS).querySelector('[aria-busy="true"]')).not.toBeNull();
     } finally {
       answer.release();
@@ -414,7 +435,7 @@ describe("the last acquisition when the history was empty at first", () => {
       }),
     );
     renderShell("/acquire");
-    await within(await findRegion(HOLDS)).findByText(/nothing has been acquired yet/i);
+    await within(await findRegion(HOLDS)).findByText("Nothing yet");
 
     empty = false;
     await userEvent.click(
@@ -443,6 +464,9 @@ describe("figures you can enter by hand when Try again finds none", () => {
       ),
     );
     renderShell("/acquire");
+    // Every other read on the screen settled first: an answer to any of them reads a read the
+    // server did not answer again (PL-002), which draws a new Try again in place of this one.
+    await within(await findRegion(HOLDS)).findByText(/^under /);
     const handEntry = await findRegion(HAND_ENTRY);
     const tryAgain = await within(handEntry).findByRole("button", { name: "Try again" });
 
