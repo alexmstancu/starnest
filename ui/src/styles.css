@@ -4982,3 +4982,12 @@ select.field__control {
   color: var(--colour-text-muted);
   font-style: italic;
 }
+
+/* The hand-entry card (PL-087): each attribute's type in words, under its name, as the design
+   writes a type phrase under an attribute in Configure. */
+.hand-entry__type {
+  display: block;
+  color: var(--colour-text-muted);
+  font-size: 11px;
+  font-weight: var(--weight-normal);
+}

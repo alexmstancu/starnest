@@ -1,14 +1,16 @@
-import { useCallback, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { fetchAttributes } from "../../api/endpoints";
 import { usePillarNames, type PillarNames } from "../../api/usePillarNames";
 import { map } from "../../api/read";
 import { useRead } from "../../api/useRead";
 import { useSourceNames } from "../../api/useSourceNames";
 import { pillarName } from "../../format/display";
+import { handEntryAsked } from "../../navigation/highlight";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { alwaysAsked } from "./alwaysAsked";
 import { ManualEntryPanel } from "./ManualEntryPanel";
-import { handEnterable } from "./unsourced";
+import { handEnterable, type HandEnterable } from "./unsourced";
 
 /**
  * The attributes a person may answer themselves.
@@ -42,11 +44,22 @@ export function OpenToHandEntry({ level }: { level: string }) {
   const openTo = map(alwaysAsked(attributes.read), (read) =>
     handEnterable(read.items, sourceNames),
   );
+  const card = useArrivalAt(openTo.state === "ready" ? openTo.data : null, setOpen);
+
   return (
-    <section className="panel" aria-labelledby={headingId}>
-      <h2 id={headingId} className="panel__heading">
-        Figures you can enter by hand
-      </h2>
+    <section ref={card} className="panel" aria-labelledby={headingId}>
+      <div className="panel__head">
+        <h2 id={headingId} className="panel__heading">
+          Figures you can enter by hand
+        </h2>
+        {openTo.state === "ready" && openTo.data.length > 0 && (
+          <span className="chip chip--neutral">
+            {openTo.data.length === 1
+              ? "1 attribute permits it"
+              : `${String(openTo.data.length)} attributes permit it`}
+          </span>
+        )}
+      </div>
       <p className="panel__hint">
         The catalog permits a typed figure for these. It is stored under the{" "}
         <strong>manual</strong> source, which ranks last — a published figure
@@ -102,6 +115,32 @@ export function OpenToHandEntry({ level }: { level: string }) {
   );
 }
 
+/**
+ * **Arrived at from the no-source card's remedy** (PL-088): the link names an attribute, and its
+ * row opens once per arrival -- keyed on the navigation, so the reader's own toggles afterwards
+ * are not fought -- and the card scrolls into view.
+ */
+function useArrivalAt(
+  enterable: readonly HandEnterable[] | null,
+  open: (attribute: string) => void,
+) {
+  const location = useLocation();
+  const asked = handEntryAsked(location.search);
+  const answered = useRef<string | null>(null);
+  const card = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (asked === null || enterable === null || answered.current === location.key) return;
+    answered.current = location.key;
+    if (!enterable.some((attribute) => attribute.id === asked && attribute.kind !== null)) return;
+    open(asked);
+    // Not in jsdom; the focus the form takes when it opens is what moves the reader.
+    card.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+  }, [asked, enterable, location.key, open]);
+
+  return card;
+}
+
 function Row({
   attribute,
   pillars,
@@ -109,7 +148,7 @@ function Row({
   open,
   onToggle,
 }: {
-  attribute: ReturnType<typeof handEnterable>[number];
+  attribute: HandEnterable;
   pillars: PillarNames;
   level: string;
   open: boolean;
@@ -118,22 +157,29 @@ function Row({
   return (
     <>
       <tr>
-        <th scope="row">{attribute.name}</th>
+        <th scope="row">
+          {attribute.name}
+          <span className="hand-entry__type">{attribute.type}</span>
+        </th>
         {/* The catalog's name, as the card beside this one prints it -- never the id (NEW-09). */}
         <td>{pillarName(pillars, attribute.pillar)}</td>
         <td>{attribute.otherwise}</td>
         <td>
-          <button
-            type="button"
-            className="button button--quiet"
-            aria-expanded={open}
-            onClick={onToggle}
-          >
-            {open ? "Close" : "Enter a value by hand"}
-          </button>
+          {attribute.kind === null ? (
+            attribute.noForm
+          ) : (
+            <button
+              type="button"
+              className="button button--quiet"
+              aria-expanded={open}
+              onClick={onToggle}
+            >
+              {open ? "Close" : "Enter a value by hand"}
+            </button>
+          )}
         </td>
       </tr>
-      {open && (
+      {open && attribute.kind !== null && (
         <tr>
           <td colSpan={4}>
             <ManualEntryPanel

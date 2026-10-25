@@ -53,7 +53,7 @@ export function describeValueType(
     case "Index":
       return named === null ? "An index" : `An index on ${named}`;
     case "AssignedScore":
-      return "A score somebody assigned";
+      return "An assigned score";
     case "LabelSet":
       return "A set of labels";
     case "ShareComposition":

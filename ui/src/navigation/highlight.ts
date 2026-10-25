@@ -11,8 +11,13 @@
  */
 
 export const UNSOURCED = "unsourced";
+/** The hand-entry card, with the attribute whose form to open (PL-088). */
+export const HAND_ENTRY = "hand-entry";
 
-const KNOWN = new Set([UNSOURCED]);
+const KNOWN = new Set([UNSOURCED, HAND_ENTRY]);
+
+/** Which attribute's form a hand-entry link asks for. */
+export const ATTRIBUTE = "attribute";
 
 /** The parameter a link sets and the arriving screen reads. */
 export const SHOW = "show";
@@ -25,4 +30,17 @@ export function highlighted(search: string): string | null {
 /** Where a link should point to land on a card. */
 export function linkTo(path: string, card: string): string {
   return `${path}?${SHOW}=${card}`;
+}
+
+/** A link that lands on one attribute's hand-entry form, open. */
+export function linkToHandEntry(path: string, attribute: string): string {
+  const query = new URLSearchParams({ [SHOW]: HAND_ENTRY, [ATTRIBUTE]: attribute });
+  return `${path}?${query.toString()}`;
+}
+
+/** The attribute a hand-entry link names, or null when the URL asks for no form. */
+export function handEntryAsked(search: string): string | null {
+  if (highlighted(search) !== HAND_ENTRY) return null;
+  const attribute = new URLSearchParams(search).get(ATTRIBUTE);
+  return attribute === null || attribute === "" ? null : attribute;
 }

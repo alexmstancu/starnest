@@ -1424,8 +1424,13 @@ describe("attributes with no data source at all", () => {
       }),
     );
     const row = await card.findByRole("row", { name: /residency admin ease/i });
-    expect(row).toHaveTextContent("Enter a value by hand");
     expect(card.queryByRole("button", { name: /by hand/i })).toBeNull();
+    expect(
+      within(row).getByRole("link", { name: "Enter a value by hand" }),
+    ).toHaveAttribute(
+      "href",
+      "/acquire?show=hand-entry&attribute=country.residency_admin_ease",
+    );
 
     const handEntry = within(
       await screen.findByRole("region", {
@@ -1437,6 +1442,55 @@ describe("attributes with no data source at all", () => {
         await handEntry.findByRole("row", { name: /residency admin ease/i }),
       ).getByRole("button", { name: /enter a value by hand/i }),
     ).toBeInTheDocument();
+  });
+
+  /** PL-088 (UF-092). The remedy was plain text, a step short of the form it named. */
+  it("the remedy opens that attribute's form", async () => {
+    renderShell("/acquire");
+
+    const card = within(
+      await screen.findByRole("region", {
+        name: /attributes with no data source at all/i,
+      }),
+    );
+    const row = await card.findByRole("row", { name: /residency admin ease/i });
+    await userEvent.click(within(row).getByRole("link", { name: "Enter a value by hand" }));
+
+    expect(
+      await screen.findByRole("region", {
+        name: "Enter a value for Residency admin ease by hand",
+      }),
+    ).toBeInTheDocument();
+    const handEntry = within(
+      screen.getByRole("region", { name: /figures you can enter by hand/i }),
+    );
+    expect(
+      within(handEntry.getByRole("rowheader", { name: /residency admin ease/i }).closest("tr")!)
+        .getByRole("button", { name: "Close" }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("opens nothing for an attribute the link names that has no form", async () => {
+    renderShell("/acquire?show=hand-entry&attribute=country.nobody_measures_this");
+
+    const handEntry = within(
+      await screen.findByRole("region", { name: /figures you can enter by hand/i }),
+    );
+    await handEntry.findByRole("row", { name: /nobody measures this/i });
+    expect(screen.queryByRole("region", { name: /enter a value for/i })).toBeNull();
+  });
+
+  it("states each attribute's type in words", async () => {
+    renderShell("/acquire");
+
+    const card = within(
+      await screen.findByRole("region", {
+        name: /attributes with no data source at all/i,
+      }),
+    );
+    expect(await card.findByRole("columnheader", { name: "Type" })).toBeInTheDocument();
+    const row = await card.findByRole("row", { name: /nobody measures this/i });
+    expect(within(row).getByRole("cell", { name: "Measured in weeks" })).toBeInTheDocument();
   });
 
   it("says why there is no form where the type has no editor", async () => {
@@ -1452,8 +1506,11 @@ describe("attributes with no data source at all", () => {
     );
     const row = await card.findByRole("row", { name: /nobody measures this/i });
 
-    expect(row).toHaveTextContent(/no editor is built for a Quantity/i);
+    expect(row).toHaveTextContent(
+      "Permitted, but there is no form for a measured quantity yet",
+    );
     expect(within(row).queryByRole("button")).toBeNull();
+    expect(within(row).queryByRole("link")).toBeNull();
   });
 
   it("says an attribute the active set does not score is not weighed", async () => {
@@ -4005,6 +4062,61 @@ describe("a figure typed by hand", () => {
         name: "Nothing else would answer it",
       }),
     ).toBeInTheDocument();
+  });
+
+  /** PL-085, PL-087. The count as a badge, and each attribute's type under its name. */
+  it("the hand-entry card counts and types its attributes", async () => {
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", {
+        name: /figures you can enter by hand/i,
+      }),
+    );
+
+    const permitted = ATTRIBUTES.filter((attribute) => attribute.manual_entry).length;
+    expect(
+      await card.findByText(`${String(permitted)} attributes permit it`),
+    ).toBeInTheDocument();
+    expect(card.getAllByRole("rowheader")).toHaveLength(permitted);
+    expect(
+      card.getByRole("rowheader", { name: /residency admin ease/i }),
+    ).toHaveTextContent("An assigned score");
+    expect(
+      card.getByRole("rowheader", { name: /international employers/i }),
+    ).toHaveTextContent("A set of labels");
+  });
+
+  /**
+   * PL-087 (UF-091). **A measured quantity a source answers, and hand entry permits, was in
+   * neither card**: the permission was invisible.
+   */
+  it("says there is no form for a measured quantity rather than offering one", async () => {
+    // As in the real catalog: a measured quantity a source answers, hand entry permitted.
+    const naturalisation = {
+      ...ATTRIBUTES.find((attribute) => attribute.id === "country.cost_of_living_index")!,
+      id: "country.naturalisation_pathway",
+      name: "Naturalisation pathway",
+      pillar: "governance",
+      unit: "years",
+      manual_entry: true,
+    };
+    mockServer.use(
+      http.get(`${BASE}/attributes`, () =>
+        HttpResponse.json({ items: [...ATTRIBUTES, naturalisation] }),
+      ),
+    );
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", {
+        name: /figures you can enter by hand/i,
+      }),
+    );
+
+    const row = await card.findByRole("row", { name: /naturalisation pathway/i });
+    expect(row).toHaveTextContent(
+      "Permitted, but there is no form for a measured quantity yet",
+    );
+    expect(within(row).queryByRole("button")).toBeNull();
   });
 
   it("stores a label set and reads back what it wrote", async () => {

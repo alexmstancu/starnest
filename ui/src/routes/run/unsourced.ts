@@ -13,10 +13,13 @@
  * included, so reading "no source" from it could never find one.
  */
 
+import { describeValueType } from "../../format/criterionWords";
+
 export interface CatalogAttribute {
   id: string;
   name: string;
   value_type?: string;
+  unit?: string | null;
   pillar?: string | null;
   /**
    * The sources whose adapter can fetch it, in priority order, whether or not they are
@@ -32,12 +35,16 @@ export interface WeightedCriterion {
   attribute: string;
   pillar: string;
   weight?: number;
+  /** A criterion the set keeps but does not score is worth nothing in its pillar. */
+  is_scored?: boolean;
 }
 
 export interface UnsourcedAttribute {
   id: string;
   name: string;
   pillar: string;
+  /** Its value type in words, so the reader knows what kind of figure is missing. */
+  type: string;
   /** What it is worth inside its pillar, or null when the active set does not score it. */
   weight: number | null;
   manualEntry: boolean;
@@ -54,9 +61,22 @@ function remedyFor(attribute: CatalogAttribute): string {
   if (attribute.manual_entry !== true) {
     return "No source yet, and hand entry is not permitted for this attribute";
   }
-  return editorFor(attribute) === null
-    ? `Hand entry is permitted, but no editor is built for a ${String(attribute.value_type)} yet`
-    : "Enter a value by hand";
+  return editorFor(attribute) === null ? noFormFor(attribute) : "Enter a value by hand";
+}
+
+/**
+ * Permitted, but no editor is built for this type: said rather than offering a form that
+ * cannot submit. The type in words, without its unit: "a measured quantity", not "measured in
+ * weeks".
+ */
+function noFormFor(attribute: CatalogAttribute): string {
+  const words = describeValueType(attribute.value_type, null);
+  const named = words === "" ? "this type" : words.charAt(0).toLowerCase() + words.slice(1);
+  return `Permitted, but there is no form for ${named} yet`;
+}
+
+function typeOf(attribute: CatalogAttribute): string {
+  return describeValueType(attribute.value_type, attribute.unit);
 }
 
 /**
@@ -90,25 +110,36 @@ export function unsourcedAttributes(
   attributes: readonly CatalogAttribute[],
   criteria: readonly WeightedCriterion[],
 ): UnsourcedAttribute[] {
+  // **Only what the set scores has a weight** (PL-088): a kept-but-unscored criterion still
+  // carries the weight it would have, and printing it claims a share of the pillar it has not.
   const weights = new Map(
-    criteria.map((criterion) => [criterion.attribute, criterion.weight]),
+    criteria
+      .filter((criterion) => criterion.is_scored !== false)
+      .map((criterion) => [criterion.attribute, criterion.weight]),
   );
 
-  return attributes
-    .filter(nothingCanFetch)
-    .map((attribute) => {
-      const weight = weights.get(attribute.id);
-      return {
-        id: attribute.id,
-        name: attribute.name,
-        pillar: attribute.pillar ?? NO_PILLAR,
-        weight: typeof weight === "number" ? weight : null,
-        manualEntry: attribute.manual_entry === true,
-        manualKind: editorFor(attribute),
-        remedy: remedyFor(attribute),
-      };
-    })
-    .sort((left, right) => (right.weight ?? 0) - (left.weight ?? 0));
+  const gaps = attributes.filter(nothingCanFetch).map((attribute): UnsourcedAttribute => {
+    const weight = weights.get(attribute.id);
+    return {
+      id: attribute.id,
+      name: attribute.name,
+      pillar: attribute.pillar ?? NO_PILLAR,
+      type: typeOf(attribute),
+      weight: typeof weight === "number" ? weight : null,
+      manualEntry: attribute.manual_entry === true,
+      manualKind: editorFor(attribute),
+      remedy: remedyFor(attribute),
+    };
+  });
+  // Equal weights by name, so the same catalog always reads in the same order.
+  return gaps.sort(
+    (left, right) =>
+      worth(right) - worth(left) || left.name.localeCompare(right.name),
+  );
+}
+
+function worth(gap: UnsourcedAttribute): number {
+  return typeof gap.weight === "number" ? gap.weight : 0;
 }
 
 /**
@@ -127,13 +158,18 @@ export interface HandEnterable {
   id: string;
   name: string;
   pillar: string;
-  kind: "LabelSet" | "AssignedScore";
+  /** Its value type in words, under its name. */
+  type: string;
+  /** Which editor opens, or null where the catalog permits entry and no form exists yet. */
+  kind: "LabelSet" | "AssignedScore" | null;
+  /** Why there is no button, where `kind` is null. */
+  noForm: string;
   /** What else can fetch it, so typing one is visibly a choice -- or plainly the only way. */
   otherwise: string;
 }
 
 /**
- * The attributes a person may answer themselves.
+ * Every attribute a person may answer themselves.
  *
  * **Not the same list as the unsourced ones, though the two overlap.** This is every attribute
  * a person may answer; that one is every attribute no source can fetch. One only a person can
@@ -141,6 +177,10 @@ export interface HandEnterable {
  * in both, while `international_employers` is here alone wherever the LLM path is configured
  * to fetch it. Offering the form only among the unsourced would hide it from every attribute
  * something else could also answer.
+ *
+ * **Every one the catalog permits, form or not** (PL-087): listing only those with an editor
+ * left a permitted measured quantity a source also answers in neither card, so the permission
+ * was invisible. Where no form exists, the row says so instead of offering one.
  *
  * **What else would answer it is `answerable_by`, never the priority order.** The order names
  * every source for every attribute -- `manual` among them, which is this very form, and sources
@@ -152,19 +192,18 @@ export function handEnterable(
   attributes: readonly CatalogAttribute[],
   sourceNames: ReadonlyMap<string, string>,
 ): HandEnterable[] {
-  const open: HandEnterable[] = [];
-  for (const attribute of attributes) {
-    const kind = editorFor(attribute);
-    if (kind === null) continue;
-    open.push({
+  return attributes
+    .filter((attribute) => attribute.manual_entry === true)
+    .map((attribute) => ({
       id: attribute.id,
       name: attribute.name,
       pillar: attribute.pillar ?? NO_PILLAR,
-      kind,
+      type: typeOf(attribute),
+      kind: editorFor(attribute),
+      noForm: noFormFor(attribute),
       otherwise: otherwiseFor(attribute, sourceNames),
-    });
-  }
-  return open.sort((left, right) => left.name.localeCompare(right.name));
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 /**

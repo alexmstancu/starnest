@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { highlighted, linkTo, SHOW, UNSOURCED } from "./highlight";
+import {
+  handEntryAsked,
+  highlighted,
+  linkTo,
+  linkToHandEntry,
+  SHOW,
+  UNSOURCED,
+} from "./highlight";
 
 describe("sending a reader to a particular card", () => {
   it("reads the card a link named", () => {
@@ -22,5 +29,19 @@ describe("sending a reader to a particular card", () => {
 
   it("finds the card among other parameters", () => {
     expect(highlighted(`?level=country&${SHOW}=${UNSOURCED}`)).toBe(UNSOURCED);
+  });
+});
+
+describe("sending a reader to one attribute's hand-entry form", () => {
+  it("names the attribute the arriving screen opens", () => {
+    const link = linkToHandEntry("/acquire", "country.residency_admin_ease");
+    expect(link).toBe("/acquire?show=hand-entry&attribute=country.residency_admin_ease");
+    expect(handEntryAsked(link.slice(link.indexOf("?")))).toBe("country.residency_admin_ease");
+  });
+
+  it("opens nothing when the link names another card or no attribute", () => {
+    expect(handEntryAsked("?show=unsourced&attribute=country.rent")).toBeNull();
+    expect(handEntryAsked("?show=hand-entry")).toBeNull();
+    expect(handEntryAsked("?show=hand-entry&attribute=")).toBeNull();
   });
 });

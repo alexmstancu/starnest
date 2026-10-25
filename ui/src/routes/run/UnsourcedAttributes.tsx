@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { fetchAttributes, fetchCriteriaSet } from "../../api/endpoints";
 import { combine, map, type Read } from "../../api/read";
 import { type PillarNames, usePillarNames } from "../../api/usePillarNames";
@@ -7,7 +7,7 @@ import { useRead } from "../../api/useRead";
 import { formatPercentage, pillarName } from "../../format/display";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { useSelection, type Selection } from "../../shell/SelectionContext";
-import { highlighted, UNSOURCED } from "../../navigation/highlight";
+import { highlighted, linkToHandEntry, UNSOURCED } from "../../navigation/highlight";
 import { alwaysAsked } from "./alwaysAsked";
 import {
   type CatalogAttribute,
@@ -25,7 +25,7 @@ import {
  *
  * **Hand entry is not offered here, though the two lists now overlap.** An attribute only a
  * person can answer -- hand entry permitted, no adapter able to fetch it -- honestly appears in
- * both, and its remedy here says to enter it by hand. The form lives in `OpenToHandEntry` beside
+ * both, and its remedy here links to its form in the card beside. The form lives in `OpenToHandEntry` beside
  * this card, which lists every attribute a person may answer, so there is one form in one place.
  * It was first put here, while "no source" was read from the priority order and no hand-entry
  * attribute ever qualified -- which made it unreachable, as opening the screen showed and no
@@ -52,6 +52,8 @@ export function UnsourcedAttributes({ level }: { level: string }) {
   );
   const catalog = alwaysAsked(attributes.read);
   // The weights come from the set: without one, from the selection that says there is none.
+  // While the set is read the card waits whole (PL-001), so no weight reads "not scored here"
+  // before the set has said so.
   const gaps: Read<UnsourcedAttribute[]> =
     set.read.state === "idle"
       ? withoutASet(catalog, selection)
@@ -157,6 +159,7 @@ function Gaps({
           <thead>
             <tr>
               <th scope="col">Attribute</th>
+              <th scope="col">Type</th>
               <th scope="col">Pillar</th>
               <th scope="col">Weight in pillar</th>
               <th scope="col">What would fill it</th>
@@ -166,6 +169,7 @@ function Gaps({
             {gaps.map((gap) => (
               <tr key={gap.id}>
                 <th scope="row">{gap.name}</th>
+                <td>{gap.type}</td>
                 {/* The catalog's pillar name, never the id: the catalog says "Economy"
                     where the id says `economics`, and a title-cased id is this screen
                     guessing at a name somebody already chose. */}
@@ -175,7 +179,14 @@ function Gaps({
                     ? "not scored here"
                     : formatPercentage(gap.weight)}
                 </td>
-                <td>{gap.remedy}</td>
+                <td>
+                  {/* The remedy takes the reader to the form, where there is one (PL-088). */}
+                  {gap.manualKind === null ? (
+                    gap.remedy
+                  ) : (
+                    <Link to={linkToHandEntry("/acquire", gap.id)}>{gap.remedy}</Link>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

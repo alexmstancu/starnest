@@ -42,7 +42,7 @@ describe("what the attribute measures", () => {
     expect(describeValueType("Boolean", null)).toBe("Yes or no");
     expect(describeValueType("Text", null)).toBe("Text");
     expect(describeValueType("AssignedScore", "0-10")).toBe(
-      "A score somebody assigned",
+      "An assigned score",
     );
   });
 

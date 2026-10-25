@@ -64,6 +64,26 @@ describe("attributes with nobody to ask", () => {
     expect(unsourcedAttributes([unfetchable], [])[0]?.weight).toBeNull();
   });
 
+  /**
+   * PL-088 (UF-092). **A criterion the set keeps but does not score claims no share** of its
+   * pillar: its stored weight is what it would carry, not what it carries.
+   */
+  it("reads a criterion the set does not score as not scored here", () => {
+    const [found] = unsourcedAttributes(
+      [unfetchable],
+      [{ attribute: "country.tech_product_jobs", pillar: "career", weight: 20, is_scored: false }],
+    );
+    expect(found?.weight).toBeNull();
+  });
+
+  it("states each one's type in words", () => {
+    const [found] = unsourcedAttributes(
+      [{ ...unfetchable, value_type: "Quantity", unit: "weeks" }],
+      [],
+    );
+    expect(found?.type).toBe("Measured in weeks");
+  });
+
   /** Heaviest first: 45% of a pillar is a different problem from 5%. */
   it("puts the costliest gap first", () => {
     const order = unsourcedAttributes(
@@ -122,7 +142,7 @@ describe("attributes with nobody to ask", () => {
     );
 
     expect(gap?.manualKind).toBeNull();
-    expect(gap?.remedy).toMatch(/no editor is built for a Monetary/);
+    expect(gap?.remedy).toBe("Permitted, but there is no form for money yet");
   });
 
   it("names a pillar even when the attribute has none", () => {
@@ -187,21 +207,48 @@ describe("attributes a person may answer", () => {
     expect(handEnterable([unsaid], NAMES)[0]?.otherwise).toBe("");
   });
 
-  /** Only where a form can open: permitted by the catalog, and an editor built for the type. */
-  it("offers only what a form exists for, by name", () => {
-    const listed = handEnterable(
-      [
-        residency,
-        employers,
-        { ...employers, id: "barred", manual_entry: false },
-        { ...employers, id: "no_editor", value_type: "Quantity" },
-      ],
-      NAMES,
-    ).map((each) => each.id);
+  /**
+   * PL-087 (UF-091), guard G6. **Every attribute the catalog permits is listed**, form or not:
+   * listing only those with an editor left a permitted measured quantity in neither card.
+   */
+  it("lists every attribute the catalog permits, saying so where no form exists", () => {
+    const TYPES = [
+      "Monetary",
+      "Quantity",
+      "Count",
+      "Ratio",
+      "Index",
+      "LabelSet",
+      "ShareComposition",
+      "Boolean",
+      "AssignedScore",
+      "Text",
+    ];
+    const catalog = [
+      ...TYPES.map((type) => ({ ...employers, id: type, name: type, value_type: type })),
+      { ...employers, id: "barred", name: "Barred", manual_entry: false },
+    ];
 
-    expect(listed).toEqual([
-      "country.international_employers",
-      "country.residency_admin_ease",
+    const listed = handEnterable(catalog, NAMES);
+
+    expect(listed.map((each) => each.id).sort()).toEqual([...TYPES].sort());
+    for (const each of listed) {
+      if (each.id === "LabelSet" || each.id === "AssignedScore") {
+        expect(each.kind).toBe(each.id);
+      } else {
+        expect(each.kind).toBeNull();
+        expect(each.noForm).toMatch(/^Permitted, but there is no form for .+ yet$/);
+      }
+    }
+    expect(listed.find((each) => each.id === "Quantity")?.noForm).toBe(
+      "Permitted, but there is no form for a measured quantity yet",
+    );
+  });
+
+  it("states each one's type in words", () => {
+    expect(handEnterable([employers, residency], NAMES).map((each) => each.type)).toEqual([
+      "A set of labels",
+      "An assigned score",
     ]);
   });
 });
