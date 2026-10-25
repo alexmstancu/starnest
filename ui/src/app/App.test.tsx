@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
@@ -553,6 +553,29 @@ describe("when the API fails", () => {
     await user.click(counts.getByRole("button", { name: /try again/i }));
 
     await waitFor(() => expect(counts.getByText("Matching").nextSibling).toHaveTextContent("2"));
+  });
+
+  /** RULES "Focus": the screen card's Try again takes itself away; focus goes to the screen. */
+  it("puts focus on the screen, never the page, when the server card's Try again is pressed", async () => {
+    mockServer.use(http.get("/v1/rankings", () => HttpResponse.error()));
+    renderShell("/rank");
+    await screen.findByRole("combobox", { name: "Attribute" });
+    const card = await waitFor(() => {
+      const found = screen
+        .getAllByRole("alert")
+        .find((each) => /server is probably not running/i.test(each.textContent ?? ""));
+      expect(found).toBeDefined();
+      return found!;
+    });
+
+    mockServer.resetHandlers();
+    act(() => within(card).getByRole("button", { name: /try again/i }).focus());
+    await userEvent.keyboard("{Enter}");
+
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toBe(screen.getByRole("main"));
+    await screen.findByRole("table", { name: /ranked candidates/i });
+    expect(document.activeElement).toBe(screen.getByRole("main"));
   });
 
   it("keeps the navigation usable when the criteria sets cannot be loaded", async () => {

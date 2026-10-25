@@ -1945,3 +1945,52 @@ describe("focus when a refusal takes the pressed control away", () => {
     expect(document.activeElement).toBe(document.body);
   });
 });
+
+/** RULES "Focus": the lists' Try again takes itself away, and what replaces it takes focus. */
+describe("focus when the criteria sets and levels are read again", () => {
+  it("hands focus to the empty state when the lists are read again and hold nothing", async () => {
+    let failing = true;
+    mockServer.use(
+      http.get(`${BASE}/criteria-sets`, () =>
+        failing
+          ? HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 })
+          : HttpResponse.json({ items: [] }),
+      ),
+    );
+    renderShell("/compare");
+    const region = within(compareRegion());
+    const card = (await region.findByText(/criteria sets and levels could not be loaded/i))
+      .parentElement!;
+
+    failing = false;
+    act(() => within(card).getByRole("button", { name: "Try again" }).focus());
+    await userEvent.keyboard("{Enter}");
+
+    const empty = await region.findByText(/choose a criteria set and a level to compare/i);
+    await waitFor(() => expect(document.activeElement).toBe(empty));
+  });
+
+  it("lands on Compare once the lists have been read, never on the page", async () => {
+    let failing = true;
+    mockServer.use(
+      http.get(`${BASE}/levels`, () =>
+        failing
+          ? HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 })
+          : undefined,
+      ),
+    );
+    renderShell("/compare");
+    const region = within(compareRegion());
+    const card = (await region.findByText(/criteria sets and levels could not be loaded/i))
+      .parentElement!;
+
+    failing = false;
+    act(() => within(card).getByRole("button", { name: "Try again" }).focus());
+    await userEvent.keyboard("{Enter}");
+
+    expect(document.activeElement).not.toBe(document.body);
+    await region.findByRole("option", { name: "Portugal" });
+    expect(document.activeElement).not.toBe(document.body);
+    expect(compareRegion()).toContainElement(document.activeElement as HTMLElement);
+  });
+});

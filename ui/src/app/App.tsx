@@ -51,7 +51,8 @@ export function App() {
           <DocumentTitle />
           <div className="layout">
             <Sidebar />
-            <main className="main">
+            {/* Focusable, for the server card's Try again, which takes itself away. */}
+            <main className="main" tabIndex={-1}>
               <TabBar />
               {/* **Under the tabs, on every screen but Acquire.** An acquisition takes minutes
                 and the reason to start one is usually to go and look at something else. */}

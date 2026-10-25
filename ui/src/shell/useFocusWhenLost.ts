@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 /**
  * Focus for what replaces a control the reader pressed (RULES "Focus").
@@ -44,11 +44,16 @@ export function useFocusRegion(): FocusRegion {
   );
 }
 
-/** For the notice that replaces a region's control. The element needs `tabIndex={-1}`. */
-export function useFocusWhenLost<T extends HTMLElement>(region: FocusRegion) {
+/**
+ * For the notice that replaces a region's control. The element needs `tabIndex={-1}`. Before
+ * paint, so focus never sits on the page for a frame between the commit and an effect.
+ */
+export function useFocusWhenLost<T extends HTMLElement>(region: FocusRegion | undefined) {
   const target = useRef<T>(null);
 
-  useEffect(() => takeFocusIfLost(region, target.current), [region]);
+  useLayoutEffect(() => {
+    if (region) takeFocusIfLost(region, target.current);
+  }, [region]);
 
   return target;
 }

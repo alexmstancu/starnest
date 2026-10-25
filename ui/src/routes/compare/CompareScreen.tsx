@@ -158,7 +158,13 @@ function TheComparison({
   );
 
   if (criteriaSetId === null || levelId === null) {
-    return <NothingSelected toSee="to compare candidates" skeleton="compare-picker" />;
+    return (
+      <NothingSelected
+        toSee="to compare candidates"
+        skeleton="compare-picker"
+        takesFocusFrom={focusRegion}
+      />
+    );
   }
 
   // **No score range, nothing to compare** (PL-005): known from the settings before anything
@@ -185,6 +191,8 @@ function TheComparison({
         read={combine(asRead(candidates.read), asRead(settings.read))}
         what="The candidates and the comparator limit"
         skeleton="compare-picker"
+        // In place of a Try again that read the selection again (NothingSelected).
+        takesFocusFrom={focusRegion}
         onRetry={async () => {
           await Promise.all([candidates.reload(), settings.reload()]);
         }}

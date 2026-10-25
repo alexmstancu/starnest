@@ -2,7 +2,7 @@ import type { Read } from "../api/read";
 import { LoadedRegion } from "./LoadedRegion";
 import { type SelectionLists, useSelection } from "./SelectionContext";
 import type { SkeletonShape } from "./Skeleton";
-import type { FocusRegion } from "./useFocusWhenLost";
+import { type FocusRegion, useFocusWhenLost } from "./useFocusWhenLost";
 
 /**
  * What a screen says while no criteria set and level are chosen.
@@ -39,7 +39,20 @@ export function NothingSelected({
       </LoadedRegion>
     );
   }
-  return <p className="screen__note">Choose a criteria set and a level {toSee}.</p>;
+  return <NothingToChoose toSee={toSee} takesFocusFrom={takesFocusFrom} />;
+}
+
+/**
+ * Lists read and holding nothing to choose. **Drawn in place of the Try again that read them**,
+ * it takes the focus that button took away with it.
+ */
+function NothingToChoose({ toSee, takesFocusFrom }: { toSee: string; takesFocusFrom?: FocusRegion }) {
+  const note = useFocusWhenLost<HTMLParagraphElement>(takesFocusFrom);
+  return (
+    <p ref={note} tabIndex={-1} className="screen__note">
+      Choose a criteria set and a level {toSee}.
+    </p>
+  );
 }
 
 function stillChoosing(lists: Read<SelectionLists>): boolean {

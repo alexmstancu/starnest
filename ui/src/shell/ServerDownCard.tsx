@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useLocation } from "react-router-dom";
 import {
   SERVER_DID_NOT_ANSWER,
@@ -14,18 +15,31 @@ import { ReadFailureCardInFull } from "./ReadFailureCard";
  * the screen could not load, that nothing changed, and that the server is probably not running.
  * Its Try again reads every one of them again; and once the server answers anything -- the
  * shell's poll, usually -- they are read again without it.
+ *
+ * **That Try again takes the card, and itself, away** (RULES "Focus"), so focus pressed on it
+ * goes to the screen it reads again -- `main` -- rather than to the page.
  */
 export function ServerDownCard() {
   const waitingForServer = useWaitingForServer();
   const { pathname } = useLocation();
+  const card = useRef<HTMLDivElement>(null);
   if (!waitingForServer) return null;
 
+  function retry() {
+    if (card.current?.contains(document.activeElement)) {
+      card.current.closest("main")?.focus();
+    }
+    retryEveryFailed();
+  }
+
   return (
-    <ReadFailureCardInFull
-      what={SCREEN_SUBJECTS[pathname as RoutePath] ?? "This screen"}
-      error={SERVER_DID_NOT_ANSWER}
-      onRetry={retryEveryFailed}
-    />
+    <div ref={card}>
+      <ReadFailureCardInFull
+        what={SCREEN_SUBJECTS[pathname as RoutePath] ?? "This screen"}
+        error={SERVER_DID_NOT_ANSWER}
+        onRetry={retry}
+      />
+    </div>
   );
 }
 

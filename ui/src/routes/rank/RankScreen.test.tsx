@@ -2445,6 +2445,26 @@ describe("focus when a Try again on Rank takes itself away", () => {
     expect(document.activeElement?.parentElement).toHaveTextContent(failed);
   });
 
+  it("hands focus to the empty state when the lists are read again and hold nothing", async () => {
+    let failing = true;
+    mockServer.use(
+      http.get("/v1/criteria-sets", () =>
+        failing ? serverFault() : HttpResponse.json({ items: [] }),
+      ),
+    );
+    renderShell("/rank");
+    const rank = within(rankRegion());
+    const card = (await rank.findByText(/criteria sets and levels could not be loaded/i))
+      .parentElement!;
+
+    failing = false;
+    await pressFromTheKeyboard(within(card).getByRole("button", { name: "Try again" }));
+
+    const empty = await rank.findByText(/choose a criteria set and a level to see the ranking/i);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(document.activeElement).toBe(empty);
+  });
+
   it("puts focus on the new Try again when the criteria sets and levels fail again", async () => {
     mockServer.use(http.get("/v1/levels", () => serverFault()));
     renderShell("/rank");
