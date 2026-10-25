@@ -61,7 +61,7 @@ describe("the attribute drill-down", () => {
     const panel = await theDrillDown();
 
     expect(
-      within(panel).getByText(/choose an attribute to see which candidates/i),
+      await within(panel).findByText(/choose an attribute to see which candidates/i),
     ).toBeInTheDocument();
     expect(within(panel).queryByRole("table")).not.toBeInTheDocument();
   });

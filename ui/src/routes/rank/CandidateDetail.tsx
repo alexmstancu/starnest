@@ -1,4 +1,4 @@
-import { useCallback, useId } from "react";
+import { useCallback, useId, useState } from "react";
 import { describeRepeats } from "./repeatedValues";
 import {
   fetchAttributes,
@@ -7,10 +7,14 @@ import {
   fetchRankedCandidateDetail,
   fetchValues,
   type Attribute,
+  type CandidateScoreDetail,
+  type CriteriaSet,
   type Criterion,
   type ExternalScore,
+  type StoredValue,
 } from "../../api/endpoints";
-import { useResource } from "../../api/useResource";
+import type { Idle, Read, Refresh } from "../../api/read";
+import { useRead } from "../../api/useRead";
 import {
   usePillarNames,
   usePillarOrder,
@@ -30,7 +34,8 @@ import {
   formatSigned,
   safeHttpUrl,
 } from "../../format/display";
-import { ErrorNotice } from "../../shell/ErrorNotice";
+import { LoadedRegion } from "../../shell/LoadedRegion";
+import { ReadFailureCard } from "../../shell/ReadFailureCard";
 import { useSelection } from "../../shell/SelectionContext";
 import { describeFigure } from "../../format/figure";
 import { scoreRange, scoreTrackWidth } from "../../format/scoreScale";
@@ -88,30 +93,31 @@ export function CandidateDetail({
   const pillarOrder = usePillarOrder();
   const attributeNames = useAttributeNames();
   const sourceNames = useSourceNames();
-  const values = useResource(
+  const { criteriaSetId, levelId, acquisitionsEnded } = useSelection();
+  // Read again with the ranking above them when an acquisition ends (UI-11), kept on screen
+  // meanwhile (PL-010), so the figures never disagree with the scores they sit under.
+  const values = useRead(
     useCallback(
       (signal: AbortSignal) => fetchValues(candidate, { signal }),
       [candidate],
     ),
+    { freshness: acquisitionsEnded },
   );
-  const external = useResource(
+  const external = useRead(
     useCallback(
       (signal: AbortSignal) => fetchExternalScores(candidate, { signal }),
       [candidate],
     ),
   );
-  // The active set is what files an attribute under a pillar, so the filter is that set's
-  // opinion rather than the catalog's -- an attribute this set does not score has no pillar,
-  // which is the truthful answer rather than a lookup that failed.
-  const { criteriaSetId } = useSelection();
-
-  const criteria = useResource(
+  // **The active set's rules**: which attributes it requires, and how each is scored. A
+  // failure leaves the figures and says what it took with it.
+  const criteria = useRead(
     useCallback(
       (signal: AbortSignal) =>
         fetchCriteriaSet(criteriaSetId ?? "", { signal }),
       [criteriaSetId],
     ),
-    criteriaSetId !== null,
+    { enabled: criteriaSetId !== null },
   );
   /**
    * What each attribute actually contributed, from the ranking on screen.
@@ -119,11 +125,10 @@ export function CandidateDetail({
    * **A separate read, joined to the values before anything is drawn** (PL-068): it says which
    * attributes this set scores, so it is what names the ones with no value in use. Drawn
    * before it lands, rows would appear late and jump. A failure here still leaves the figures
-   * -- a figure, its source and its dates are facts whether or not the scoring arrived -- with
-   * a line saying what is not shown.
+   * -- a figure, its source and its dates are facts whether or not the scoring arrived -- and
+   * says that the scoring could not be loaded, rather than a dash that reads as "no score".
    */
-  const { levelId } = useSelection();
-  const scored = useResource(
+  const scored = useRead(
     useCallback(
       (signal: AbortSignal) =>
         fetchRankedCandidateDetail(
@@ -134,57 +139,40 @@ export function CandidateDetail({
         ),
       [candidate, criteriaSetId, levelId],
     ),
-    criteriaSetId !== null && levelId !== null,
+    { enabled: criteriaSetId !== null && levelId !== null, freshness: acquisitionsEnded },
   );
-  // What each attribute measures, for the "how was this scored" tooltip. A failure leaves the
-  // tooltip without its first line rather than without the rest.
-  const catalog = useResource(
+  // What each attribute measures, for the "how was this scored" tooltip. **A failure is
+  // silence**: the tooltip goes without its first line rather than without the rest.
+  const catalog = useRead(
     useCallback(
       (signal: AbortSignal) => fetchAttributes(levelId ?? undefined, { signal }),
       [levelId],
     ),
   );
   const measured = new Map<string, Attribute>(
-    catalog.resource.status === "ready"
-      ? catalog.resource.data.items.map((each) => [each.id, each])
+    catalog.read.state === "ready"
+      ? catalog.read.data.items.map((each) => [each.id, each])
       : [],
   );
-  const contributions = scoresByAttribute(
-    scored.resource.status === "ready"
-      ? scored.resource.data.attribute_scores
-      : null,
-  );
-  // The attribute scores' own scale once they arrive; until then the ranking's, which is the
-  // same live setting -- so the heading never reads a range nobody computed against.
-  const attributeScale =
-    scored.resource.status === "ready"
-      ? scored.resource.data.score_scale_max
-      : scaleMax;
 
-  const setCriteria =
-    criteria.resource.status === "ready" ? criteria.resource.data.criteria : null;
-  const judgements = judgementsByAttribute(setCriteria);
-  const rules = new Map<string, Criterion>(
-    (setCriteria ?? []).map((each) => [each.attribute, each]),
-  );
-
-  // Null while there is no scoring to join: nothing is guessed from it, and no pillar can be
-  // filtered by -- so the title says every value rather than claiming a filter it cannot apply.
-  const scores =
-    scored.resource.status === "ready"
-      ? (scored.resource.data.attribute_scores ?? [])
-      : null;
-  const filter = scores === null ? null : chosen;
-  const rows =
-    values.resource.status === "ready"
-      ? drillRows({
-          values: values.resource.data.items,
-          scores,
-          pillarOrder,
-          names: attributeNames,
-          chosenPillar: filter,
-        })
-      : [];
+  const stored = asRead(values.read);
+  const scoring = asRead(scored.read);
+  const rules = asRead(criteria.read);
+  // **The figures wait for the scoring and the rules to answer or fail the first time**, so no
+  // row is drawn and then moved, and no gap or chip is guessed meanwhile. Once drawn they stay,
+  // marked busy, while any of the three is read again -- a Try again included (PL-010).
+  const [drawnOnce, setDrawnOnce] = useState(false);
+  const waiting = scoring.state === "pending" || rules.state === "pending";
+  const evidence: Read<{ items: StoredValue[]; total: number }> =
+    stored.state !== "ready"
+      ? stored
+      : waiting && !drawnOnce
+        ? PENDING
+        : { ...stored, refresh: waiting ? "running" : refreshAcross([stored, scoring, rules]) };
+  if (!drawnOnce && evidence.state === "ready") setDrawnOnce(true);
+  const readEvidenceAgain = async () => {
+    await Promise.all([values.reload(), scored.reload(), criteria.reload()]);
+  };
 
   // **Unique per open panel.** Several candidates' evidence can be open at once, and a
   // hardcoded id would repeat in the document -- so every panel would be announced with the
@@ -215,69 +203,152 @@ export function CandidateDetail({
         onChoose={(each) => onChoose?.(each)}
       />
 
-      {values.resource.status === "loading" && (
-        <p className="screen__note">Loading…</p>
-      )}
-      {values.resource.status === "error" && (
-        <ErrorNotice error={values.resource.error} onRetry={values.reload} />
-      )}
-      {values.resource.status === "ready" &&
-        scored.resource.status === "loading" && (
-          <p className="screen__note">Loading…</p>
+      <LoadedRegion
+        read={evidence}
+        what="The figures"
+        skeleton="rank-table"
+        onRetry={readEvidenceAgain}
+      >
+        {(figures) => (
+          <Evidence
+            values={figures.items}
+            scoring={scoring}
+            rules={rules}
+            chosen={chosen}
+            fallbackScale={scaleMax}
+            measured={measured}
+            pillarOrder={pillarOrder}
+            names={{ attributes: attributeNames, pillars: names, sources: sourceNames }}
+            onRetryScoring={scored.reload}
+            onRetryRules={criteria.reload}
+          />
         )}
-      {values.resource.status === "ready" &&
-        scored.resource.status !== "loading" && (
-          <>
-            <h3 className="drill__title">
-              {filter === null
-                ? "Every stored value"
-                : `${pillarName(names, filter)} — stored values`}
-            </h3>
-            {scored.resource.status === "error" && (
-              <p className="screen__note">
-                The scoring could not be read; missing attributes and weights
-                are not shown.
-              </p>
-            )}
-            <CompletenessNote
-              completeness={pillarCompleteness(rows, filter, names)}
-            />
-            <ValueTable
-              names={attributeNames}
-              pillarNames={names}
-              sourceNames={sourceNames}
-              judgements={judgements}
-              rules={rules}
-              measured={measured}
-              contributions={contributions}
-              scaleMax={attributeScale}
-              rows={rows}
-              pillar={filter}
-            />
-          </>
-        )}
+      </LoadedRegion>
 
       <h3 className="panel__heading">Outside opinions</h3>
       <p className="panel__hint">
         Published composites, shown beside the score and never counted in it.
       </p>
-      {external.resource.status === "error" && (
-        <ErrorNotice
-          error={external.resource.error}
-          onRetry={external.reload}
-        />
-      )}
-      {(external.resource.status === "loading" ||
-        external.resource.status === "idle") && (
-        <p className="screen__note">Loading…</p>
-      )}
-      {external.resource.status === "ready" && (
-        <ExternalScoreTable
-          scores={external.resource.data.items}
-          names={sourceNames}
-        />
-      )}
+      <LoadedRegion
+        read={asRead(external.read)}
+        what="The outside opinions"
+        skeleton="lines"
+        onRetry={external.reload}
+      >
+        {(opinions) => (
+          <ExternalScoreTable scores={opinions.items} names={sourceNames} />
+        )}
+      </LoadedRegion>
     </section>
+  );
+}
+
+const PENDING: Read<never> = { state: "pending" };
+
+/** A read this panel always asks for once there is a selection, as a `Read`. */
+function asRead<T>(read: Read<T> | Idle): Read<T> {
+  return read.state === "idle" ? PENDING : read;
+}
+
+/** How settled several reads drawn as one are: a failed re-read over one under way. */
+function refreshAcross(reads: readonly Read<unknown>[]): Refresh {
+  const refreshes = reads.flatMap((read) => (read.state === "ready" ? [read.refresh] : []));
+  const failed = refreshes.find((refresh) => typeof refresh === "object");
+  if (failed !== undefined) return failed;
+  return refreshes.includes("running") ? "running" : "idle";
+}
+
+/**
+ * The stored figures, with what the scoring and the set's rules make of them -- each said to
+ * have failed where it did, beside figures that stand without it.
+ */
+function Evidence({
+  values,
+  scoring,
+  rules,
+  chosen,
+  fallbackScale,
+  measured,
+  pillarOrder,
+  names,
+  onRetryScoring,
+  onRetryRules,
+}: {
+  values: readonly StoredValue[];
+  scoring: Read<CandidateScoreDetail>;
+  rules: Read<CriteriaSet>;
+  chosen: string | null;
+  /** The ranking's scale, for the heading until the attribute scores carry their own. */
+  fallbackScale: number | null | undefined;
+  measured: ReadonlyMap<string, Attribute>;
+  pillarOrder: ReadonlyMap<string, number>;
+  names: { attributes: AttributeNames; pillars: PillarNames; sources: SourceNames };
+  onRetryScoring: () => Promise<void>;
+  onRetryRules: () => Promise<void>;
+}) {
+  // Null where there is no scoring to join: nothing is guessed from it, and no pillar can be
+  // filtered by -- so the title says every value rather than claiming a filter it cannot apply.
+  const scores =
+    scoring.state === "ready" ? (scoring.data.attribute_scores ?? []) : null;
+  const filter = scores === null ? null : chosen;
+  const rows = drillRows({
+    values,
+    scores,
+    pillarOrder,
+    names: names.attributes,
+    chosenPillar: filter,
+  });
+  const setCriteria = rules.state === "ready" ? rules.data.criteria : null;
+  const judgements = judgementsByAttribute(setCriteria);
+  const criteria = new Map<string, Criterion>(
+    (setCriteria ?? []).map((each) => [each.attribute, each]),
+  );
+
+  return (
+    <>
+      <h3 className="drill__title">
+        {filter === null
+          ? "Every stored value"
+          : `${pillarName(names.pillars, filter)} — stored values`}
+      </h3>
+      {scoring.state === "failed" && (
+        <>
+          <ReadFailureCard
+            what="The scoring"
+            error={scoring.error}
+            onRetry={onRetryScoring}
+            prominence="region"
+          />
+          <p className="screen__note">
+            Missing attributes and weights are not shown until it is read.
+          </p>
+        </>
+      )}
+      {rules.state === "failed" && (
+        <ReadFailureCard
+          what="The criteria set's rules"
+          error={rules.error}
+          onRetry={onRetryRules}
+          prominence="region"
+        />
+      )}
+      <CompletenessNote
+        completeness={pillarCompleteness(rows, filter, names.pillars)}
+      />
+      <ValueTable
+        names={names.attributes}
+        pillarNames={names.pillars}
+        sourceNames={names.sources}
+        judgements={judgements}
+        rules={criteria}
+        measured={measured}
+        contributions={scoresByAttribute(scores)}
+        scoring={scoring.state}
+        scaleMax={scoring.state === "ready" ? scoring.data.score_scale_max : fallbackScale}
+        rows={rows}
+        pillar={filter}
+      />
+    </>
   );
 }
 
@@ -321,6 +392,7 @@ function ValueTable({
   rules,
   measured,
   contributions,
+  scoring,
   scaleMax,
 }: {
   /** The drill-down's rows, in order, the gaps among them (`drillRows`). */
@@ -343,6 +415,11 @@ function ValueTable({
    * scored (`figureInUse`). Empty until it arrives.
    */
   contributions: ReadonlyMap<string, ScoreReading>;
+  /**
+   * Where the scoring read stands. **Until it is read, an active figure's scoring columns say
+   * which**: a dash is the sign for "no score", which nobody found (PL-001).
+   */
+  scoring: Read<unknown>["state"];
   /** The top of the range the attribute scores are on, for the column's heading. */
   scaleMax: number | null | undefined;
 }) {
@@ -417,6 +494,8 @@ function ValueTable({
             );
             const weightUsedClass =
               WEIGHT_USED_TONE[reading?.weightUsedTone ?? "plain"];
+            // Only the figure in use was ever going to carry a reading.
+            const unread = value.is_active ? UNREAD[scoring] : ABSENT;
             const called = attributeName(names, value.attribute);
             const how = howScored({
               criterion: rules.get(value.attribute),
@@ -494,7 +573,7 @@ function ValueTable({
                 </td>
 
                 <td className="col--right value-weight">
-                  {reading?.score ?? ABSENT}
+                  {reading?.score ?? unread}
                 </td>
 
                 {/* **The weight the server declared, on the basis of the weight used** (PL-063):
@@ -502,15 +581,15 @@ function ValueTable({
                     weight was spread. Nothing where the pass scored nothing -- a zero would read
                     as "worth nothing", a different claim. */}
                 <td className="col--right value-weight">
-                  {reading?.weight ?? ABSENT}
+                  {reading?.weight ?? unread}
                 </td>
 
                 <td className={weightUsedClass}>
-                  {reading?.weightUsed ?? ABSENT}
+                  {reading?.weightUsed ?? unread}
                 </td>
 
                 <td className="col--right value-weight">
-                  {reading?.pointsAdded ?? ABSENT}
+                  {reading?.pointsAdded ?? unread}
                 </td>
 
                 <td>
@@ -548,6 +627,13 @@ function ValueTable({
     </div>
   );
 }
+
+/** What a scoring column says for the figure in use, by where the scoring read stands. */
+const UNREAD: Record<Read<unknown>["state"], string> = {
+  pending: "…",
+  failed: "Not loaded",
+  ready: ABSENT,
+};
 
 /** PL-073: teal where redistribution moved the weight, amber where nothing was in use. */
 const WEIGHT_USED_TONE: Record<WeightUsedTone, string> = {

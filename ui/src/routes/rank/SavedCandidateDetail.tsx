@@ -3,12 +3,12 @@ import {
   fetchCandidateScoreDetail,
   type CandidateScoreDetail,
 } from "../../api/endpoints";
-import { useResource } from "../../api/useResource";
+import { useRead } from "../../api/useRead";
 import { useAttributeNames } from "../../api/useAttributeNames";
 import { useSourceNames } from "../../api/useSourceNames";
 import { attributeName } from "../../format/display";
 import { scoreRange } from "../../format/scoreScale";
-import { ErrorNotice } from "../../shell/ErrorNotice";
+import { LoadedRegion } from "../../shell/LoadedRegion";
 import { scoresByAttribute } from "./attributeScores";
 import {
   NOT_RECORDED,
@@ -37,7 +37,7 @@ export function SavedCandidateDetail({
   name: string;
 }) {
   const headingId = useId();
-  const { resource, reload } = useResource(
+  const { read, reload } = useRead(
     useCallback(
       (signal: AbortSignal): Promise<CandidateScoreDetail> =>
         fetchCandidateScoreDetail(evaluationId, candidate, { signal }),
@@ -53,11 +53,16 @@ export function SavedCandidateDetail({
         </h2>
         <span className="panel__count">As it was when it was saved.</span>
       </div>
-      {resource.status === "loading" && <p className="screen__note">Loading…</p>}
-      {resource.status === "error" && (
-        <ErrorNotice error={resource.error} onRetry={reload} />
+      {read.state !== "idle" && (
+        <LoadedRegion
+          read={read}
+          what="The saved figures"
+          skeleton="rank-table"
+          onRetry={reload}
+        >
+          {(detail) => <SavedEvidence detail={detail} />}
+        </LoadedRegion>
       )}
-      {resource.status === "ready" && <SavedEvidence detail={resource.data} />}
     </section>
   );
 }

@@ -5,7 +5,7 @@ import {
   fetchEvaluation,
   fetchEvaluations,
 } from "../../api/endpoints";
-import { useResource } from "../../api/useResource";
+import { useRead } from "../../api/useRead";
 import {
   criteriaSetName,
   formatDateTime,
@@ -13,7 +13,7 @@ import {
   formatScore,
 } from "../../format/display";
 import { isScale } from "../../format/scoreScale";
-import { ErrorNotice } from "../../shell/ErrorNotice";
+import { LoadedRegion } from "../../shell/LoadedRegion";
 import { useSelection } from "../../shell/SelectionContext";
 import { type OpenCandidate, type OpenRow, toggleRow } from "./openRows";
 import { RankingTable } from "./RankingTable";
@@ -38,7 +38,7 @@ export function SavedRankingView({
   /** The household's current home, read once by the screen for both tables. */
   home: HomeRead;
 }) {
-  const { resource, reload } = useResource(
+  const { read, reload } = useRead(
     useCallback(
       (signal: AbortSignal): Promise<Ranking> =>
         fetchEvaluation(evaluationId, { signal }),
@@ -53,29 +53,32 @@ export function SavedRankingView({
 
   return (
     <div className="saved__view">
-      {resource.status === "loading" && (
-        <p className="screen__note">Loading…</p>
-      )}
-      {resource.status === "error" && (
-        <ErrorNotice error={resource.error} onRetry={reload} />
-      )}
-      {resource.status === "ready" && (
-        <>
-          <SavedIdentity evaluationId={evaluationId} ranking={resource.data} />
-          <RankingTable
-            ranking={resource.data}
-            open={open}
-            onToggle={toggle}
-            household={home}
-            detail={(row) => (
-              <SavedCandidateDetail
-                evaluationId={evaluationId}
-                candidate={row.candidate}
-                name={row.name}
+      {read.state !== "idle" && (
+        <LoadedRegion
+          read={read}
+          what="The saved ranking"
+          skeleton="rank-table"
+          onRetry={reload}
+        >
+          {(ranking) => (
+            <>
+              <SavedIdentity evaluationId={evaluationId} ranking={ranking} />
+              <RankingTable
+                ranking={ranking}
+                open={open}
+                onToggle={toggle}
+                household={home}
+                detail={(row) => (
+                  <SavedCandidateDetail
+                    evaluationId={evaluationId}
+                    candidate={row.candidate}
+                    name={row.name}
+                  />
+                )}
               />
-            )}
-          />
-        </>
+            </>
+          )}
+        </LoadedRegion>
       )}
     </div>
   );
@@ -96,28 +99,30 @@ function SavedIdentity({
 }) {
   const { criteriaSets } = useSelection();
   const sets = new Map(criteriaSets.map((set) => [set.id, set.name]));
-  const list = useResource(
+  const list = useRead(
     useCallback(
       (signal: AbortSignal): Promise<{ items: EvaluationSummary[] }> =>
         fetchEvaluations({ signal }),
       [],
     ),
   );
-  const summary =
-    list.resource.status === "ready"
-      ? list.resource.data.items.find((each) => each.id === evaluationId)
-      : undefined;
-  const note = summary?.note?.trim();
 
   return (
     <>
-      {list.resource.status === "ready" && (
-        <p className="saved__note">
-          {note ? `“${note}”` : "Kept without a note."}
-        </p>
-      )}
-      {list.resource.status === "error" && (
-        <p className="screen__note">Its note could not be read.</p>
+      {/* **The note is the summary's**, so it is drawn from that read alone: "kept without a
+          note" from a list that never arrived would be a reason inferred from nothing. */}
+      {list.read.state !== "idle" && (
+        <LoadedRegion
+          read={list.read}
+          what="Its note"
+          skeleton="lines"
+          onRetry={list.reload}
+          prominence="region"
+        >
+          {(saved) => (
+            <SavedNote note={saved.items.find((each) => each.id === evaluationId)?.note} />
+          )}
+        </LoadedRegion>
       )}
       <dl className="meta-row">
         <SavedFact label="Criteria set" value={criteriaSetName(sets, ranking.criteria_set)} />
@@ -136,6 +141,11 @@ function SavedIdentity({
       </p>
     </>
   );
+}
+
+function SavedNote({ note }: { note: string | null | undefined }) {
+  const said = note?.trim();
+  return <p className="saved__note">{said ? `“${said}”` : "Kept without a note."}</p>;
 }
 
 function SavedFact({ label, value }: { label: string; value: string }) {

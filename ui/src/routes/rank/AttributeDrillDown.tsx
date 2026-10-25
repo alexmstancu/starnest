@@ -4,9 +4,10 @@ import {
   fetchAttributes,
   fetchCriteriaSet,
   fetchValuesForAttribute,
+  type Attribute,
   type StoredValue,
 } from "../../api/endpoints";
-import { useResource } from "../../api/useResource";
+import { useRead } from "../../api/useRead";
 import { useSourceNames } from "../../api/useSourceNames";
 import {
   formatDate,
@@ -14,7 +15,8 @@ import {
   candidateName,
   sourceName,
 } from "../../format/display";
-import { ErrorNotice } from "../../shell/ErrorNotice";
+import { LoadedRegion } from "../../shell/LoadedRegion";
+import { useSelection } from "../../shell/SelectionContext";
 import { describeFigure } from "../../format/figure";
 import { describeFigureCount } from "./figureCount";
 import { judgementsByAttribute } from "./pillarFilter";
@@ -45,36 +47,38 @@ export function AttributeDrillDown({
   rosterSize?: number;
 }) {
   const [attribute, setAttribute] = useState<string | null>(null);
+  const { acquisitionsEnded } = useSelection();
 
-  const attributes = useResource(
+  const attributes = useRead(
     useCallback(
       (signal: AbortSignal) => fetchAttributes(levelId ?? "", { signal }),
       [levelId],
     ),
-    levelId !== null,
+    { enabled: levelId !== null },
   );
-  const values = useResource(
+  // Read again when an acquisition ends (UI-11), kept on screen meanwhile (PL-010).
+  const values = useRead(
     useCallback(
       (signal: AbortSignal) =>
         fetchValuesForAttribute(attribute ?? "", { signal }),
       [attribute],
     ),
-    attribute !== null,
+    { enabled: attribute !== null, freshness: acquisitionsEnded },
   );
   // **Whether the active set scores it**, which only the set can say: a descriptive attribute
   // or an excluded one has no weight to spread. A silent read -- the figures stand without it,
   // and saying nothing about weight is true until it arrives.
-  const set = useResource(
+  const set = useRead(
     useCallback(
       (signal: AbortSignal) => fetchCriteriaSet(criteriaSetId ?? "", { signal }),
       [criteriaSetId],
     ),
-    criteriaSetId !== null,
+    { enabled: criteriaSetId !== null },
   );
   const scored =
     attribute !== null &&
-    set.resource.status === "ready" &&
-    judgementsByAttribute(set.resource.data.criteria).get(attribute)?.scored === true;
+    set.read.state === "ready" &&
+    judgementsByAttribute(set.read.data.criteria).get(attribute)?.scored === true;
 
   return (
     <section className="panel" aria-labelledby="attribute-drill-heading">
@@ -82,51 +86,78 @@ export function AttributeDrillDown({
         One attribute, every candidate
       </h2>
 
-      {attributes.resource.status === "loading" && (
-        <p className="screen__note">Loading the catalog…</p>
-      )}
-      {attributes.resource.status === "error" && (
-        <ErrorNotice
-          error={attributes.resource.error}
+      {/* **The choice is drawn from the catalog once it is read**, never an empty list that
+          reads as a level with nothing to measure (PL-001). */}
+      {attributes.read.state !== "idle" && (
+        <LoadedRegion
+          read={attributes.read}
+          what="The list of attributes"
+          skeleton="lines"
           onRetry={attributes.reload}
-        />
+        >
+          {(catalog) => (
+            <AttributePicker
+              attributes={catalog.items}
+              attribute={attribute}
+              onChoose={setAttribute}
+            />
+          )}
+        </LoadedRegion>
       )}
 
+      {attribute !== null && values.read.state !== "idle" && (
+        <LoadedRegion
+          read={values.read}
+          what="The figures for this attribute"
+          skeleton="rank-table"
+          onRetry={values.reload}
+        >
+          {(figures) => (
+            <AcrossCandidates
+              values={figures.items}
+              rosterSize={rosterSize}
+              scored={scored}
+            />
+          )}
+        </LoadedRegion>
+      )}
+    </section>
+  );
+}
+
+function AttributePicker({
+  attributes,
+  attribute,
+  onChoose,
+}: {
+  attributes: readonly Attribute[];
+  attribute: string | null;
+  onChoose: (attribute: string | null) => void;
+}) {
+  return (
+    <>
       <label className="field">
         <span className="field__label">Attribute</span>
         <select
           className="field__control"
           value={attribute ?? ""}
-          onChange={(event) => setAttribute(event.target.value || null)}
-          disabled={attributes.resource.status !== "ready"}
+          onChange={(event) => onChoose(event.target.value || null)}
         >
           <option value="">Choose an attribute…</option>
-          {attributes.resource.status === "ready" &&
-            attributes.resource.data.items.map((each) => (
-              <option key={each.id} value={each.id}>
-                {each.name}
-              </option>
-            ))}
+          {attributes.map((each) => (
+            <option key={each.id} value={each.id}>
+              {each.name}
+            </option>
+          ))}
         </select>
       </label>
-
-      {attribute === null ? (
+      {attribute === null && (
         <p className="panel__hint">
           Choose an attribute to see which candidates have a figure for it, and
           where each one came from.
         </p>
-      ) : values.resource.status === "loading" ? (
-        <p className="screen__note">Loading…</p>
-      ) : values.resource.status === "error" ? (
-        <ErrorNotice error={values.resource.error} onRetry={values.reload} />
-      ) : values.resource.status === "ready" ? (
-        <AcrossCandidates
-          values={values.resource.data.items}
-          rosterSize={rosterSize}
-          scored={scored}
-        />
-      ) : null}
-    </section>
+      )}
+    </>
   );
 }
 

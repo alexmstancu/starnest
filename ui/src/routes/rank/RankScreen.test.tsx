@@ -1,10 +1,12 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { HttpResponse, delay, http } from "msw";
 import { describe, expect, it } from "vitest";
+import { replaceSettings } from "../../api/endpoints";
 import {
   ATTRIBUTE_SCORES,
   HOUSEHOLD,
+  SETTINGS,
   STORED_VALUES,
   makeCriteriaSetDetails,
   rankingFor,
@@ -405,6 +407,9 @@ describe("when the ranking cannot be shown", () => {
   it("says the server did not answer, without its code, and retries when asked", async () => {
     mockServer.use(http.get("/v1/rankings", () => HttpResponse.error()));
     renderShell("/rank");
+    // Every answer asks a ranking the server did not answer for again (PL-002), so the card is
+    // read once the attribute panel's own reads have been answered.
+    await screen.findByRole("combobox", { name: "Attribute" });
 
     await waitFor(() =>
       expect(screen.getByRole("alert")).toHaveTextContent("The ranking could not be loaded"),
@@ -2088,32 +2093,96 @@ describe("what the pass made of each figure", () => {
     const row = await rankingRow("Portugal");
     await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
 
-    expect(
-      await screen.findByRole("heading", { name: /Portugal: every value/i }),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText("Loading…").length).toBeGreaterThan(0);
+    const panel = (
+      await screen.findByRole("heading", { name: /Portugal: every value/i })
+    ).closest("section")!;
+    // PL-001: a skeleton in a busy region, never "Loading…" and never a column of dashes.
+    await waitFor(() => expect(panel.querySelector('[aria-busy="true"]')).not.toBeNull());
+    expect(within(panel).queryByText("Loading…")).toBeNull();
     expect(screen.queryByRole("table", { name: /every stored value/i })).toBeNull();
     expect(screen.queryByText("No value")).toBeNull();
   });
 
-  it("shows the figures alone, and says what is missing from them, when the scoring fails", async () => {
+  it("shows the figures alone when the scoring fails, says so, and reads it again", async () => {
+    let failing = true;
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockServer.use(
+      http.get("/v1/rankings/candidates/:candidateId", async () => {
+        if (failing) {
+          return HttpResponse.json(
+            { code: "internal_error", message: "the ranking could not be read" },
+            { status: 500 },
+          );
+        }
+        await held;
+        return undefined;
+      }),
+    );
+    const table = await theValues();
+
+    const failure = screen.getByText("The scoring could not be loaded").parentElement!;
+    expect(
+      screen.getByText("Missing attributes and weights are not shown until it is read."),
+    ).toBeInTheDocument();
+    expect(table.queryByText("No value")).toBeNull();
+    expect(table.getAllByRole("row", { name: /cost of living index/i })).toHaveLength(2);
+
+    failing = false;
+    await userEvent.click(within(failure).getByRole("button", { name: "Try again" }));
+
+    // PL-010: read again, the figures stay, marked busy, and the figure in use reads pending.
+    const active = rowOf(table, /cost of living index/i, "Eurostat 2025: 94.5");
+    await waitFor(() => expect(cellOf(table, active, "Contribution")).toHaveTextContent(/^…$/));
+    expect(active.closest('[aria-busy="true"]')).not.toBeNull();
+    release();
+
+    await theActiveCostOfLiving(table);
+    expect(screen.queryByText("The scoring could not be loaded")).toBeNull();
+    expect(active.closest('[aria-busy="true"]')).toBeNull();
+  });
+
+  /** PL-001 (HO-51): a dash is the sign for "no score", which is not what a failed read found. */
+  it("says the scoring columns were not loaded, never a dash, when the scoring fails", async () => {
     mockServer.use(
       http.get("/v1/rankings/candidates/:candidateId", () =>
-        HttpResponse.json(
-          { code: "internal_error", message: "the ranking could not be read" },
-          { status: 500 },
-        ),
+        HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 }),
       ),
     );
     const table = await theValues();
 
-    expect(
-      screen.getByText(
-        "The scoring could not be read; missing attributes and weights are not shown.",
+    const active = rowOf(table, /cost of living index/i, "Eurostat 2025: 94.5");
+    for (const column of [...THE_PASS, "Weight"]) {
+      expect(cellOf(table, active, column)).toHaveTextContent(/^Not loaded$/);
+    }
+    // A superseded figure was never going to carry a reading, so its dash still says so.
+    const superseded = rowOf(table, /cost of living index/i, "Superseded");
+    expect(cellOf(table, superseded, "Contribution")).toHaveTextContent(/^—$/);
+  });
+
+  /** PL-001: the set's rules give the Required marks and how each was scored. */
+  it("says the set's rules could not be loaded beside the figures, and reads them again", async () => {
+    let failing = true;
+    mockServer.use(
+      http.get("/v1/criteria-sets/default", () =>
+        failing
+          ? HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 })
+          : undefined,
       ),
-    ).toBeInTheDocument();
-    expect(table.queryByText("No value")).toBeNull();
-    expect(table.getAllByRole("row", { name: /cost of living index/i })).toHaveLength(2);
+    );
+    const table = await theValues();
+    await theActiveCostOfLiving(table);
+
+    const failure = screen.getByText("The criteria set's rules could not be loaded").parentElement!;
+    failing = false;
+    await userEvent.click(within(failure).getByRole("button", { name: "Try again" }));
+
+    expect(
+      await table.findAllByRole("img", { name: /how cost of living index was scored/i }),
+    ).not.toEqual([]);
+    expect(screen.queryByText(/rules could not be loaded/i)).toBeNull();
   });
 
   it("says nothing where the ranking scored nothing", async () => {
@@ -2125,5 +2194,185 @@ describe("what the pass made of each figure", () => {
     const row = table.getByRole("row", { name: /european air connectivity/i });
     expect(row).toHaveTextContent("31");
     expect(row).not.toHaveTextContent(/[+-]?\d+\.\d/);
+  });
+});
+
+/** A server that answered and failed: the read fails while the server is up (PL-002). */
+function serverFault(): Response {
+  return HttpResponse.json({ code: "internal_error", message: "The server failed." }, { status: 500 });
+}
+
+/** A run the shell sees running, which `end()` completes; its end reads the ranking again. */
+function aRunThatEnds(): { end: () => void } {
+  let status = "running";
+  const watched = { id: 8, triggered_by: "user", started_at: "2026-09-21T09:00:00Z", cost_eur: 0 };
+  mockServer.use(
+    http.get("/v1/data-acquisition-runs", () =>
+      HttpResponse.json({ items: [{ ...watched, run_status: status }], total: 1 }),
+    ),
+    http.get("/v1/data-acquisition-runs/:runId", () =>
+      HttpResponse.json({
+        ...watched,
+        run_status: status,
+        progress: { items_total: 96, items_completed: 24 },
+        failures: [],
+      }),
+    ),
+  );
+  return { end: () => (status = "completed") };
+}
+
+/**
+ * Every `GET /rankings` from `hold()` on, the screen's and the sidebar's alike, held until the
+ * test answers them -- each with its own response, since a body is read once.
+ */
+function holdRankings(): { hold: () => void; release: (answer?: () => Response) => void } {
+  let holding = false;
+  let release: (answer?: () => Response) => void = () => undefined;
+  const held = new Promise<(() => Response) | undefined>((resolve) => {
+    release = resolve;
+  });
+  mockServer.use(
+    http.get("/v1/rankings", async () => {
+      if (!holding) return undefined;
+      const answer = await held;
+      return answer?.();
+    }),
+  );
+  return { hold: () => (holding = true), release };
+}
+
+function rankRegion(): HTMLElement {
+  return screen.getByRole("region", { name: "Rank" });
+}
+
+/**
+ * PL-005. **No score range, no ranking, and nothing else of one**: the card alone, whether the
+ * first read said so or a read since did. The saved rankings stay; they carry their own scale.
+ */
+describe("while the score range is unset", () => {
+  it("offers no save and no attribute panel, only No ranking", async () => {
+    await replaceSettings({ ...SETTINGS, score_scale_max: null });
+    renderShell("/rank");
+
+    const rank = within(rankRegion());
+    await rank.findByRole("region", { name: "No ranking" });
+    expect(rank.queryByRole("button", { name: /save this ranking/i })).toBeNull();
+    expect(rank.queryByRole("region", { name: "One attribute, every candidate" })).toBeNull();
+    expect(rank.queryByRole("alert")).toBeNull();
+  });
+
+  it("says nothing but No ranking first: no attribute panel while the ranking is read", async () => {
+    mockServer.use(
+      http.get("/v1/rankings", async () => {
+        await delay("infinite");
+        return HttpResponse.json({});
+      }),
+    );
+    renderShell("/rank");
+
+    const rank = within(rankRegion());
+    await waitFor(() => expect(rankRegion().querySelector('[aria-busy="true"]')).not.toBeNull());
+    await act(() => delay(100));
+    expect(rank.queryByRole("region", { name: "One attribute, every candidate" })).toBeNull();
+  });
+
+  it("replaces the ranking when a read of it again is refused for the range", async () => {
+    const run = aRunThatEnds();
+    renderShell("/rank");
+    await rankingRow("Portugal");
+    await screen.findByRole("region", { name: /acquisition in progress/i });
+    await replaceSettings({ ...SETTINGS, score_scale_max: null });
+
+    run.end();
+
+    const rank = within(rankRegion());
+    expect(
+      await rank.findByRole("region", { name: "No ranking" }, { timeout: 8_000 }),
+    ).toBeInTheDocument();
+    expect(rank.queryByRole("table", { name: /ranked candidates/i })).toBeNull();
+    expect(rank.queryByRole("button", { name: /save this ranking/i })).toBeNull();
+    expect(rank.queryByText(/could not be refreshed/i)).toBeNull();
+  });
+});
+
+describe("focus when No ranking takes the pressed control away", () => {
+  it("moves to No ranking when it replaces the Try again that was pressed", async () => {
+    mockServer.use(http.get("/v1/rankings", () => serverFault()));
+    renderShell("/rank");
+    const retry = await within(rankRegion()).findByRole("button", { name: "Try again" });
+    mockServer.resetHandlers();
+    await replaceSettings({ ...SETTINGS, score_scale_max: null });
+
+    await userEvent.click(retry);
+
+    const card = await screen.findByRole("region", { name: "No ranking" });
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(document.activeElement).toContainElement(card);
+  });
+
+  it("takes no focus when the range was unset before anything was pressed", async () => {
+    await replaceSettings({ ...SETTINGS, score_scale_max: null });
+    renderShell("/rank");
+
+    await screen.findByRole("region", { name: "No ranking" });
+    await act(() => delay(50));
+    expect(document.activeElement).toBe(document.body);
+  });
+});
+
+/**
+ * PL-010. **The ranking read again keeps the table on screen**, marked busy, until the answer
+ * lands; a read again that fails keeps it, marked "could not be refreshed" with Try again. The
+ * failure card is for a ranking that was never drawn.
+ */
+describe("the ranking read again when an acquisition ends", () => {
+  it("keeps the table, marked busy, while it is read again", async () => {
+    const run = aRunThatEnds();
+    const later = holdRankings();
+    renderShell("/rank");
+    const table = await screen.findByRole("table", { name: /ranked candidates/i });
+    await screen.findByRole("region", { name: /acquisition in progress/i });
+
+    later.hold();
+    run.end();
+
+    await waitFor(
+      () => expect(table.closest("[aria-busy]")).toHaveAttribute("aria-busy", "true"),
+      { timeout: 8_000 },
+    );
+    expect(table).toBeInTheDocument();
+    later.release();
+    await waitFor(() =>
+      expect(table.closest("[aria-busy]")).toHaveAttribute("aria-busy", "false"),
+    );
+    expect(table).toBeInTheDocument();
+  });
+
+  it("keeps the table through a failed read, marked could not be refreshed, and Try again reads it", async () => {
+    const run = aRunThatEnds();
+    const later = holdRankings();
+    renderShell("/rank");
+    const table = await screen.findByRole("table", { name: /ranked candidates/i });
+    await screen.findByRole("region", { name: /acquisition in progress/i });
+
+    later.hold();
+    run.end();
+    await waitFor(
+      () => expect(table.closest("[aria-busy]")).toHaveAttribute("aria-busy", "true"),
+      { timeout: 8_000 },
+    );
+    later.release(serverFault);
+
+    const rank = within(rankRegion());
+    expect(await rank.findByText(/the ranking could not be refreshed/i)).toBeInTheDocument();
+    expect(table).toBeInTheDocument();
+    expect(rank.queryByText(/could not be loaded/i)).toBeNull();
+    expect(rank.queryByRole("alert")).toBeNull();
+
+    mockServer.resetHandlers();
+    await userEvent.click(rank.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(rank.queryByText(/could not be refreshed/i)).toBeNull());
+    expect(table).toBeInTheDocument();
   });
 });

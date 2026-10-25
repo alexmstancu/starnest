@@ -29,7 +29,7 @@ import { NothingSelected } from "../../shell/NothingSelected";
 import { SCORE_SCALE_NOT_SET } from "../../shell/refusalRemedy";
 import { NO_COMPARATOR_LIMIT, UnsetSetting } from "../../shell/UnsetSetting";
 import { type FocusRegion, useFocusRegion, useFocusWhenLost } from "../../shell/useFocusWhenLost";
-import { type SelectionLists, useSelection } from "../../shell/SelectionContext";
+import { useSelection } from "../../shell/SelectionContext";
 
 /**
  * One focus candidate against comparators (`reqs.md` 8.5).
@@ -156,7 +156,7 @@ function TheComparison({
   );
 
   if (criteriaSetId === null || levelId === null) {
-    return <SelectionNotReady lists={selection.read} />;
+    return <NothingSelected toSee="to compare candidates" skeleton="compare-picker" />;
   }
 
   // **No score range, nothing to compare** (PL-005): known from the settings before anything
@@ -317,31 +317,6 @@ const UNSET_DETAIL =
 /** A read always asked for here, as a `Read`: it is idle only before its prerequisite exists. */
 function asRead<T>(read: Read<T> | Idle): Read<T> {
   return read.state === "idle" ? PENDING : read;
-}
-
-/**
- * Nothing chosen in the sidebar. **While its lists are coming, or hold a set and a level the
- * selection is about to choose**, the screen is still being read (PL-009); once they failed or
- * hold nothing to choose, the shell's `NothingSelected` says which (PL-002).
- */
-function SelectionNotReady({ lists }: { lists: Read<SelectionLists> }) {
-  const choosing =
-    lists.state === "ready" &&
-    lists.data.levels.length > 0 &&
-    lists.data.criteriaSets.length > 0;
-  if (lists.state === "pending" || choosing) {
-    return (
-      <LoadedRegion
-        read={PENDING}
-        what="The criteria sets and levels"
-        skeleton="compare-picker"
-        onRetry={() => undefined}
-      >
-        {() => null}
-      </LoadedRegion>
-    );
-  }
-  return <NothingSelected toSee="to compare candidates" />;
 }
 
 const PENDING: Read<never> = { state: "pending" };

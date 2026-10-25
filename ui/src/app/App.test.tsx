@@ -533,6 +533,9 @@ describe("when the API fails", () => {
   it("says the server did not answer, without the code, and offers a retry it can honour", async () => {
     mockServer.use(http.get("/v1/rankings", () => HttpResponse.error()));
     renderShell("/rank");
+    // Every answer asks the unanswered reads again (PL-002), so the cards are read once the
+    // attribute panel, drawn after the ranking failed, has had its own reads answered.
+    await screen.findByRole("combobox", { name: "Attribute" });
 
     // One card for the screen (P1-06), once the failed read has said why it failed.
     await waitFor(() =>

@@ -3,6 +3,7 @@ import { ApiError, isApiError } from "../api/ApiError";
 import { type Names, presentError } from "../api/errorPresentation";
 import { ErrorNotice } from "./ErrorNotice";
 import { SCORE_SCALE_NOT_SET, remedyFor } from "./refusalRemedy";
+import { isUnsetState } from "./unsetStates";
 
 /**
  * A screen with nothing on it because a setting has not been decided, rather than because
@@ -57,14 +58,6 @@ export function UnsetSetting({
     </section>
   );
 }
-
-/** A refusal that is a state a setting lifts, rather than a fault. */
-function isUnsetState(code: string, details: Readonly<Record<string, unknown>> = {}): boolean {
-  if (code === "invalid_criterion") return details["reason"] === "anchor_above_scale";
-  return UNSET_STATES.has(code);
-}
-
-const UNSET_STATES = new Set([SCORE_SCALE_NOT_SET, "comparator_limit_not_set", "cannot_be_ranked"]);
 
 /** The comparator limit read as unset: the same state the server refuses a comparison with. */
 export const NO_COMPARATOR_LIMIT = new ApiError({
