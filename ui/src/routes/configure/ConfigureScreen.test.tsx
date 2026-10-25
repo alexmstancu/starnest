@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { fetchLevels, type Criterion } from "../../api/endpoints";
+import { fetchCriteriaSet, fetchLevels, type Criterion } from "../../api/endpoints";
 import { makeCriteriaSetDetails } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import {
@@ -1067,6 +1067,35 @@ describe("the Configure edits Recent changes records", () => {
       "aria-checked",
       "true",
     );
+  });
+
+  it("records a gate enforced and made a warning, and undoing both puts it back off", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+    const gate = () => screen.getByRole("switch", { name: "Enforce Free movement applies" });
+
+    await user.click(await screen.findByRole("switch", { name: "Enforce Free movement applies" }));
+    const panel = await historyPanel();
+    await panel.findByText("Enforced Free movement applies, in Default");
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "What Free movement applies does when it fires" }),
+      "warning",
+    );
+    // The same rule changed again is one gesture, undone as one.
+    const enforced = (
+      await panel.findByText("Made Free movement applies a warning, in Default")
+    ).closest("li") as HTMLElement;
+    expect(within(enforced).getByText("Match rules & gates")).toBeInTheDocument();
+    expect(panel.getAllByRole("listitem")).toHaveLength(1);
+
+    await user.click(within(enforced).getByRole("button", { name: /^Undo this/ }));
+
+    await waitFor(() => expect(panel.getByText("No changes yet.")).toBeInTheDocument());
+    expect(gate()).toHaveAttribute("aria-checked", "false");
+    expect(
+      (await fetchCriteriaSet("default")).enforced_match_rules ?? [],
+    ).not.toContain("country.eu_free_movement");
   });
 
   it("holds the sources while another Configure write is in flight", async () => {
