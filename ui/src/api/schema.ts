@@ -247,10 +247,12 @@ export interface paths {
          *     and the rules the default turns on -- so it can be ranked wherever the default can. The
          *     default is the set the list marks `is_default`, and it is copied even after it has been
          *     deleted, when the list no longer shows it.
-         *     409 `criteria_set_exists` when a set, live or deleted, already holds `id`: identifiers
+         *     409 `criteria_set_exists` when a set, live or deleted, already holds the `id` given: identifiers
          *     are never reused. 409 `criteria_set_name_taken` when a live set already has this name
-         *     (`CriteriaSetName`). 409 `no_default_criteria_set` when no set is the default. A refused
-         *     request writes nothing.
+         *     (`CriteriaSetName`). 409 `no_default_criteria_set` when no set is the default.
+         *     409 `score_scale_below_anchors` when the default anchors a figure above the score range
+         *     -- it was deleted before the range was lowered, say -- with `details` as
+         *     `PUT /settings` gives them. A refused request writes nothing.
          */
         post: operations["createCriteriaSet"];
         delete?: never;
@@ -308,7 +310,9 @@ export interface paths {
          *     and every read holding everything it held when it was deleted. Idempotent: a set that is
          *     not deleted is answered unchanged, because an identifier names one set for ever.
          *     409 `criteria_set_name_taken` when a live set has taken its name since it was deleted
-         *     (`CriteriaSetName`); nothing is changed. 404 when no set, live or deleted, has this
+         *     (`CriteriaSetName`); nothing is changed. 409 `score_scale_below_anchors` when the score
+         *     range was lowered below one of its anchors while it was deleted, with `details` as
+         *     `PUT /settings` gives them; it stays deleted. 404 when no set, live or deleted, has this
          *     identifier.
          */
         post: operations["restoreCriteriaSet"];
@@ -331,9 +335,10 @@ export interface paths {
          * Copy a criteria set
          * @description The safe way to experiment — a drag edits a set in place (`reqs.md` Q168). 404 when no
          *     live set has this identifier: a deleted set cannot be copied until it is restored.
-         *     409 `criteria_set_exists` when a set, live or deleted, already holds `id`: identifiers
+         *     409 `criteria_set_exists` when a set, live or deleted, already holds the `id` given: identifiers
          *     are never reused. 409 `criteria_set_name_taken` when a live set already has this name
-         *     (`CriteriaSetName`). A refused request writes nothing.
+         *     (`CriteriaSetName`). 409 `score_scale_below_anchors` when the set anchors a figure above
+         *     the score range, which only a migration can leave. A refused request writes nothing.
          */
         post: operations["duplicateCriteriaSet"];
         delete?: never;
@@ -753,7 +758,15 @@ export interface paths {
         get: operations["getEvaluation"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Discard a kept ranking
+         * @description Deletes the ranking with its whole tree -- the frozen criteria, the results, every
+         *     contribution, refusal and warning and the evidence links they hold (D47). The values and
+         *     gate answers it cited stay: they belong to the candidate, not to the ranking. Once
+         *     discarded it cannot be brought back, and the criteria set it was computed from is no
+         *     longer held by it.
+         */
+        delete: operations["deleteEvaluation"];
         options?: never;
         head?: never;
         patch?: never;
@@ -771,6 +784,14 @@ export interface paths {
          * @description The drill-down. Every attribute's normalised score, its effective weight after
          *     redistribution, its contribution, and **the exact value used**, with that value's source
          *     and dates. This is the provenance chain end to end.
+         *
+         *     A refusal carries the gate answer or the figure it read, and a warning its inputs, as
+         *     they were when the ranking was saved (D46). A ranking saved before its evidence was kept
+         *     serves none: a null gate answer and empty inputs.
+         *
+         *     **`delta_vs_home` is taken against the household's current home country.** A saved
+         *     ranking freezes its criteria and its score scale but not the household, so the
+         *     difference is between saved scores, anchored on today's home.
          */
         get: operations["getCandidateScoreDetail"];
         put?: never;
@@ -1168,6 +1189,16 @@ export interface components {
          *     set's restore is then refused.
          */
         CriteriaSetName: string;
+        /**
+         * @description Optional. Left out, the server derives it from the name, once and never again: accents
+         *     stripped, lower case, every run of anything else one underscore, prefixed `set_` when
+         *     nothing is left or it starts with a digit -- "Zürich" gives `zurich`, "2026 plan"
+         *     `set_2026_plan`, "Ελλάδα" `set` -- and the first of `<stem>`, `<stem>_2`, `<stem>_3`...
+         *     that no set, live or deleted, has ever held. Given, it is used as it is, and refused with
+         *     409 `criteria_set_exists` when a set, live or deleted, holds it.
+         * @example partner
+         */
+        NewCriteriaSetId: string;
         CriteriaSetSummary: {
             id: string;
             name: string;
@@ -1181,7 +1212,7 @@ export interface components {
              *     there, a tie going to the lower `display_order`. Empty for a set that weighs no
              *     pillar.
              */
-            heaviest_pillars?: {
+            heaviest_pillars: {
                 level: string;
                 pillar: string;
                 /** @description Percentage, 0-100, as PillarWeight gives it. */
@@ -1348,6 +1379,8 @@ export interface components {
             compound_rule: string;
             /** @description In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved. */
             detail: string;
+            /** @description The figures the rule read, each with its source and both dates, in the order the rule names them -- for a saved ranking, the rows it read when it was saved, never today's (D46). Empty when the ranking was saved before its evidence was kept. */
+            inputs?: components["schemas"]["Value"][];
         };
         /** @description Exactly one of criterion, match_rule or compound_rule is set. */
         NonMatchReason: {
@@ -1357,6 +1390,10 @@ export interface components {
             compound_rule?: string | null;
             /** @description In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved. A gate's own recorded reason is served as it was written. */
             reason_detail: string;
+            /** @description The answer a gate's refusal read, as it stood then: a saved ranking keeps the version it read however the gate is answered later (D46). Null for any other reason, and for a refusal saved before its evidence was kept. */
+            gate_answer?: components["schemas"]["MatchRuleResult"] | null;
+            /** @description The figure a threshold judged, or a compound rule's inputs in the order it names them, each with its source and both dates (D46). Empty for a gate, which reads no figure, and for a refusal saved before its evidence was kept. */
+            inputs?: components["schemas"]["Value"][];
         };
         CandidateResult: {
             candidate: string;
@@ -1372,7 +1409,7 @@ export interface components {
             coverage: number;
             /** @description This candidate's total broken down by pillar -- what each of the eleven verticals scored, what it was worth after redistribution, and what it put into the total. Enough to read a score's shape without asking for the attribute-level breakdown, which is 43 rows per candidate where this is 11. A pillar with no figure at all is present with a null score rather than absent, because "nothing was found here" is the thing a reader most needs to see. */
             pillar_scores?: components["schemas"]["PillarScore"][];
-            /** @description This candidate's score minus the home country's (`reqs.md` 1.2, section 3.9), so "stay put" stays measurable beside every alternative. Null for the home country itself, and null when either score is absent -- a difference against an unscoreable candidate is not zero, it is unanswerable. */
+            /** @description This candidate's score minus the home country's (`reqs.md` 1.2, section 3.9), so "stay put" stays measurable beside every alternative. Null for the home country itself, and null when either score is absent -- a difference against an unscoreable candidate is not zero, it is unanswerable. A saved ranking takes it between its own saved scores, against the household's current home country, which the ranking does not record. */
             delta_vs_home?: number | null;
             /** @description How the covered weight splits by confidence (`reqs.md` 5.7), as percentages of the covered weight summing to 100. Coverage alone cannot show that a candidate reached 100% entirely on extrapolation; this can. Null when nothing is covered: a split of nothing is not a split, and four zeros would read as one. */
             coverage_by_confidence?: {
@@ -1410,6 +1447,11 @@ export interface components {
             /** @description The top of the score range this evaluation used, frozen with it. Read scores against this rather than against the current setting, which may since have changed. */
             score_scale_max: number;
             note?: string | null;
+            /** @description The candidate ranked first, with the roster's name for it -- a candidate that has since left the roster reads as its identifier made into words. Null when nobody was ranked. */
+            leader?: {
+                candidate: string;
+                name: string;
+            } | null;
         };
         AttributeScore: {
             attribute: string;
@@ -1421,7 +1463,8 @@ export interface components {
             /** @description Percentage of the whole level, 0-100, after the weight of every criterion with no figure was spread proportionally over every criterion that has one (reqs.md 5.3). Zero for a criterion with no figure. contribution = exact score x effective_weight / 100. */
             effective_weight: number;
             contribution: number;
-            value?: components["schemas"]["Value"];
+            /** @description The exact figure scored, with its source and both dates -- for a saved evaluation, the row it scored when it was saved (D46). Null when no figure was available. */
+            value?: components["schemas"]["Value"] | null;
             /** @description Every other stored value for this attribute — superseded, rejected, from other sources. */
             alternative_values?: components["schemas"]["Value"][];
         };
@@ -1957,8 +2000,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** @example partner */
-                    id: string;
+                    id?: components["schemas"]["NewCriteriaSetId"];
                     name: components["schemas"]["CriteriaSetName"];
                 };
             };
@@ -2062,7 +2104,7 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    id: string;
+                    id?: components["schemas"]["NewCriteriaSetId"];
                     name: components["schemas"]["CriteriaSetName"];
                 };
             };
@@ -2775,6 +2817,36 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidRequest"];
+        };
+    };
+    deleteEvaluation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                evaluationId: components["parameters"]["EvaluationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Discarded */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `not_found`: nobody kept an evaluation with this id. `details.evaluation` names it. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             422: components["responses"]["InvalidRequest"];
         };
     };

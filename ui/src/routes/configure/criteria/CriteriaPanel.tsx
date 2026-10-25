@@ -111,7 +111,7 @@ export function CriteriaPanel({
     <section className="panel" aria-labelledby={headingId}>
       <h2 id={headingId} className="panel__heading">
         {pillar === undefined ? "Criteria" : "Attribute weights inside this pillar"}
-      </h3>
+      </h2>
       <PillarTotals
         names={names}
         criteria={previewedCriteria(shown, preview)}
