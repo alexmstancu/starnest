@@ -123,6 +123,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/data-sources/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Put every source in a new order, keeping the priority tiers
+         * @description One request carrying the whole order, highest priority first, applied in one transaction under a lock: a move and its undo can never stop half way, and two reorders run one after the other (D36). **The stored priorities are handed back out in the new order, never renumbered 1 to n**, so the gaps between tiers survive every move. Two sources sharing a priority read back by id, so swapping them gives the pair distinct numbers. Whether each source is switched on is untouched.
+         */
+        put: operations["reorderDataSources"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/data-sources/{dataSourceId}": {
         parameters: {
             query?: never;
@@ -934,7 +954,7 @@ export interface components {
          * @description Every refusal this API makes, by code. A client words each one and branches on it; `message` is for a person reading the API directly and may change.
          * @enum {string}
          */
-        ErrorCode: "not_found" | "candidate_not_found" | "household_not_configured" | "weights_all_locked" | "criteria_set_exists" | "criteria_set_name_taken" | "no_default_criteria_set" | "nothing_to_retry" | "nothing_to_ask_again" | "spend_cap_not_set" | "nothing_to_fetch" | "run_already_in_flight" | "llm_not_configured" | "manual_entry_not_permitted" | "invalid_value" | "conflicting_observation" | "answer_recorded_by_a_person" | "score_scale_not_set" | "score_scale_below_anchors" | "comparator_limit_not_set" | "comparator_limit_exceeded" | "invalid_comparison" | "invalid_criteria_set" | "invalid_criterion" | "unknown_place" | "invalid_reference_period" | "invalid_request" | "cannot_be_scored" | "cannot_be_ranked" | "invalid_match_rule_result" | "unknown_data_source" | "unknown_scope";
+        ErrorCode: "not_found" | "candidate_not_found" | "household_not_configured" | "weights_all_locked" | "criteria_set_exists" | "criteria_set_name_taken" | "no_default_criteria_set" | "nothing_to_retry" | "nothing_to_ask_again" | "spend_cap_not_set" | "nothing_to_fetch" | "run_already_in_flight" | "llm_not_configured" | "manual_entry_not_permitted" | "invalid_value" | "conflicting_observation" | "answer_recorded_by_a_person" | "score_scale_not_set" | "score_scale_below_anchors" | "comparator_limit_not_set" | "comparator_limit_exceeded" | "invalid_comparison" | "invalid_criteria_set" | "invalid_criterion" | "unknown_place" | "invalid_reference_period" | "invalid_request" | "cannot_be_scored" | "cannot_be_ranked" | "invalid_match_rule_result" | "unknown_data_source" | "unknown_scope" | "invalid_source_order";
         /** @description The span the data describes. Start equals end for a single day. */
         ReferencePeriod: {
             /** Format: date */
@@ -1894,6 +1914,44 @@ export interface operations {
                 };
             };
             422: components["responses"]["InvalidRequest"];
+        };
+    };
+    reorderDataSources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Every source id exactly once, highest priority first. */
+                    order: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description Every source, in the new global order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["DataSource"][];
+                    };
+                };
+            };
+            /** @description `invalid_source_order` when the order does not name every source exactly once, with `details.missing`, `details.repeated` and `details.unknown`, each a list of source ids and empty where nothing was wrong with it; nothing is changed. Otherwise as `InvalidRequest`. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvalidRequestError"];
+                };
+            };
         };
     };
     updateDataSource: {
