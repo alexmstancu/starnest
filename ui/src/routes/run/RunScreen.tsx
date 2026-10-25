@@ -77,7 +77,8 @@ import {
  * `useRunScreen.ts`; the grouping and the counting are `failureGroups.ts`.
  */
 export function RunScreen({ route }: { route: RouteDefinition }) {
-  const { levelId, noteAcquisitionStarted, acquisitionsEnded } = useSelection();
+  const { levelId, noteAcquisitionStarted, acquisitionsEnded, noteAcquisitionEnded } =
+    useSelection();
   // An acquisition the shell saw end has moved what the database holds.
   const run = useRunScreen(levelId, noteAcquisitionStarted, acquisitionsEnded);
   const stored = useValueCount(acquisitionsEnded);
@@ -295,7 +296,10 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
       {/* Beside it, and separate: "no source at all" means no adapter can fetch it, while these
           are attributes the catalog says a person may answer. One only a person can answer is
           honestly in both lists, and its form is here (UI-32). */}
-      {levelId !== null && <OpenToHandEntry level={levelId} />}
+      {/* **A stored figure is read back where it counts** (PL-015): what the database holds,
+          whether anything is stored, and the sidebar's counts move as an acquisition's end
+          moves them, so they are read again the same way. */}
+      {levelId !== null && <OpenToHandEntry level={levelId} onStored={noteAcquisitionEnded} />}
 
       {/* **Kept through a re-read of the history** (NEW-11, PL-010): every act reads it again,
           and the diff left the screen for each re-read and came back with nothing chosen. Not

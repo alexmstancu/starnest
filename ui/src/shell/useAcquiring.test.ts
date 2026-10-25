@@ -132,3 +132,32 @@ describe("how often the shell looks at the runs", () => {
     expect(runs.looks).toBe(1);
   });
 });
+
+/**
+ * PL-015. **A run that started and finished between two looks still ended**: it was never seen
+ * running, and what it stored makes every open view stale all the same.
+ */
+describe("a run nobody saw running", () => {
+  it("is reported as ended once a look finds it, newer than the last look's newest", async () => {
+    let newest = 42;
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, () =>
+        HttpResponse.json({
+          items: [{ ...RUN, id: newest, run_status: "completed" }],
+          total: 1,
+        }),
+      ),
+    );
+    const ended = vi.fn();
+    renderHook(() => useAcquiring(ended, 0));
+    await wait(0);
+    expect(ended).not.toHaveBeenCalled();
+
+    newest = 43;
+    await wait(30_000);
+    expect(ended).toHaveBeenCalledTimes(1);
+
+    await wait(30_000);
+    expect(ended).toHaveBeenCalledTimes(1);
+  });
+});

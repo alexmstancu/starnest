@@ -35,13 +35,21 @@ export function runningRunOf(newest: LookedAt | undefined): number | null {
  * **Never on the first look.** A run that had already stopped when the shell first asked did not
  * stop under anybody, and whatever it changed was read with everything else. **Another run in
  * its place is an end too**: looks are two seconds apart, and the run that was watched is over
- * whether or not a new one has started since.
+ * whether or not a new one has started since. **And so is a stopped run newer than the last
+ * look's newest** (PL-015): one that started and finished between two looks was never seen
+ * running, and what it stored is as new as any other run's.
+ *
+ * @param lastNewest The id of the newest run the last look saw, null if it saw none, and
+ *   undefined when there was no last look.
  */
 export function acquisitionEnded(
   seenRunning: number | null,
   newest: LookedAt | undefined,
+  lastNewest?: number | null,
 ): boolean {
-  return seenRunning !== null && runningRunOf(newest) !== seenRunning;
+  if (seenRunning !== null) return runningRunOf(newest) !== seenRunning;
+  const unseen = lastNewest !== undefined && newest !== undefined && newest.id !== lastNewest;
+  return unseen && runningRunOf(newest) === null;
 }
 
 const STARTED = "An acquisition is running.";
@@ -57,10 +65,11 @@ const ENDED = "The acquisition has ended.";
 export function announcementFor(
   seenRunning: number | null,
   newest: LookedAt | undefined,
+  lastNewest?: number | null,
 ): string | null {
   const running = runningRunOf(newest);
   const said = [
-    acquisitionEnded(seenRunning, newest) ? ENDED : null,
+    acquisitionEnded(seenRunning, newest, lastNewest) ? ENDED : null,
     running !== null && running !== seenRunning ? STARTED : null,
   ].filter((sentence) => sentence !== null);
   return said.length === 0 ? null : said.join(" ");

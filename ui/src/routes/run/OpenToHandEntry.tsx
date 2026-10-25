@@ -31,7 +31,14 @@ import { handEnterable, type HandEnterable } from "./unsourced";
  * figure is per candidate, and the form asks which candidate; saying "empty" here would be a
  * claim about 32 of them at once.
  */
-export function OpenToHandEntry({ level }: { level: string }) {
+export function OpenToHandEntry({
+  level,
+  onStored,
+}: {
+  level: string;
+  /** A figure was stored: what is held moved, so what reads it reads again (PL-015). */
+  onStored: () => void;
+}) {
   const headingId = useId();
   // One form at a time: two would put two candidate pickers and two date pairs on screen with
   // nothing saying which belonged to which attribute.
@@ -134,6 +141,7 @@ export function OpenToHandEntry({ level }: { level: string }) {
                         level={level}
                         switchedOff={switchedOff}
                         open={open === attribute.id && !switchedOff}
+                        onStored={onStored}
                         onToggle={() =>
                           setOpen((current) =>
                             current === attribute.id ? null : attribute.id,
@@ -219,6 +227,7 @@ function Row({
   switchedOff,
   open,
   onToggle,
+  onStored,
 }: {
   attribute: HandEnterable;
   pillars: PillarNames;
@@ -226,6 +235,7 @@ function Row({
   switchedOff: boolean;
   open: boolean;
   onToggle: () => void;
+  onStored: () => void;
 }) {
   const toggle = useRef<HTMLButtonElement>(null);
   // The open row and its form read as one, tinted as the design's open row is.
@@ -269,6 +279,7 @@ function Row({
               kind={attribute.kind}
               level={level}
               pillar={attribute.pillar}
+              onStored={onStored}
               onClose={() => {
                 onToggle();
                 // Back to the control that opened it, which stays: never to the page.

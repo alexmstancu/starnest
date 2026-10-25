@@ -65,6 +65,8 @@ export function useAcquiring(onEnded: () => void, started: number): AcquiringSta
     const controller = new AbortController();
     // Kept across a failed look: one that learned nothing has not seen the run stop.
     let seenRunning: number | null = null;
+    // The newest run the last look saw; undefined until a look has seen anything.
+    let lastNewest: number | null | undefined = undefined;
     let quickLooksLeft = 0;
     let looking = false;
     let unanswered = false;
@@ -75,10 +77,11 @@ export function useAcquiring(onEnded: () => void, started: number): AcquiringSta
         const { items } = await fetchRuns(1, { signal: controller.signal });
         const newest = items[0];
         if (!live) return;
-        if (acquisitionEnded(seenRunning, newest)) reportEnded();
-        const said = announcementFor(seenRunning, newest);
+        if (acquisitionEnded(seenRunning, newest, lastNewest)) reportEnded();
+        const said = announcementFor(seenRunning, newest, lastNewest);
         if (said !== null) setAnnouncement(said);
         seenRunning = runningRunOf(newest);
+        lastNewest = newest?.id ?? null;
         if (newest?.run_status !== "running") {
           setAcquiring(null);
         } else {

@@ -48,6 +48,7 @@ export interface ManualEntryState {
 export function useManualEntry(
   attribute: string,
   kind: ManualKind,
+  onStored: () => void = () => undefined,
 ): ManualEntryState {
   const [draft, setDraft] = useState<ManualDraft>(NOTHING_TYPED);
   const [problems, setProblems] = useState<readonly Problem[]>([]);
@@ -87,6 +88,7 @@ export function useManualEntry(
       .then((stored) => {
         // Said even over newer typing: it names the figure stored, not what is on screen.
         setSaved(stored);
+        onStored();
         setRetrievedAt(new Date().toISOString());
         if (revision.current === sentAt) {
           setDraft(NOTHING_TYPED);
@@ -99,7 +101,7 @@ export function useManualEntry(
         inFlight.current = false;
         setSaving(false);
       });
-  }, [attribute, kind, draft, retrievedAt]);
+  }, [attribute, kind, draft, retrievedAt, onStored]);
 
   // The server is the authority when the two disagree: a field it refused is marked as the
   // form's own problems are, until the next keystroke clears the refusal.

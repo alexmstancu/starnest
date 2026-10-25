@@ -99,6 +99,20 @@ describe("whether a run has ended since the last look", () => {
   it("is not so when nothing was running and nothing is", () => {
     expect(acquisitionEnded(null, undefined)).toBe(false);
   });
+
+  /** PL-015: started and finished between two looks, so never seen running -- still an end. */
+  it("is so when a run nobody saw running has finished since the last look", () => {
+    expect(acquisitionEnded(null, { id: 9, run_status: "completed" }, 8)).toBe(true);
+    expect(acquisitionEnded(null, { id: 1, run_status: "failed" }, null)).toBe(true);
+  });
+
+  it("is not so when the newest run is the one the last look saw, stopped", () => {
+    expect(acquisitionEnded(null, { id: 8, run_status: "completed" }, 8)).toBe(false);
+  });
+
+  it("is not so for a new run still running: that is a start", () => {
+    expect(acquisitionEnded(null, { id: 9, run_status: "running" }, 8)).toBe(false);
+  });
 });
 
 describe("what a look announces (PL-131)", () => {

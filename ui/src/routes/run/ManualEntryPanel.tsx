@@ -43,6 +43,7 @@ export function ManualEntryPanel({
   kind,
   level,
   pillar,
+  onStored,
   onClose,
 }: {
   attribute: string;
@@ -51,11 +52,13 @@ export function ManualEntryPanel({
   level: string;
   /** The attribute's pillar in the catalog, where the read-back's link opens Rank; null for none. */
   pillar: string | null;
+  /** Told once the server has stored a figure. */
+  onStored?: () => void;
   /** Closes the form, from a button beside Store. */
   onClose?: () => void;
 }) {
   const headingId = useId();
-  const entry = useManualEntry(attribute, kind);
+  const entry = useManualEntry(attribute, kind, onStored);
   const sources = useSourceNames();
   const candidates = useRead(
     useCallback(
