@@ -1200,6 +1200,29 @@ components:
       - items
       title: ExternalScoresBody
       type: object
+    FailedGapBody:
+      properties:
+        attribute:
+          title: Attribute
+          type: string
+        candidate:
+          title: Candidate
+          type: string
+        data_acquisition_run:
+          title: Data Acquisition Run
+          type: integer
+        failures:
+          items:
+            $ref: '#/components/schemas/GapFailureBody'
+          title: Failures
+          type: array
+      required:
+      - candidate
+      - attribute
+      - data_acquisition_run
+      - failures
+      title: FailedGapBody
+      type: object
     FailureBody:
       properties:
         attribute:
@@ -1220,6 +1243,42 @@ components:
       - attribute
       - error_message
       title: FailureBody
+      type: object
+    GapFailureBody:
+      properties:
+        data_source:
+          title: Data Source
+          type: string
+        error_message:
+          title: Error Message
+          type: string
+      required:
+      - data_source
+      - error_message
+      title: GapFailureBody
+      type: object
+    GapsBody:
+      properties:
+        failed:
+          items:
+            $ref: '#/components/schemas/FailedGapBody'
+          title: Failed
+          type: array
+        not_reached:
+          items:
+            $ref: '#/components/schemas/NotReachedGapBody'
+          title: Not Reached
+          type: array
+        unanswered:
+          items:
+            $ref: '#/components/schemas/UnansweredGapBody'
+          title: Unanswered
+          type: array
+      required:
+      - failed
+      - unanswered
+      - not_reached
+      title: GapsBody
       type: object
     Goal:
       description: 'Which direction is better, or which band is.
@@ -1256,6 +1315,39 @@ components:
       - pillar
       - weight
       title: HeaviestPillarBody
+      type: object
+    HoldingsBody:
+      properties:
+        gaps:
+          $ref: '#/components/schemas/GapsBody'
+        level:
+          title: Level
+          type: string
+        pairs_total:
+          title: Pairs Total
+          type: integer
+        spent:
+          $ref: '#/components/schemas/SpentBody'
+        values_older_than_refetch_age:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Values Older Than Refetch Age
+        values_past_allowed_age:
+          title: Values Past Allowed Age
+          type: integer
+        values_stored:
+          title: Values Stored
+          type: integer
+      required:
+      - level
+      - pairs_total
+      - values_stored
+      - values_past_allowed_age
+      - values_older_than_refetch_age
+      - spent
+      - gaps
+      title: HoldingsBody
       type: object
     HouseholdBody:
       additionalProperties: false
@@ -1682,6 +1774,25 @@ components:
       - as_is
       title: NormalisationMethod
       type: string
+    NotReachedGapBody:
+      properties:
+        attribute:
+          title: Attribute
+          type: string
+        candidate:
+          title: Candidate
+          type: string
+        data_acquisition_run:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Data Acquisition Run
+      required:
+      - candidate
+      - attribute
+      - data_acquisition_run
+      title: NotReachedGapBody
+      type: object
     PillarBody:
       properties:
         description:
@@ -2421,6 +2532,28 @@ components:
       - items_failed
       title: SourceReachBody
       type: object
+    SpentBody:
+      properties:
+        research_eur:
+          title: Research Eur
+          type: number
+        runs_eur:
+          title: Runs Eur
+          type: number
+        since:
+          format: date-time
+          title: Since
+          type: string
+        total_eur:
+          title: Total Eur
+          type: number
+      required:
+      - since
+      - runs_eur
+      - research_eur
+      - total_eur
+      title: SpentBody
+      type: object
     SynthesisBody:
       properties:
         advantages:
@@ -2557,6 +2690,23 @@ components:
       - candidate
       - attribute
       title: UnansweredBody
+      type: object
+    UnansweredGapBody:
+      properties:
+        attribute:
+          title: Attribute
+          type: string
+        candidate:
+          title: Candidate
+          type: string
+        data_acquisition_run:
+          title: Data Acquisition Run
+          type: integer
+      required:
+      - candidate
+      - attribute
+      - data_acquisition_run
+      title: UnansweredGapBody
       type: object
     ValueBody:
       properties:
@@ -4073,6 +4223,61 @@ paths:
       summary: List External Scores
       tags:
       - values
+  /v1/holdings:
+    get:
+      description: 'The database at a level, read in one statement so its figures
+        add up.
+
+
+        **`since` must carry its zone**: it is the reader''s month start (C04-N10),
+        and a time
+
+        without one would be read on the database''s clock, the decision this parameter
+        keeps off the
+
+        server. What each adapter declares -- the facts `answerable_by` serves (Q235)
+        -- is passed
+
+        whole, because the database does not hold it; **which sources are switched
+        on is left to
+
+        the statement**, with the stand-ins and the refetch age, so a switch flipped
+        mid-read is
+
+        seen everywhere or nowhere.'
+      operationId: getHoldings
+      parameters:
+      - in: query
+        name: level
+        required: true
+        schema:
+          title: Level
+          type: string
+      - in: query
+        name: since
+        required: true
+        schema:
+          format: date-time
+          title: Since
+          type: string
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HoldingsBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+          description: The request is malformed, or names something the domain will
+            not accept; `code` says which. `invalid_request` is a malformed request,
+            with each offending location in `details.errors`.
+      summary: Get Holdings
+      tags:
+      - acquisition
   /v1/household:
     get:
       description: Raises `HouseholdNotConfiguredError` -- a 404 -- when nothing has

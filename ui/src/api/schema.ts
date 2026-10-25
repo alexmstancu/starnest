@@ -678,6 +678,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/holdings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the database holds at a level, and what this month has cost
+         * @description Database facts rather than one run's accounting: the values stored, how many have aged
+         *     past what their attribute allows, the month's spend over runs and gate research, and the
+         *     gaps, each with the latest acquisition that asked about it. Computed in one read, so the
+         *     figures and the gaps always add up: values_stored plus the three gap lists equals
+         *     pairs_total.
+         */
+        get: operations["getHoldings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/rankings": {
         parameters: {
             query?: never;
@@ -1374,6 +1398,49 @@ export interface components {
                 attribute: string;
                 error_message: string;
             }[];
+        };
+        Holdings: {
+            level: string;
+            /** @description Candidate and attribute pairs at the level that a switched-on source can fetch, that a declared stand-in can lend, or that already hold a figure. */
+            pairs_total: number;
+            /** @description Of those, the pairs with a value in use (the active value). */
+            values_stored: number;
+            /** @description Pairs whose value in use has a reference period older than their attribute's maximum age: the ones the active-value rule calls stale. Counted per pair, as values_stored is. */
+            values_past_allowed_age: number;
+            /** @description Pairs whose last accepted figure was retrieved longer ago than the refetch setting. Null while the setting is unset. */
+            values_older_than_refetch_age: number | null;
+            spent: {
+                /** Format: date-time */
+                since: string;
+                /** @description What acquisitions started at or after `since` cost. */
+                runs_eur: number;
+                /** @description What gate research ledgered at or after `since` cost. */
+                research_eur: number;
+                total_eur: number;
+            };
+            gaps: {
+                failed: {
+                    candidate: string;
+                    attribute: string;
+                    /** @description The latest acquisition that asked about the pair. */
+                    data_acquisition_run: number;
+                    failures: {
+                        data_source: string;
+                        error_message: string;
+                    }[];
+                }[];
+                unanswered: {
+                    candidate: string;
+                    attribute: string;
+                    data_acquisition_run: number;
+                }[];
+                /** @description Pairs the latest acquisition that included them never reached, or that no acquisition has asked about (data_acquisition_run null). */
+                not_reached: {
+                    candidate: string;
+                    attribute: string;
+                    data_acquisition_run: number | null;
+                }[];
+            };
         };
         Warning: {
             compound_rule: string;
@@ -2658,6 +2725,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["InvalidRequest"];
+        };
+    };
+    getHoldings: {
+        parameters: {
+            query: {
+                level: string;
+                /** @description The start of "this month" as the reader's clock has it. Spend recorded at or after it is summed. */
+                since: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Holdings"];
                 };
             };
             422: components["responses"]["InvalidRequest"];
