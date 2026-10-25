@@ -1,8 +1,9 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
-import { http } from "msw";
+import { getResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createCriteriaSet, deleteCriteriaSet } from "../../../api/endpoints";
+import { handlers } from "../../../mocks/handlers";
 import { mockServer } from "../../../mocks/server";
 import {
   expectHeld,
@@ -71,7 +72,7 @@ function recordWrites(): string[] {
  * hands each on to the mock's own handler, so what lands is what the server would have said.
  */
 function holdRequests(
-  method: "post" | "put" | "patch" | "delete",
+  method: "get" | "post" | "put" | "patch" | "delete",
   path: string,
 ): { sent: string[]; release: () => void } {
   let release = (): void => undefined;
@@ -83,6 +84,30 @@ function holdRequests(
     http[method](path, async ({ request }) => {
       sent.push(request.url);
       await held;
+    }),
+  );
+  return { sent, release: () => release() };
+}
+
+/**
+ * Lets the mock's own handler make the change at once and holds only its answer: a write the
+ * server has committed while the screen is still waiting to hear so.
+ */
+function holdAnswers(
+  method: "put" | "patch",
+  path: string,
+): { sent: string[]; release: () => void } {
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const sent: string[] = [];
+  mockServer.use(
+    http[method](path, async ({ request }) => {
+      sent.push(request.url);
+      const answer = await getResponse(handlers, request);
+      await held;
+      return answer;
     }),
   );
   return { sent, release: () => release() };
@@ -683,6 +708,132 @@ describe("Recent changes for a set", () => {
       expect(screen.queryByRole("listitem", { name: "Default copy" })).toBeNull(),
     );
     expect(writes).toEqual(["DELETE /v1/criteria-sets/default_copy"]);
+  });
+});
+
+/**
+ * PL-033 follow-up. **A set action and another request in flight, answered in the order that
+ * breaks the history.** Each case holds the responses and lets them go in that order.
+ */
+describe("a set action beside another request in flight", () => {
+  let writes: string[] = [];
+  afterEach(() => {
+    mockServer.events.removeAllListeners("request:start");
+    writes = [];
+  });
+
+  it("is held while an undo is being sent, so no entry is noted for a set the undo removes", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await create("Partner");
+    const history = await historyPanel();
+    await history.findByText("Created Partner");
+    await user.click((await row("Partner")).getByRole("button", { name: "Rename" }));
+    const undo = holdRequests("delete", "/v1/criteria-sets/:criteriaSetId");
+    await user.click(history.getByRole("button", { name: "Undo this" }));
+    await waitFor(() => expect(undo.sent).toHaveLength(1));
+    writes = recordWrites();
+
+    await user.click(screen.getByRole("textbox", { name: "New name for Partner" }));
+    await user.keyboard("{Control>}a{/Control}Pat{Enter}");
+    undo.release();
+
+    await waitFor(() => expect(screen.queryByRole("listitem", { name: "Partner" })).toBeNull());
+    expect(writes).toEqual([]);
+    expect(history.getByText("No changes yet.")).toBeInTheDocument();
+  });
+
+  it.each([
+    {
+      what: "a pillar's lock",
+      path: "/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId",
+      method: "put" as const,
+      write: async (user: UserEvent) =>
+        user.click(await screen.findByRole("button", { name: "Lock Economy" })),
+      entry: "Locked the Economy pillar, in Default",
+    },
+    {
+      what: "a criterion's lock",
+      path: "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId",
+      method: "patch" as const,
+      write: async (user: UserEvent) => {
+        await user.click(await screen.findByRole("button", { name: /^Economy/ }));
+        await user.click(
+          await screen.findByRole("button", { name: "Lock the weight for Cost of living index" }),
+        );
+      },
+      entry: "Locked Cost of living index, in Default",
+    },
+  ])("holds Delete on the set $what was sent to, whichever set is in use, until it answers", async ({
+    path,
+    method,
+    write,
+    entry,
+  }) => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    const answer = holdAnswers(method, path);
+    await write(user);
+    await waitFor(() => expect(answer.sent).toHaveLength(1));
+    await user.click((await row("Remote only")).getByRole("button", { name: "Use" }));
+    await waitFor(() => expect(sidebarSets()).toHaveValue("remote_only"));
+    const remove = (await row("Default")).getByRole("button", { name: "Delete" });
+    writes = recordWrites();
+
+    expectHeld(remove);
+    await user.click(remove);
+    expect(writes).toEqual([]);
+
+    answer.release();
+    const history = await historyPanel();
+    await history.findByText(entry);
+    await waitFor(() => expectNotHeld(remove));
+    await user.click(remove);
+    await history.findByText("Deleted Default");
+    const entries = history.getAllByRole("listitem").map((item) => item.textContent ?? "");
+    expect(entries.findIndex((text) => text.includes("Deleted Default"))).toBeLessThan(
+      entries.findIndex((text) => text.includes(entry)),
+    );
+  });
+
+  it("does not put a restored set back in use over a set chosen while the restore was sent", async () => {
+    const user = userEvent.setup();
+    await createCriteriaSet("partner", "Partner");
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    await deleteSet(user, "Default");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("partner"));
+    const restore = holdRequests("post", "/v1/criteria-sets/:criteriaSetId/restore");
+    await user.click((await historyPanel()).getByRole("button", { name: "Undo this" }));
+    await waitFor(() => expect(restore.sent).toHaveLength(1));
+
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+    await screen.findByRole("heading", { name: "Rank", level: 1 });
+    await user.selectOptions(sidebarSets(), "remote_only");
+    restore.release();
+
+    expect(await within(sidebarSets()).findByRole("option", { name: "Default" })).toBeTruthy();
+    expect(sidebarSets()).toHaveValue("remote_only");
+  });
+
+  it("keeps Delete held until the refreshed list no longer shows the deleted set", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const remove = (await row("Remote only")).getByRole("button", { name: "Delete" });
+    const list = holdRequests("get", "/v1/criteria-sets");
+    writes = recordWrites();
+
+    await user.click(remove);
+    await waitFor(() => expect(list.sent).toHaveLength(1));
+    expectHeld(remove);
+    await user.click(remove);
+    list.release();
+
+    await waitFor(() =>
+      expect(screen.queryByRole("listitem", { name: "Remote only" })).toBeNull(),
+    );
+    expect(writes).toEqual(["DELETE /v1/criteria-sets/remote_only"]);
   });
 });
 

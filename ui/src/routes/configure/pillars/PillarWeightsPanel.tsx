@@ -63,8 +63,12 @@ export function PillarWeightsPanel({
   catalog?: AttributeCatalogRead;
   /** Where each answered change is noted with the request that reverses it (PL-138a). */
   history?: ChangeHistory;
-  /** Told when a write starts and settles, so an undo waits for it (D41). */
-  onSaving?: (saving: boolean) => void;
+  /**
+   * Told when a write to a set starts and settles, so an undo and that set's Delete wait for it
+   * (D41, S8). Told from the write itself, because it can outlive this panel: switching sets
+   * remounts it before the answer lands.
+   */
+  onSaving?: (criteriaSetId: string, saving: boolean) => void;
   /** How many criteria each pillar holds, for the line under its name. */
   criteriaCounts?: ReadonlyMap<string, number>;
   /**
@@ -96,10 +100,6 @@ export function PillarWeightsPanel({
   const { preview, previewFor, moveTo, ended } = useWeightDrag();
   const undoing = history?.undoing === true;
   const held = saving || undoing;
-  useEffect(() => onSaving?.(saving), [onSaving, saving]);
-  // Unmounted mid-write -- a set switched meanwhile -- no answer will reach this panel to say the
-  // write is over, so it says so as it goes, or Recent changes stays held for good.
-  useEffect(() => () => onSaving?.(false), [onSaving]);
   useEffect(() => answers?.listen(criteriaSet.id, setWeights), [answers, criteriaSet.id]);
   const showAnswer = useCallback(
     (setId: string, answer: PillarWeight[]) => {
@@ -115,6 +115,7 @@ export function PillarWeightsPanel({
       if (inFlight.current || undoing) return;
       inFlight.current = true;
       setSaving(true);
+      onSaving?.(criteriaSet.id, true);
       setFailure(null);
       try {
         const rebalanced = await updatePillarWeight(criteriaSet.id, pillar, weight);
@@ -125,13 +126,14 @@ export function PillarWeightsPanel({
       } finally {
         inFlight.current = false;
         setSaving(false);
+        onSaving?.(criteriaSet.id, false);
         // **Here rather than on release**, so the preview stands until the answer that replaces
         // it. A refusal ends the gesture too: the weights it previewed are not the stored ones
         // and never will be, so the rows go back to what is stored and the notice says why.
         ended();
       }
     },
-    [criteriaSet.id, ended, undoing, note, weights],
+    [criteriaSet.id, ended, undoing, note, weights, onSaving],
   );
 
   // **Its own request, carrying no weight** (P68). See `updatePillarLock`: a lock sent with a
@@ -141,6 +143,7 @@ export function PillarWeightsPanel({
       if (inFlight.current || undoing) return;
       inFlight.current = true;
       setSaving(true);
+      onSaving?.(criteriaSet.id, true);
       setFailure(null);
       try {
         const rebalanced = await updatePillarLock(criteriaSet.id, pillar, locked);
@@ -151,9 +154,10 @@ export function PillarWeightsPanel({
       } finally {
         inFlight.current = false;
         setSaving(false);
+        onSaving?.(criteriaSet.id, false);
       }
     },
-    [criteriaSet.id, undoing, note],
+    [criteriaSet.id, undoing, note, onSaving],
   );
 
   // The weights as a rebalance sees them: what the drag snapshots, and what the total is read

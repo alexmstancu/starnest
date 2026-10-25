@@ -54,6 +54,8 @@ export interface CriteriaEditor {
    * flight can answer in either order, and the later answer would be shown over newer weights.
    */
   busy: boolean;
+  /** The set a write is in flight to, which may no longer be the set on screen (S8). */
+  writingTo: string | null;
   /** The failure of the last weight or lock change. Shown; never swallowed. A rule's is its own. */
   saveError: unknown;
   setWeight: (attribute: string, weight: number) => void;
@@ -100,6 +102,7 @@ export function useCriteriaEditor(
   const criteriaSet = read.state === "ready" ? read.data : null;
   const [criteria, setCriteria] = useState<Criterion[]>([]);
   const [savingAttribute, setSavingAttribute] = useState<string | null>(null);
+  const [writingTo, setWritingTo] = useState<string | null>(null);
   const [savingRuleFor, setSavingRuleFor] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<unknown>(null);
 
@@ -144,6 +147,7 @@ export function useCriteriaEditor(
       const sentFor = criteriaSetId;
 
       setSavingAttribute(attribute);
+      setWritingTo(sentFor);
       setSaveError(null);
 
       // Read before the request, because the answer replaces it and an undo needs the value
@@ -188,6 +192,7 @@ export function useCriteriaEditor(
         .finally(() => {
           inFlight.current = false;
           setSavingAttribute(null);
+          setWritingTo(null);
         });
     },
     [
@@ -209,6 +214,7 @@ export function useCriteriaEditor(
       const sentFor = criteriaSetId;
 
       setSavingAttribute(attribute);
+      setWritingTo(sentFor);
       setSaveError(null);
       const named = titleOf(attribute, catalog?.get(attribute));
       const inSet = setName ?? sentFor;
@@ -236,6 +242,7 @@ export function useCriteriaEditor(
         .finally(() => {
           inFlight.current = false;
           setSavingAttribute(null);
+          setWritingTo(null);
         });
     },
     [criteriaSetId, history, undoing, catalog, setName, mergeInto, reportFor],
@@ -248,6 +255,7 @@ export function useCriteriaEditor(
       const sentFor = criteriaSetId;
 
       setSavingAttribute(attribute);
+      setWritingTo(sentFor);
       setSavingRuleFor(attribute);
       setSaveError(null);
 
@@ -266,6 +274,7 @@ export function useCriteriaEditor(
         .finally(() => {
           inFlight.current = false;
           setSavingAttribute(null);
+          setWritingTo(null);
           setSavingRuleFor(null);
         });
     },
@@ -279,6 +288,7 @@ export function useCriteriaEditor(
     savingAttribute,
     savingRuleFor,
     busy: savingAttribute !== null || undoing,
+    writingTo,
     saveError,
     setWeight,
     setLock,

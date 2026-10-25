@@ -36,6 +36,12 @@ export interface Selection {
    */
   missingCriteriaSet: RememberedSet | null;
   /**
+   * Selects `next` only while `still` is selected, decided against the selection as it is when
+   * this runs: for an answer that lands after the reader may have chosen another set, perhaps
+   * on another screen (PL-033).
+   */
+  selectCriteriaSetIf: (still: string | null, next: string) => void;
+  /**
    * The two lists as one read (PL-009): what a screen draws first, so a list still coming or
    * one that failed never reads as "there are none". `levels` and `criteriaSets` above are its
    * data once it is ready, and empty until then. **Pending until the opening choice is made**
@@ -215,6 +221,12 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
     writeSelection({ criteriaSet, levelId: shownLevelId }, { lastUsed: chosenHere.current });
   }, [levelChecked, setChecked, shownLevelId, shownCriteriaSetId, shownSetName]);
 
+  const selectCriteriaSetIf = useCallback(
+    (still: string | null, next: string) =>
+      setCriteriaSetId((current) => (current === still ? next : current)),
+    [],
+  );
+
   // **Depends on the two `reload` functions, not on the reads that carry them.** The hook
   // returns a fresh object every render, so `[levels, criteriaSets]` would make the context
   // value below new every render -- and a consumer reading it in a dependency array would
@@ -253,6 +265,7 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
       selectLevel,
       selectCriteriaSet,
       missingCriteriaSet,
+      selectCriteriaSetIf,
       savedRankingsVersion,
       noteSavedRanking,
       acquisitionsEnded,
@@ -271,6 +284,7 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
       selectLevel,
       selectCriteriaSet,
       missingCriteriaSet,
+      selectCriteriaSetIf,
       savedRankingsVersion,
       noteSavedRanking,
       acquisitionsEnded,

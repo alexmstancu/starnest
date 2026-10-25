@@ -17,7 +17,7 @@
  * guessed around.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   createCriteriaSet,
   deleteCriteriaSet,
@@ -38,7 +38,10 @@ export interface CriteriaSetsForm {
   renaming: string | null;
   renameDraft: string;
   failure: unknown;
-  /** A set action is in flight, so every other one is held until it answers (PL-037). */
+  /**
+   * A set action is in flight, or an undo is, so every set action is held until it answers
+   * (PL-037, PL-033): one sent meanwhile could be noted for a set the undo is taking away.
+   */
   busy: boolean;
   /** Why the name typed cannot make a set, or null when it can. */
   createRefusal: string | null;
@@ -56,8 +59,9 @@ export interface CriteriaSetsForm {
   /** Resolves true once the set is gone, false when it was refused or not sent. */
   discard: (criteriaSetId: string) => Promise<boolean>;
   /**
-   * Delete is held on the set in use while a write to it is in flight (S8): answered after the
-   * deletion, that write would sit above its entry and 404 before the restore could run.
+   * Delete is held on a set while a write to it is in flight, whichever set is in use (S8):
+   * answered after the deletion, that write would sit above its entry and 404 before the
+   * restore could run.
    */
   deleteHeld: (criteriaSetId: string) => boolean;
 }
@@ -65,18 +69,13 @@ export interface CriteriaSetsForm {
 export function useCriteriaSets(options: {
   selection: Selection;
   history: ChangeHistory;
-  /** A write to the set in use is in flight: a criterion's or a pillar's. */
-  writesInFlight: boolean;
+  /** The sets a criterion's or a pillar's write is in flight to, one entry per write. */
+  writingTo: readonly string[];
 }): CriteriaSetsForm {
   const { selection, history } = options;
   const names = selection.criteriaSets.map((set) => set.name);
   const nameOf = (criteriaSetId: string) =>
     selection.criteriaSets.find((set) => set.id === criteriaSetId)?.name ?? criteriaSetId;
-  // What is in use when an undo runs, which is later than any render this hook has seen.
-  const inUse = useRef(selection.criteriaSetId);
-  useEffect(() => {
-    inUse.current = selection.criteriaSetId;
-  }, [selection.criteriaSetId]);
 
   /** Deleting restorably, which is also how a created set or a copy is undone. */
   const deleteAndReread = async (criteriaSetId: string) => {
@@ -93,16 +92,19 @@ export function useCriteriaSets(options: {
   // can land before the first has re-rendered, and the second would be sent too.
   const inFlight = useRef(false);
   const createRefusal = refusalOf(newName, names);
+  const held = busy || history.undoing;
 
   /** Whether the action was sent and answered without a refusal. */
   async function act(action: () => Promise<void>): Promise<boolean> {
-    if (inFlight.current) return false;
+    if (inFlight.current || history.undoing) return false;
     inFlight.current = true;
     setBusy(true);
     setFailure(null);
     try {
       await action();
-      selection.reload();
+      // **Held until the list shows what was written** (PL-033): a deleted row the refresh has
+      // not yet taken away still takes a press, and would send a second DELETE.
+      await selection.reloadAndWait();
       return true;
     } catch (error) {
       setFailure(error);
@@ -118,7 +120,7 @@ export function useCriteriaSets(options: {
     renaming,
     renameDraft,
     failure,
-    busy,
+    busy: held,
     createRefusal,
     createRefused,
     canSaveRename: renameDraft.trim() !== "",
@@ -226,16 +228,14 @@ export function useCriteriaSets(options: {
           reverse: async () => {
             await restoreCriteriaSet(criteriaSetId);
             selection.reload();
-            // Back in use only if the selection is still where the deletion left it.
-            if (wasInUse && inUse.current === fallback) {
-              selection.selectCriteriaSet(criteriaSetId);
-            }
+            // Back in use only if the selection is still where the deletion left it, asked of
+            // the selection itself: the restore may answer after Configure has gone.
+            if (wasInUse) selection.selectCriteriaSetIf(fallback, criteriaSetId);
           },
         });
       });
     },
-    deleteHeld: (criteriaSetId) =>
-      busy || (options.writesInFlight && criteriaSetId === selection.criteriaSetId),
+    deleteHeld: (criteriaSetId) => held || options.writingTo.includes(criteriaSetId),
   };
 }
 

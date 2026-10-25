@@ -39,8 +39,18 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   const { criteriaSetId, levelId } = selection;
   const history = useChangeHistory();
   // **An undo waits for a pillar's write as it does for a criterion's** (D41): the pillar panel
-  // keeps its own write, so it says when one is in flight.
-  const [pillarSaving, setPillarSaving] = useState(false);
+  // keeps its own write, so it says when one is in flight, and to which set -- one entry per
+  // write, since one sent before a set switch can still be in flight after it. An undo waits
+  // for a write to the set on screen; a set's Delete, for any write to that set.
+  const [pillarWrites, setPillarWrites] = useState<readonly string[]>([]);
+  const notePillarWrite = useCallback((criteriaSetId: string, saving: boolean) => {
+    setPillarWrites((writes) => {
+      if (saving) return [...writes, criteriaSetId];
+      const settled = writes.indexOf(criteriaSetId);
+      return writes.filter((_, at) => at !== settled);
+    });
+  }, []);
+  const pillarSaving = criteriaSetId !== null && pillarWrites.includes(criteriaSetId);
   const pillarAnswers = usePillarAnswers();
   // Once for the screen rather than once per opened pillar: every criterion row wants the
   // same copy of what the attributes are, and the panel inside a pillar is mounted and
@@ -52,7 +62,8 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   const sets = useCriteriaSets({
     selection,
     history,
-    writesInFlight: editor.busy || pillarSaving,
+    writingTo:
+      editor.writingTo === null ? pillarWrites : [...pillarWrites, editor.writingTo],
   });
   // **One signal that the gate answers have moved** (UI-12). The rules and the proposals read
   // the answers separately, so a confirm or a research pass re-read only the proposals, and a
@@ -131,7 +142,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                     : "unknown"
                 }
                 history={history}
-                onSaving={setPillarSaving}
+                onSaving={notePillarWrite}
                 answers={pillarAnswers}
                 catalog={catalog}
                 criteriaFor={(pillar) => (
