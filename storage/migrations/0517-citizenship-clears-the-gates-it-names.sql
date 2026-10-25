@@ -1,7 +1,7 @@
 -- A citizenship clears the gates it names, and EU free movement is derived from one (PL-164,
 -- UF-029, G-S6, D59).
 --
--- depends: 0520-a-criterion-carries-one-bound-at-most
+-- depends: 0525-a-day-without-a-rate-remembers-the-ecbs-answer
 --
 -- The household's citizenships reached no gate. A British passport did not clear the UK Skilled
 -- Worker route, and nothing derived `eu_free_movement`, so that enforced gate never fired for
