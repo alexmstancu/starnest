@@ -24,7 +24,7 @@ import { ROUTES } from "../navigation/routes";
  * subject.
  *
  * **This is not the test agreeing with itself.** The figure on screen travels from the fixture
- * through the msw handler, `GET /candidates`, `useResource` and the sidebar's render, and
+ * through the msw handler, `GET /candidates`, `useRead` and the sidebar's render, and
  * asserting it equals the roster's length checks every step of that. What it gives up is
  * catching "the fixture changed", which is this test's input and never was its subject.
  */

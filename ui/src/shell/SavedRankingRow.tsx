@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { ErrorNotice } from "./ErrorNotice";
+import { ActRefusal } from "./ActRefusal";
 import { useDiscardSaved } from "./useDiscardSaved";
 
 /**
@@ -98,12 +98,8 @@ export function SavedRankingRow({
               Keep it
             </button>
           </div>
-          {discard.failure != null && (
-            <ErrorNotice
-              error={discard.failure}
-              onRetry={() => void discard.discard()}
-            />
-          )}
+          {/* Dismiss only (P1-14): Delete, still above, is how it is sent again. */}
+          <ActRefusal act="The deletion" error={discard.failure} />
         </div>
       )}
     </li>

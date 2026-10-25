@@ -594,20 +594,29 @@ describe("the saved rankings card (PL-145)", () => {
     );
   });
 
-  it("reports a failed deletion, keeps the ranking, and tries again", async () => {
+  /** P1-14: a failed act offers Dismiss only; Delete, still there, is how it is sent again. */
+  it("reports a failed deletion, keeps the ranking, and deletes it when Delete is pressed again", async () => {
     renderShell("/rank");
     await saveOne("stubborn");
     const row = within(await savedRow("stubborn"));
-    mockServer.use(http.delete("/v1/evaluations/:evaluationId", () => HttpResponse.error()));
+    mockServer.use(
+      http.delete("/v1/evaluations/:evaluationId", () =>
+        HttpResponse.json({ code: "internal_error", message: "SENTINEL_MESSAGE" }, { status: 500 }),
+      ),
+    );
 
     await userEvent.click(row.getByRole("button", { name: /delete stubborn/i }));
     await userEvent.click(row.getByRole("button", { name: /^delete$/i }));
 
-    expect(await row.findByRole("alert")).toBeInTheDocument();
+    const refusal = within(await row.findByRole("alert"));
+    expect(refusal.getByText(/the deletion did not go through/i)).toBeInTheDocument();
+    expect(refusal.queryByText(/SENTINEL_MESSAGE/)).toBeNull();
+    expect(refusal.queryByRole("button", { name: /try again/i })).toBeNull();
+    expect(refusal.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
     expect(row.getByRole("link", { name: /stubborn/ })).toBeInTheDocument();
 
     mockServer.resetHandlers();
-    await userEvent.click(row.getByRole("button", { name: /try again/i }));
+    await userEvent.click(row.getByRole("button", { name: /^delete$/i }));
     const list = within(await savedList());
     expect(await list.findByText(/none yet/i)).toBeInTheDocument();
   });

@@ -8,9 +8,9 @@ import { CitizenshipField } from "./CitizenshipField";
 import { candidateOptions } from "./candidateOptions";
 import { CountField } from "./CountField";
 import { useCandidateRosterState } from "../../../api/useCandidateRoster";
-import { ErrorNotice } from "../../../shell/ErrorNotice";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
+import { ReadFailureCard } from "../../../shell/ReadFailureCard";
 import { Stage } from "../Stage";
 import { NumberField } from "../../../shell/NumberField";
 import {
@@ -113,7 +113,12 @@ function HouseholdFields({
             The list of places could not be read, so the home country and
             citizenships cannot be chosen until it is.
           </p>
-          <ErrorNotice error={roster.error} onRetry={roster.reload} />
+          <ReadFailureCard
+            what="The list of places"
+            error={roster.error}
+            onRetry={roster.reload}
+            prominence="screen"
+          />
         </>
       )}
 

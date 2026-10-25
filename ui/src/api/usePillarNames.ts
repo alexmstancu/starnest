@@ -33,7 +33,7 @@ interface PillarCatalog {
  * The names once, shared by every caller on the page.
  *
  * **The catalog is eleven rows that do not change while the app is open**, and five components
- * each mounted their own `useResource` for it -- Rank fired two `GET /pillars`, Configure two.
+ * each mounted their own read of it -- Rank fired two `GET /pillars`, Configure two.
  * One in-flight promise, kept for the life of the module, is the whole of what a cache needs to
  * be here: there is nothing to invalidate, because a migration is the only thing that can
  * change these and that means a restart.

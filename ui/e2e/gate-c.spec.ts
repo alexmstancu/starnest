@@ -407,7 +407,7 @@ async function rankedOrder(page: Page): Promise<string[]> {
  */
 async function scoreOf(page: Page, country: string): Promise<string> {
   // **Waits for the table rather than asserting on it.** Switching criteria sets replaces the
-  // table with "Loading…" for a beat, so a read taken mid-swap saw no columns at all -- and
+  // table with a skeleton for a beat, so a read taken mid-swap saw no columns at all -- and
   // asserting there aborted the poll that was meant to tolerate exactly this.
   await page.getByRole("columnheader", { name: "Score", exact: true }).waitFor();
   const headings = (await page.getByRole("columnheader").allTextContents()).map((each) =>

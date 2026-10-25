@@ -1,7 +1,10 @@
 import type { Ref } from "react";
-import { presentError } from "../api/errorPresentation";
+import { Link } from "react-router-dom";
+import { isApiError } from "../api/ApiError";
+import { type Names, presentError } from "../api/errorPresentation";
 import { isUnreachable, useWaitingForServer } from "../api/reachability";
 import { useAppConfig } from "../config/AppConfigContext";
+import { remedyFor } from "./refusalRemedy";
 
 /**
  * A read that never arrived (C01 M2).
@@ -15,6 +18,9 @@ import { useAppConfig } from "../config/AppConfigContext";
  *
  * **A server that did not answer is said once, by the screen's card** (`ServerDownCard`), so
  * a region that failed that way draws the compact line whatever it was asked for.
+ *
+ * **A refusal names what it concerns, never its ids** (P1-07), from `names`; and one that a
+ * setting lifts offers the way to it beside Try again (`remedyFor`).
  */
 export function ReadFailureCard({
   what,
@@ -22,6 +28,7 @@ export function ReadFailureCard({
   onRetry,
   retryRef,
   prominence,
+  names,
 }: {
   /** What was being read, as the subject of a sentence: "The ranking". */
   what: string;
@@ -30,6 +37,8 @@ export function ReadFailureCard({
   /** Lets the region put focus back on Try again after a retry that failed too. */
   retryRef?: Ref<HTMLButtonElement>;
   prominence: "screen" | "region";
+  /** Names for the ids a refusal carries: the candidates a comparison concerned. */
+  names?: Names;
 }) {
   const waitingForServer = useWaitingForServer();
   const saidByTheScreen = waitingForServer && isUnreachable(error);
@@ -43,7 +52,15 @@ export function ReadFailureCard({
       </div>
     );
   }
-  return <ReadFailureCardInFull what={what} error={error} onRetry={onRetry} retryRef={retryRef} />;
+  return (
+    <ReadFailureCardInFull
+      what={what}
+      error={error}
+      onRetry={onRetry}
+      retryRef={retryRef}
+      names={names}
+    />
+  );
 }
 
 /** The full card, never compacted: a region's own, or the one card a screen draws (P1-06). */
@@ -52,14 +69,17 @@ export function ReadFailureCardInFull({
   error,
   onRetry,
   retryRef,
+  names,
 }: {
   what: string;
   error: unknown;
   onRetry: () => void | Promise<void>;
   retryRef?: Ref<HTMLButtonElement>;
+  names?: Names;
 }) {
   const { displayName } = useAppConfig();
-  const presented = presentError(error);
+  const presented = presentError(error, names);
+  const remedy = remedyFor(presented.code, isApiError(error) ? error.details : undefined);
   return (
     <div className="failure-card" role="alert">
       <p className="failure-card__title">{what} could not be loaded</p>
@@ -71,9 +91,16 @@ export function ReadFailureCardInFull({
           then try again.
         </p>
       )}
-      <button ref={retryRef} type="button" className="button" onClick={() => void onRetry()}>
-        Try again
-      </button>
+      <div className="failure-card__acts">
+        <button ref={retryRef} type="button" className="button" onClick={() => void onRetry()}>
+          Try again
+        </button>
+        {remedy && (
+          <Link className="button" to={remedy.path}>
+            {remedy.label}
+          </Link>
+        )}
+      </div>
     </div>
   );
 }

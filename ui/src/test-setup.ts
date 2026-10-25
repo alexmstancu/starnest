@@ -72,8 +72,8 @@ afterAll(() => {
  *
  * Act warnings, duplicate-key warnings and "Maximum update depth exceeded" are all written
  * there and nowhere else: the run stays green, the lines scroll past, and the build says
- * nothing. That is how two `useResource` tests passed for weeks through an unbounded render
- * loop -- 42 aborted update cascades in one file, 13/13 passed.
+ * nothing. That is how two tests of the read hook before `useRead` passed for weeks through
+ * an unbounded render loop -- 42 aborted update cascades in one file, 13/13 passed.
  *
  * The message is still forwarded, so a failure shows what React actually said rather than
  * only that it said something.

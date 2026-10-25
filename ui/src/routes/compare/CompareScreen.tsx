@@ -28,6 +28,8 @@ import { LoadedRegion } from "../../shell/LoadedRegion";
 import { NothingSelected } from "../../shell/NothingSelected";
 import { SCORE_SCALE_NOT_SET } from "../../shell/refusalRemedy";
 import { NO_COMPARATOR_LIMIT, UnsetSetting } from "../../shell/UnsetSetting";
+import { isUnsetSetting } from "../../shell/unsetStates";
+import { ReadFailureCard } from "../../shell/ReadFailureCard";
 import { type FocusRegion, useFocusRegion, useFocusWhenLost } from "../../shell/useFocusWhenLost";
 import { useSelection } from "../../shell/SelectionContext";
 
@@ -211,15 +213,23 @@ function TheComparison({
         }
       </LoadedRegion>
 
-      {comparison.read.state === "failed" && drawnRead === null && (
-        <UnsetSetting
-          error={comparison.read.error}
-          title="Nothing to compare"
-          detail={UNSET_DETAIL}
-          onRetry={() => void comparison.reload()}
-          names={{ candidate: (id) => rosterNames.get(id) }}
-        />
-      )}
+      {comparison.read.state === "failed" &&
+        drawnRead === null &&
+        (isUnsetSetting(comparison.read.error) ? (
+          <UnsetSetting
+            error={comparison.read.error}
+            title="Nothing to compare"
+            detail={UNSET_DETAIL}
+          />
+        ) : (
+          <ReadFailureCard
+            what="The comparison"
+            error={comparison.read.error}
+            onRetry={comparison.reload}
+            prominence="screen"
+            names={{ candidate: (id) => rosterNames.get(id) }}
+          />
+        ))}
       {drawnRead !== null && (
         <div className={current ? undefined : "refreshing"} aria-busy={updating}>
           {updating && (

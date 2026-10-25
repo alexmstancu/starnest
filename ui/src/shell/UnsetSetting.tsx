@@ -1,9 +1,7 @@
 import { Link } from "react-router-dom";
 import { ApiError, isApiError } from "../api/ApiError";
-import { type Names, presentError } from "../api/errorPresentation";
-import { ErrorNotice } from "./ErrorNotice";
+import { presentError } from "../api/errorPresentation";
 import { SCORE_SCALE_NOT_SET, remedyFor } from "./refusalRemedy";
-import { isUnsetState } from "./unsetStates";
 
 /**
  * A screen with nothing on it because a setting has not been decided, rather than because
@@ -18,31 +16,23 @@ import { isUnsetState } from "./unsetStates";
  * **Which refusals are such a state is a table, keyed by code** (PL-006, PL-019): the unset
  * score range and comparator limit, a set that scores nothing, and an anchor standing above
  * the score range. `detail` is the screen's own words for the score range, the one every
- * scored screen meets first; the others are worded from their code. Anything else is a fault
- * and goes to `ErrorNotice`.
+ * scored screen meets first; the others are worded from their code. **Only such a refusal is
+ * drawn here**: a screen asks `isUnsetSetting` first, and draws anything else as the failure
+ * it is (`ReadFailureCard`).
  */
 export function UnsetSetting({
   error,
   title,
   detail,
-  onRetry,
-  names,
 }: {
   error: unknown;
   /** What this screen has none of: "No ranking", "Nothing to compare". */
   title: string;
   /** Why the score range matters here, in the reader's terms. */
   detail: string;
-  onRetry?: () => void;
-  names?: Names;
 }) {
-  const presented = presentError(error, names);
-  const details = isApiError(error) ? error.details : undefined;
-  const remedy = remedyFor(presented.code, details);
-
-  if (!isUnsetState(presented.code, details) || remedy === null) {
-    return <ErrorNotice error={error} onRetry={onRetry} names={names} />;
-  }
+  const presented = presentError(error);
+  const remedy = remedyFor(presented.code, isApiError(error) ? error.details : undefined);
 
   return (
     <section className="unset" aria-labelledby="unset-heading">
@@ -52,9 +42,11 @@ export function UnsetSetting({
       <p className="unset__detail">
         {presented.code === SCORE_SCALE_NOT_SET ? detail : presented.message}
       </p>
-      <Link className="button button--primary" to={remedy.path}>
-        {remedy.label}
-      </Link>
+      {remedy && (
+        <Link className="button button--primary" to={remedy.path}>
+          {remedy.label}
+        </Link>
+      )}
     </section>
   );
 }

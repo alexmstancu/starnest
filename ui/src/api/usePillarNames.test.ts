@@ -2,7 +2,7 @@
  * That the catalog's eleven pillars are fetched once, not once per component.
  *
  * Five components need these names -- both Configure panels, the Compare matrix, the ranked
- * table and its drill-down -- and each used to mount its own `useResource`, so opening Rank
+ * table and its drill-down -- and each used to mount its own read, so opening Rank
  * fired two identical `GET /pillars` and opening Configure fired two more. They never change
  * while the app is open, so there is nothing to invalidate and one shared promise is the whole
  * of what a cache needs to be here.
