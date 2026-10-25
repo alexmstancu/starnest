@@ -178,6 +178,16 @@ function effectInRanking(
     };
   }
   if (ranking.state !== "ready") return { sentence: "Reading the ranking…", tone: "unknown" };
+  // **A ranking being read again was computed before the change that asked for it** -- a rule
+  // switched on, an outcome changed -- so it describes the rule as it was (#7). Its effect is
+  // not stated until the new one lands, nor when that re-read failed and the old one is kept.
+  if (ranking.refresh === "running") return { sentence: "Reading the ranking…", tone: "unknown" };
+  if (typeof ranking.refresh === "object") {
+    return {
+      sentence: "The ranking could not be read again, so whom this rule acts on now is not known.",
+      tone: "unknown",
+    };
+  }
 
   const results = ranking.data.candidates;
   const removed = results

@@ -5,6 +5,7 @@ import {
   describeClearance,
   type RuleResult,
   describeCompoundEffect,
+  describeGateEffect,
   describeEffect,
   describeUnreadAnswers,
 } from "./ruleEffect";
@@ -317,6 +318,44 @@ describe("what a compound rule does", () => {
       sentence: "The ranking could not be read, so whom this rule acts on is not known.",
       tone: "unknown",
     });
+  });
+
+  /**
+   * #7. **A ranking being read again was computed before the switch moved**, so it describes
+   * the rule as it was: an enforced gate read "Applies to no country" from the ranking taken
+   * while it was off. Until the new one lands the line says it is being worked out.
+   */
+  it("states no effect from a ranking still being read again, for a compound rule or a gate", () => {
+    const refreshing = (refresh: "running" | { failed: unknown }): Read<Ranking> => {
+      const before = ready([]);
+      return before.state === "ready" ? { ...before, refresh } : before;
+    };
+    const gate = (ranking: Read<Ranking>) =>
+      describeGateEffect(
+        { id: "country.visa_route_exists", cleared_by: [], decided_by_citizenship: false },
+        {
+          enforced: true,
+          outcome: "not_matching",
+          level: "country",
+          ranking,
+          answers: [],
+          held: { state: "held", citizenships: [] },
+        },
+      );
+
+    for (const effect of [
+      describeCompoundEffect(RULE, applied(refreshing("running"))),
+      gate(refreshing("running")),
+    ]) {
+      expect(effect).toEqual({ sentence: "Reading the ranking…", tone: "unknown" });
+    }
+    // Nor from one whose re-read failed: the ranking kept is still the one from before.
+    for (const effect of [
+      describeCompoundEffect(RULE, applied(refreshing({ failed: new Error("no") }))),
+      gate(refreshing({ failed: new Error("no") })),
+    ]) {
+      expect(effect.tone).toBe("unknown");
+    }
   });
 
   it("says a rule that is not applied acts on nobody, in its own verb", () => {
