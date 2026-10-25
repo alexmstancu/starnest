@@ -484,8 +484,9 @@ export interface paths {
          *     **It counts the same pairs the pass would ask about**: only a gate the catalog marks
          *     researchable, and only about the candidates it concerns (`reqs.md` 7.3, Q236). A gate
          *     research cannot answer, a candidate the gate is not about, a gate asked only at another
-         *     level, and one a human has already confirmed are in neither. Nothing is stored and
-         *     nothing is charged.
+         *     level, and one a human has already confirmed are in neither -- unless the request names
+         *     it in `recheck`, in which case those answers are the whole scope, for both. Nothing is
+         *     stored and nothing is charged.
          *
          *     `estimate_basis` names the assumptions behind the euro figure. The output tokens and the
          *     searches per call are ceilings the client already imposes; the input tokens are
@@ -520,6 +521,12 @@ export interface paths {
          *     no cap is set unless `accept_uncapped_spend` says otherwise, and it stops at the cap
          *     keeping every proposal already found. A scope that would ask nothing needs no cap. Every
          *     billed call is written to a spend ledger as it returns, which nothing here reads back.
+         *
+         *     **A re-check** (`recheck`) asks again about answers a person recorded, and only those,
+         *     because a person asked (`reqs.md` 3.7, Q237). It is estimated, capped and ledgered like
+         *     any pass. What it finds is stored as a version **beside** the person's answer, never over
+         *     it: the person's answer keeps applying, unchanged, and `listMatchRuleResults` serves the
+         *     finding as its `pending_proposal` until a person records an answer again.
          */
         post: operations["researchMatchRules"];
         delete?: never;
@@ -1347,7 +1354,31 @@ export interface components {
             citations?: string[];
             /** Format: date-time */
             override_date?: string | null;
+            /**
+             * Format: date-time
+             * @description When this answer was stored, by the server's clock: `retrieval_date` is when its pages were read, and the client may send it. With `reference_period`, what the interface computes an answer's age and whether its period has ended from (D54). An ended period never expires an answer: it applies until a person changes it. Null only on an answer not yet stored.
+             */
+            recorded_at?: string | null;
+            /** @description What a re-check found about an answer a person recorded, stored beside it after it and never over it (`researchMatchRules` with `recheck`). It rules nothing out and changes nothing; taking it is recording its answer through `putMatchRuleResult`, after which it is no longer pending. Null when there is none, and always null on a proposal. */
+            pending_proposal?: components["schemas"]["PendingProposal"] | null;
         };
+        PendingProposal: {
+            /** @enum {string} */
+            match_result: "matching" | "not_matching" | "unknown";
+            reason?: string | null;
+            data_source: string;
+            reference_period?: components["schemas"]["ReferencePeriod"] | null;
+            /** Format: date-time */
+            retrieval_date: string;
+            /** Format: date-time */
+            recorded_at: string;
+            citations: string[];
+        };
+        /** @description Answers a person recorded, to research again because a person asked (D53). Given, these pairs are the whole scope, so `match_rules` and `candidates` must be left out (422 `invalid_request`). A pair with no answer a person recorded is refused with 422 `unknown_scope`, listing each such pair in `details.recheck`. A pair research cannot answer asks nothing, as anywhere else. Null, the default, re-checks nothing. */
+        RecheckScope: {
+            match_rule: string;
+            candidate: string;
+        }[] | null;
         CompoundRule: {
             id: string;
             name: string;
@@ -2478,6 +2509,7 @@ export interface operations {
                     match_rules?: string[] | null;
                     /** @description Null means every candidate at the level. */
                     candidates?: string[] | null;
+                    recheck?: components["schemas"]["RecheckScope"];
                     /**
                      * @description Ignored here; an estimate spends nothing.
                      * @default false
@@ -2523,6 +2555,7 @@ export interface operations {
                     match_rules?: string[] | null;
                     /** @description Null means every candidate at the level. */
                     candidates?: string[] | null;
+                    recheck?: components["schemas"]["RecheckScope"];
                     /** @default false */
                     accept_uncapped_spend?: boolean;
                 };
