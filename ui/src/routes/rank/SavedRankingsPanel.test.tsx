@@ -416,9 +416,11 @@ describe("an opened saved ranking (PL-144)", () => {
   });
 
   it("reports a saved candidate's evidence it could not read, and offers to try again", async () => {
+    // A server that answers and fails: no answer at all is "the server is down" (PL-002),
+    // which the screen reports once, not region by region.
     mockServer.use(
       http.get("/v1/evaluations/:evaluationId/candidates/:candidateId", () =>
-        HttpResponse.error(),
+        HttpResponse.json({ code: "internal_error", message: "broken" }, { status: 500 }),
       ),
     );
     renderShell("/rank");
