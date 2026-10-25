@@ -14,7 +14,7 @@ own rows.
 """
 
 from collections.abc import Iterable, Mapping
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -196,15 +196,15 @@ class CriteriaSet(BaseModel):
         would then be dividing by the wrong total.
         """
         for (pillar, level), weights in _grouped_criterion_weights(self.criteria).items():
-            total = sum(weights, Decimal(0))
-            if total != TOTAL:
+            total = _exact_sum(weights)
+            if not _is_a_hundred(total):
                 raise CriteriaSetError(
                     f"the criteria under {pillar} at level {level} in {self.id} sum to "
                     f"{total}, not {TOTAL}"
                 )
         for level, weights in _grouped_pillar_weights(self.pillar_weights).items():
-            total = sum(weights, Decimal(0))
-            if total != TOTAL:
+            total = _exact_sum(weights)
+            if not _is_a_hundred(total):
                 raise CriteriaSetError(
                     f"the pillar weights at level {level} in {self.id} sum to {total}, not {TOTAL}"
                 )
@@ -503,6 +503,27 @@ def _switched[Rule: str](
     if outcome is not None:
         kept[rule] = outcome
     return rules | {rule}, kept
+
+
+# **Digits past the twentieth place are arithmetic, never a decision** (Q240). Rebalances made
+# before weights were kept to ten places left stored totals like 100.000000000000000000000000004;
+# refusing them made a whole set unreadable, Rank and Configure with it.
+SUM_TOLERANCE = Decimal("1e-20")
+
+
+def _exact_sum(weights: Iterable[Decimal]) -> Decimal:
+    """Every digit kept, as the database sums them.
+
+    At Decimal's default 28 significant digits, stored weights summing to
+    100.000000000000000000000000004 read as 99.99999999999999999999999999.
+    """
+    with localcontext() as context:
+        context.prec = 100
+        return sum(weights, Decimal(0))
+
+
+def _is_a_hundred(total: Decimal) -> bool:
+    return abs(total - TOTAL) < SUM_TOLERANCE
 
 
 def _grouped_criterion_weights(

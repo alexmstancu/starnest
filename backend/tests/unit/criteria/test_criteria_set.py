@@ -97,6 +97,41 @@ def test_pillar_weights_that_do_not_sum_to_one_hundred_are_refused() -> None:
         )
 
 
+# `local_employment`'s pillar weights as stored on 2026-10-25, summing to
+# 100.000000000000000000000000004: every read of the set answered 500 (Q240).
+STORED_ON_2026_10_25 = (
+    ("career", "4.032350533222851647729408149"),
+    ("climate", "7.0"),
+    ("connectivity", "8.0"),
+    ("culture", "1.114876905517656304908558775"),
+    ("economics", "23.55354156498970894310965746"),
+    ("family", "4.0"),
+    ("governance", "1.486502540690208406544745034"),
+    ("health", "21.0"),
+    ("housing", "26.09647210385405368134576799"),
+    ("nature", "1.486502540690208406544745034"),
+    ("safety", "2.229753811035312609817117562"),
+)
+
+
+def test_weights_off_only_past_the_twentieth_place_still_sum_to_one_hundred() -> None:
+    """A residue earlier arithmetic left is not a set that fails to sum (Q240)."""
+    stored = a_set(
+        (criterion("country.rent_centre", "100"),),
+        tuple(pillar_weight(pillar, weight) for pillar, weight in STORED_ON_2026_10_25),
+    )
+
+    assert len(stored.pillar_weights) == len(STORED_ON_2026_10_25)
+
+
+def test_weights_off_by_more_than_arithmetic_are_still_refused() -> None:
+    with pytest.raises(ValueError, match=r"sum to 100\.0000000001, not 100"):
+        a_set(
+            (criterion("country.rent_centre", "100"),),
+            (pillar_weight("housing", "60.0000000001"), pillar_weight("safety", "40")),
+        )
+
+
 def test_each_level_sums_independently_of_the_other() -> None:
     """`reqs.md` 7: weights sum to 100 WITHIN a level. Two levels each summing to 100 is
     correct, and a set that summed them together would total 200 and score nothing."""

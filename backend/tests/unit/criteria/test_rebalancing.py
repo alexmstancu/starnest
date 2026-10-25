@@ -5,7 +5,7 @@ server: it depends on which weights are locked, and it must never leave a pillar
 anything but 100.
 """
 
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 import pytest
 
@@ -70,6 +70,67 @@ def test_the_total_is_exactly_one_hundred_however_it_divides(
 
     assert total(result) == Decimal("100")
     assert result["a"] == Decimal(to), "the moved weight is exactly what was asked for"
+
+
+def exact_total(rebalanced: dict[str, Decimal]) -> Decimal:
+    """The sum as the database computes it: every digit kept, none rounded to a context."""
+    with localcontext() as context:
+        context.prec = 100
+        return sum(rebalanced.values(), Decimal(0))
+
+
+# `local_employment`'s pillar weights when a drag answered 500 on 2026-10-25: written by earlier
+# rebalances at Decimal's 28 significant digits, they sum to 100.000000000000000000000000004 in
+# the database, and Python's own sum of them read 99.99999999999999999999999999.
+STORED_ON_2026_10_25 = [
+    ("career", "4.032350533222851647729408149", False),
+    ("climate", "7.0", True),
+    ("connectivity", "8.0", True),
+    ("culture", "1.114876905517656304908558775", False),
+    ("economics", "23.55354156498970894310965746", False),
+    ("family", "4.0", True),
+    ("governance", "1.486502540690208406544745034", False),
+    ("health", "21.0", False),
+    ("housing", "26.09647210385405368134576799", False),
+    ("nature", "1.486502540690208406544745034", False),
+    ("safety", "2.229753811035312609817117562", False),
+]
+
+
+@pytest.mark.parametrize("to", ["20.5", "21.5", "3", "30", "12.5", "0.5", "44.5"])
+def test_a_rebalance_sums_to_one_hundred_with_every_digit_counted(to: str) -> None:
+    """**Exact as the database sums it, not as a 28-digit context rounds it** (2026-10-25).
+
+    A share kept at Decimal's 28 significant digits, and a residue worked out at the same
+    precision, left totals like 100.000000000000000000000000004 stored, which the set's own
+    check then read as 99.99999999999999999999999999 and refused on every read. Weights are now
+    kept to ten decimal places, so every sum of them is exact wherever it is taken.
+    """
+    weights = [
+        item(pillar, weight, locked=locked) for pillar, weight, locked in STORED_ON_2026_10_25
+    ]
+
+    result = rebalance(weights, moved="health", to=Decimal(to))
+
+    assert exact_total(result) == Decimal(100)
+    assert total(result) == Decimal(100)
+    absorbed = [result[pillar] for pillar, _, locked in STORED_ON_2026_10_25 if not locked]
+    assert all(value.as_tuple().exponent >= -10 for value in absorbed)
+
+
+def test_moves_in_a_row_stay_exact() -> None:
+    """Each move starts from what the last one stored, as dragging does."""
+    weights = {pillar: Decimal(weight) for pillar, weight, _ in STORED_ON_2026_10_25}
+    locked = {pillar for pillar, _, is_locked in STORED_ON_2026_10_25 if is_locked}
+    moves = [("health", "20.5"), ("economics", "30"), ("housing", "12.5"), ("career", "9")]
+    for moved, to in moves:
+        result = rebalance(
+            [WeightedItem(identifier=p, weight=w, locked=p in locked) for p, w in weights.items()],
+            moved=moved,
+            to=Decimal(to),
+        )
+        assert exact_total(result) == Decimal(100), (moved, to)
+        weights = result
 
 
 def test_absorbers_at_zero_share_the_remainder_evenly() -> None:

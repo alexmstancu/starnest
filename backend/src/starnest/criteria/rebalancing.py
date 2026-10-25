@@ -12,10 +12,20 @@ refused with a message naming the locks that are actually in the way -- that mes
 reason this check is here at all, rather than only as a database constraint.
 """
 
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, Decimal, localcontext
 from typing import NamedTuple
 
 TOTAL = Decimal(100)
+
+# **The places every redistributed weight is kept to** (Q240). Ten decimal places of a
+# percentage is beyond anything a score can tell apart, and it is what makes every sum of weights
+# exact: at Decimal's 28 significant digits a share like 26.09647210385405368134576799 cannot
+# be added to its siblings without rounding, so a total the correction believed was 100 was
+# stored as 100.000000000000000000000000004 -- and read back, rounded the other way, as
+# 99.99999999999999999999999999, which the set's own check refused on every read.
+WEIGHT_PLACES = Decimal("1e-10")
+# Enough digits that no sum or share of weights in a pillar is ever rounded on the way.
+EXACT = 60
 
 
 class WeightsAllLockedError(ValueError):
@@ -81,14 +91,19 @@ def rebalance(items: list[WeightedItem], *, moved: str, to: Decimal) -> dict[str
     )
     available = TOTAL - to - held
 
-    absorbed = sum((item.weight for item in absorbers), Decimal(0))
     rebalanced = {moved: to}
-    for item in absorbers:
-        # An absorber at zero stays at zero under proportional sharing, so when every absorber
-        # is at zero there is no proportion to go by and the remainder is split evenly. That is
-        # the only sensible reading of "share this out among things that currently hold none".
-        share = item.weight / absorbed if absorbed > 0 else Decimal(1) / Decimal(len(absorbers))
-        rebalanced[item.identifier] = available * share
+    with localcontext() as context:
+        context.prec = EXACT
+        absorbed = sum((item.weight for item in absorbers), Decimal(0))
+        for item in absorbers:
+            # An absorber at zero stays at zero under proportional sharing, so when every
+            # absorber is at zero there is no proportion to go by and the remainder is split
+            # evenly. That is the only sensible reading of "share this out among things that
+            # currently hold none".
+            share = item.weight / absorbed if absorbed > 0 else Decimal(1) / Decimal(len(absorbers))
+            rebalanced[item.identifier] = (available * share).quantize(
+                WEIGHT_PLACES, rounding=ROUND_HALF_EVEN
+            )
     for item in items:
         rebalanced.setdefault(item.identifier, item.weight)
 
@@ -165,13 +180,17 @@ def _corrected_for_rounding(
     """Put any residue on the largest absorber.
 
     Proportional division of 100 rarely lands exactly -- three equal siblings give
-    33.333... each. Full precision is kept (reqs.md 5.1 rounds only at display), but the
-    remainder still has to go somewhere for the sum to be exactly 100, and the largest
+    33.333... each. Each share is kept to `WEIGHT_PLACES` (reqs.md 5.1 still rounds for display
+    only), and the remainder has to go somewhere for the sum to be exactly 100: the largest
     absorber is where it is least visible as a proportion of itself.
     """
-    residue = TOTAL - sum(rebalanced.values(), Decimal(0))
-    if residue == 0 or not absorbers:
-        return rebalanced
-    largest = max(absorbers, key=lambda item: rebalanced[item.identifier])
-    rebalanced[largest.identifier] += residue
+    # Worked out exactly, never at the default 28 digits: the residue of shares kept to ten
+    # places is itself a multiple of a ten-billionth, and a rounded sum would misplace it.
+    with localcontext() as context:
+        context.prec = EXACT
+        residue = TOTAL - sum(rebalanced.values(), Decimal(0))
+        if residue == 0 or not absorbers:
+            return rebalanced
+        largest = max(absorbers, key=lambda item: rebalanced[item.identifier])
+        rebalanced[largest.identifier] += residue
     return rebalanced
