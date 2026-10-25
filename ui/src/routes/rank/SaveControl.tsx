@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { describeSaved } from "../../format/savedRanking";
 import { ErrorNotice } from "../../shell/ErrorNotice";
+import { useSelection } from "../../shell/SelectionContext";
 import { useSavedRankings } from "./useSavedRankings";
 
 /**
@@ -12,26 +14,64 @@ import { useSavedRankings } from "./useSavedRankings";
  * **Two steps, because the note is the reason it was kept.** The design shows one button
  * until it is pressed, then the field and the confirmation -- so the common case is one click
  * and the field never sits there empty inviting somebody to wonder what it is for.
+ *
+ * **Drawn only once there is a ranking** (PL-146), and held with a reason when that ranking
+ * has nobody in it. Held controls use `aria-disabled` rather than `disabled`, so the keyboard
+ * stays on a button whose save is in flight instead of falling to the page.
  */
 export function SaveControl({
   criteriaSetId,
   levelId,
+  ranked,
 }: {
   criteriaSetId: string | null;
   levelId: string | null;
+  /** How many candidates the ranking on screen holds. */
+  ranked: number;
 }) {
   const saved = useSavedRankings(criteriaSetId, levelId);
+  const { criteriaSets } = useSelection();
   const [asking, setAsking] = useState(false);
+  const offer = useRef<HTMLButtonElement>(null);
+  const giveFocusBack = useRef(false);
+  const nothingToSave = ranked === 0;
+  const held = nothingToSave || !saved.canSave;
 
-  async function keep() {
-    await saved.save();
+  // Back onto "Save this ranking" once the field closes, saved or called off -- the button
+  // that had the keyboard is gone with the field.
+  useEffect(() => {
+    if (asking || !giveFocusBack.current) return;
+    giveFocusBack.current = false;
+    offer.current?.focus();
+  }, [asking]);
+
+  function close() {
+    giveFocusBack.current = true;
+    saved.clearError();
     setAsking(false);
   }
+
+  async function keep() {
+    // A failure keeps the field and the note, so nothing is retyped (PL-146).
+    if (await saved.save()) close();
+  }
+
+  function onKey(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Escape" && !saved.saving) close();
+  }
+
+  const sets = new Map(criteriaSets.map((set) => [set.id, set.name]));
 
   return (
     <div className="keep">
       {asking ? (
-        <div className="keep__ask">
+        <form
+          className="keep__ask"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void keep();
+          }}
+        >
           <label className="visually-hidden" htmlFor="keep-note">
             Why this one is worth keeping
           </label>
@@ -42,42 +82,48 @@ export function SaveControl({
             value={saved.note}
             autoFocus
             onChange={(event) => saved.setNote(event.target.value)}
+            onKeyDown={onKey}
           />
           <button
-            type="button"
+            type="submit"
             className="button button--primary"
-            disabled={!saved.canSave}
-            onClick={() => void keep()}
+            aria-disabled={!saved.canSave}
           >
             {saved.saving ? "Saving…" : "Save"}
           </button>
           <button
             type="button"
             className="button"
-            onClick={() => setAsking(false)}
+            aria-disabled={saved.saving}
+            onClick={saved.saving ? undefined : close}
           >
             Cancel
           </button>
-        </div>
+        </form>
       ) : (
-        <>
-          <button
-            type="button"
-            className="button button--primary"
-            disabled={!saved.canSave}
-            title="Keep this ranking and the weights behind it"
-            onClick={() => setAsking(true)}
-          >
-            Save this ranking
-          </button>
-          <span className="keep__note-line">
-            Nothing is kept until you save it.
-          </span>
-        </>
+        <button
+          ref={offer}
+          type="button"
+          className="button button--primary"
+          aria-disabled={held}
+          title="Keep this ranking and the weights behind it"
+          onClick={held ? undefined : () => setAsking(true)}
+        >
+          Save this ranking
+        </button>
       )}
+      <span className="keep__note-line">
+        {asking
+          ? "Weights, locks and every value behind the scores are frozen with it."
+          : nothingToSave
+            ? "Nothing to save: no candidate was ranked."
+            : saved.kept !== null
+              ? `Saved as “${describeSaved(saved.kept, sets)}”.`
+              : "Nothing is kept until you save it."}
+      </span>
 
       {saved.error != null && (
-        <ErrorNotice error={saved.error} onRetry={saved.reload} />
+        <ErrorNotice error={saved.error} onRetry={() => void keep()} />
       )}
     </div>
   );

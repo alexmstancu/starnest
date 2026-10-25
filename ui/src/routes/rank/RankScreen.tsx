@@ -142,7 +142,13 @@ function TheRanking({
           {/* **In the header, beside what identifies the ranking.** Saving is an act about
               the whole ranking rather than about anything under the table, and a control for
               it below 32 rows is a control nobody finds. */}
-          <SaveControl criteriaSetId={criteriaSetId} levelId={levelId} />
+          {resource.status === "ready" && (
+            <SaveControl
+              criteriaSetId={criteriaSetId}
+              levelId={levelId}
+              ranked={resource.data.candidates.length}
+            />
+          )}
         </div>
       </header>
 

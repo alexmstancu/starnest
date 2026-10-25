@@ -40,7 +40,7 @@ async function armedSave(): Promise<HTMLElement> {
   await waitFor(() =>
     expect(
       screen.getByRole("button", { name: /save this ranking/i }),
-    ).toBeEnabled(),
+    ).not.toHaveAttribute("aria-disabled", "true"),
   );
   return screen.getByRole("button", { name: /save this ranking/i });
 }
@@ -103,8 +103,11 @@ describe("saved rankings", () => {
     expect(await list.findByText("Default, Country")).toBeInTheDocument();
   });
 
-  /** The field goes away again, so the next save starts from one button as the first did. */
-  it("puts the control back once it has saved", async () => {
+  /**
+   * The field goes away again, so the next save starts from one button as the first did -- and
+   * the line under it says what was kept rather than that nothing is (PL-146).
+   */
+  it("puts the control back once it has saved, and says what it saved", async () => {
     renderShell("/rank");
     await saveOne("a reason");
 
@@ -112,9 +115,9 @@ describe("saved rankings", () => {
     await waitFor(() =>
       expect(screen.queryByLabelText(/worth keeping/i)).toBeNull(),
     );
-    expect(
-      await screen.findByText(/nothing is kept until you save it/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Saved as “a reason”.")).toBeInTheDocument();
+    expect(screen.queryByText(/nothing is kept/i)).toBeNull();
+    expect(screen.getByRole("button", { name: /save this ranking/i })).toHaveFocus();
   });
 
   it("asks for nothing when the save is cancelled", async () => {
@@ -209,14 +212,15 @@ describe("saved rankings", () => {
       ),
     );
 
-    const note = screen.getByLabelText(/worth keeping/i);
-    await userEvent.type(note, "worth keeping");
+    await userEvent.type(screen.getByLabelText(/worth keeping/i), "worth keeping");
     await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /top of the score range is set/i,
     );
-    expect(note).toHaveValue("worth keeping");
+    // **Re-queried, never the node typed into** (NEW-56): the box has to still be on the page,
+    // and a detached input would keep its value either way.
+    expect(screen.getByLabelText(/worth keeping/i)).toHaveValue("worth keeping");
   });
 
   it("reports a failure to list what has been saved", async () => {
@@ -601,5 +605,136 @@ describe("the saved rankings card (PL-145)", () => {
     expect(await list.findByText(/had already been deleted/i)).toBeInTheDocument();
     expect(list.queryByRole("link", { name: /deleted elsewhere/ })).toBeNull();
     expect(list.queryByRole("alert")).toBeNull();
+  });
+});
+
+/** A save the test lets through when it chooses, counting every one the screen sent. */
+function heldSave() {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const sent = { count: 0 };
+  mockServer.use(
+    http.post("/v1/evaluations", async () => {
+      sent.count += 1;
+      await gate;
+      return HttpResponse.json(
+        {
+          id: 9,
+          criteria_set: "default",
+          level: "country",
+          computed_at: "2026-09-21T09:00:00Z",
+          score_scale_max: 100,
+          note: "held",
+          leader: { candidate: "country.portugal", name: "Portugal" },
+        },
+        { status: 201 },
+      );
+    }),
+  );
+  return { release, sent };
+}
+
+describe("the save control (PL-146)", () => {
+  it("is not offered until there is a ranking to save", async () => {
+    mockServer.use(
+      http.get("/v1/rankings", () =>
+        HttpResponse.json({ code: "score_scale_not_set", message: "not set" }, { status: 409 }),
+      ),
+    );
+    renderShell("/rank");
+
+    await screen.findByRole("region", { name: "No ranking" });
+    expect(screen.queryByRole("button", { name: /save this ranking/i })).toBeNull();
+  });
+
+  it("is held, and says why, when nothing was ranked", async () => {
+    mockServer.use(
+      http.get("/v1/rankings", () =>
+        HttpResponse.json({
+          criteria_set: "default",
+          level: "country",
+          computed_at: "2026-08-30T09:15:00Z",
+          score_scale_max: 100,
+          candidates: [],
+        }),
+      ),
+    );
+    renderShell("/rank");
+
+    const save = await screen.findByRole("button", { name: /save this ranking/i });
+    expect(save).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByText(/nothing to save/i)).toBeInTheDocument();
+    await userEvent.click(save);
+    expect(screen.queryByLabelText(/worth keeping/i)).toBeNull();
+  });
+
+  it("says what will be frozen with it", async () => {
+    renderShell("/rank");
+    await userEvent.click(await armedSave());
+
+    expect(
+      screen.getByText(/weights, locks and every value behind the scores are frozen with it/i),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the keyboard while saving, sends one save per press, and holds Cancel", async () => {
+    const { release, sent } = heldSave();
+    renderShell("/rank");
+    await userEvent.click(await armedSave());
+
+    const save = screen.getByRole("button", { name: /^save$/i });
+    await userEvent.click(save);
+    const saving = await screen.findByRole("button", { name: /saving/i });
+    expect(saving).toHaveFocus();
+    expect(saving).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(saving);
+    const cancel = screen.getByRole("button", { name: /cancel/i });
+    expect(cancel).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(cancel);
+    expect(screen.getByLabelText(/worth keeping/i)).toBeInTheDocument();
+    expect(sent.count).toBe(1);
+
+    release();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /save this ranking/i })).toHaveFocus(),
+    );
+  });
+
+  it("saves on Enter", async () => {
+    renderShell("/rank");
+    await userEvent.click(await armedSave());
+
+    await userEvent.type(screen.getByLabelText(/worth keeping/i), "by keyboard{Enter}");
+
+    expect(await within(await savedList()).findByText("by keyboard")).toBeInTheDocument();
+  });
+
+  it("cancels on Escape, and gives the keyboard back to the button", async () => {
+    renderShell("/rank");
+    await userEvent.click(await armedSave());
+
+    await userEvent.type(screen.getByLabelText(/worth keeping/i), "never mind{Escape}");
+
+    expect(screen.queryByLabelText(/worth keeping/i)).toBeNull();
+    expect(screen.getByRole("button", { name: /save this ranking/i })).toHaveFocus();
+    expect(await within(await savedList()).findByText(/none yet/i)).toBeInTheDocument();
+  });
+
+  it("tries the save again from its failure, rather than only dismissing it", async () => {
+    mockServer.use(http.post("/v1/evaluations", () => HttpResponse.error(), { once: true }));
+    renderShell("/rank");
+    await userEvent.click(await armedSave());
+    await userEvent.type(screen.getByLabelText(/worth keeping/i), "second time lucky");
+    await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    const failure = await screen.findByRole("alert");
+    await userEvent.click(within(failure).getByRole("button", { name: /try again/i }));
+
+    expect(
+      await within(await savedList()).findByText("second time lucky"),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Saved as “second time lucky”.")).toBeInTheDocument();
   });
 });
