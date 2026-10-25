@@ -349,15 +349,16 @@ spend cap by the page, because the server's meter starts again with every reques
 shows after the press is new, and three things are built and shipping with no design to follow:
 
 - **Progress.** A status line, always on the page and empty until a pass starts, that names the
-  gate being asked ("gate 2 of 5") with the calls so far and the spend beside the estimate's "at
-  most" ceiling. Estimate, Research and every Confirm are held -- `aria-disabled`, focus kept --
+  gate being asked and the level the pass researches ("Asking UK Skilled Worker route at the
+  Country level"), with the questions asked so far beside the estimate's count ("1 of 3
+  questions") and the spend beside its "at most" ceiling (PL-151, PL-159). Estimate, Research and every Confirm are held -- `aria-disabled`, focus kept --
   while it runs.
 - **Stop.** "Stop after this question", beside the held Research button while a pass runs. It
   takes effect once the request in flight answers, because the server finishes a call it has
   begun and keeps what it found, and it holds as "Stopping after this question…" once pressed,
   as the run's Stop does.
 - **Outcome.** How the last pass ended, in the same line: finished; stopped at the spend cap,
-  with the cap, the spend and the gates not asked; stopped by you; refused, which spent nothing;
+  with the cap, the spend and the questions asked; stopped by you; refused, which spent nothing;
   failed, whose spend is not known; or not started, because the cap or the gates could not be
   read. Every end the reader did not ask for takes the amber warning band, and one that came
   from an error also shows its error notice. The pass spends the estimate that allowed it, so

@@ -16,7 +16,7 @@
 
 import { isApiError } from "../../../api/ApiError";
 import type { MatchRule } from "../../../api/endpoints";
-import { formatMoney } from "../../../format/display";
+import { formatIdentifier, formatMoney } from "../../../format/display";
 
 /** A gate as a pass asks it: its id goes in the request, its name on the screen. */
 export type Gate = Pick<MatchRule, "id" | "name">;
@@ -49,8 +49,19 @@ export interface PassTally {
 }
 
 export interface Pass {
+  /**
+   * The level the pass researches (PL-151). Said in every sentence, because the screen may have
+   * moved to another level while the pass goes on with the one its estimate priced.
+   */
+  level: string;
   /** Every gate at the level, in the order they are asked. */
   gates: readonly Gate[];
+  /**
+   * The questions the estimate counted: gate-and-candidate pairs, never gates (PL-159). A
+   * request asks one gate, and the server says how many questions that was in its `calls`, so
+   * progress is the calls beside this -- the same unit as the estimate the household agreed to.
+   */
+  questionsTotal: number;
   /** `run_spend_cap_eur` as the pass read it at its start. Null when none is set. */
   capEur: number | null;
   /** The estimate's ceiling, which the spend is read beside: "at most" this. */
@@ -82,7 +93,9 @@ const NOTHING_YET: PassTally = {
 };
 
 export function beginPass(scope: {
+  level: string;
   gates: readonly Gate[];
+  questionsTotal: number;
   capEur: number | null;
   ceilingEur: number;
 }): Pass {
@@ -144,10 +157,13 @@ export function failedOn(pass: Pass, failure: unknown): PassEnd {
 }
 
 /** The spend cap or the gates could not be read, so nothing was asked. */
-export function couldNotStart(ceilingEur: number, failure: unknown): PassEnd {
+export function couldNotStart(
+  scope: { level: string; questionsTotal: number; ceilingEur: number },
+  failure: unknown,
+): PassEnd {
   return {
     kind: "unread",
-    pass: beginPass({ gates: [], capEur: null, ceilingEur }),
+    pass: beginPass({ ...scope, gates: [], capEur: null }),
     failure,
   };
 }
@@ -177,59 +193,47 @@ export interface Asking {
   gate: Gate;
 }
 
-/** How far a running pass has got: the gate in flight, and the spend beside the estimate. */
+/** How far a running pass has got: the gate in flight, and the questions and spend so far. */
 export function describeProgress({ pass, gate }: Asking, stopAsked: boolean): string {
-  const { tally } = pass;
-  const position = `gate ${tally.asked + 1} of ${pass.gates.length}`;
+  const at = atLevel(pass);
   const doing = stopAsked
-    ? `Stopping once ${position} is answered`
-    : `Asking ${position}`;
+    ? `Stopping once ${gate.name} is answered ${at}`
+    : `Asking ${gate.name} ${at}`;
   return (
-    `${doing}: ${gate.name}. So far ${callCount(tally.calls)}, ` +
-    `${euros(spentEur(tally))} spent of at most ${euros(pass.ceilingEur)}.`
+    `${doing}. So far ${questionsOf(pass)}, ` +
+    `${euros(spentEur(pass.tally))} spent of at most ${euros(pass.ceilingEur)}.`
   );
 }
 
 /**
  * What the last pass did and why it ended (UI-14). **A pass that stopped part way must not look
  * finished**: the spend is a fact and the estimate a ceiling, so the two are said together, and
- * every early end says how many gates it left unasked.
+ * the questions asked are said beside the questions the estimate counted.
  */
 export function describeEnd(end: PassEnd): string {
   const { pass } = end;
-  const { tally } = pass;
-  const total = pass.gates.length;
+  const the = `The last pass ${atLevel(pass)}`;
   const did = whatItDid(pass);
-  const notAsked = total - tally.asked;
-  const atGate = `gate ${tally.asked + 1} of ${total}`;
+  const atGate = pass.gates[pass.tally.asked]?.name ?? "its last gate";
   switch (end.kind) {
     case "finished":
-      return total === 0
-        ? "The last pass found no gate to ask, so it made no calls and spent nothing."
-        : `The last pass asked every gate, ${total} of ${total}: it ${did}.`;
+      return pass.gates.length === 0
+        ? `${the} found no gate to ask, so it made no calls and spent nothing.`
+        : `${the} asked every gate: it ${did}.`;
     case "cap":
-      return (
-        `The last pass stopped at the spend cap${capOf(pass)}: ` +
-        `it ${did}${leftUnasked(notAsked)}.`
-      );
+      return `${the} stopped at the spend cap${capOf(pass)}: it ${did}.`;
     case "stopped":
-      return (
-        `You stopped the last pass after ${tally.asked} of ${total} gates: ` +
-        `it ${did}${leftUnasked(notAsked)}.`
-      );
+      return `You stopped the last pass ${atLevel(pass)}: it ${did}.`;
     case "refused":
-      return (
-        `The last pass was refused at ${atGate}, which spent nothing: ` +
-        `it ${did}${leftUnasked(notAsked)}.`
-      );
+      return `${the} was refused at ${atGate}, which spent nothing: it ${did}.`;
     case "failed":
       return (
-        `The last pass failed at ${atGate}, and what that request spent is not known: ` +
-        `before it, the pass ${did}${leftAfterIt(notAsked - 1)}.`
+        `${the} failed at ${atGate}, and what that request spent is not known: ` +
+        `before it, the pass ${did}.`
       );
     case "unread":
       return (
-        "The last pass did not start, because the spend cap and the gates could not be " +
+        `${the} did not start, because the spend cap and the gates could not be ` +
         "read: it asked nothing and spent nothing."
       );
   }
@@ -240,36 +244,30 @@ export function endIsWarning(end: PassEnd): boolean {
   return end.kind !== "finished" && end.kind !== "stopped";
 }
 
+/** The level as the sidebar names it, so a pass reads as the level it belongs to. */
+function atLevel(pass: Pass): string {
+  return `at the ${formatIdentifier(pass.level)} level`;
+}
+
 function whatItDid(pass: Pass): string {
   const { tally } = pass;
   if (tally.calls === 0 && tally.spentMicroEur === 0) {
-    return "made no calls and spent nothing";
+    return `asked ${questionsOf(pass)} and spent nothing`;
   }
   return (
-    `made ${callCount(tally.calls)} and spent ${euros(spentEur(tally))} ` +
+    `asked ${questionsOf(pass)} and spent ${euros(spentEur(tally))} ` +
     `of at most ${euros(pass.ceilingEur)}`
   );
 }
 
+/** "2 of 3 questions": what the server says it asked, beside what the estimate counted. */
+function questionsOf(pass: Pass): string {
+  const total = pass.questionsTotal;
+  return `${pass.tally.calls} of ${total} ${total === 1 ? "question" : "questions"}`;
+}
+
 function capOf(pass: Pass): string {
   return pass.capEur === null ? "" : ` of ${euros(pass.capEur)}`;
-}
-
-function leftUnasked(gates: number): string {
-  return `, and ${gateCount(gates)} ${gates === 1 ? "was" : "were"} not asked`;
-}
-
-function leftAfterIt(gates: number): string {
-  if (gates === 0) return "";
-  return `, and the ${gateCount(gates)} after it ${gates === 1 ? "was" : "were"} not asked`;
-}
-
-function callCount(calls: number): string {
-  return calls === 1 ? "1 call" : `${calls} calls`;
-}
-
-function gateCount(gates: number): string {
-  return gates === 1 ? "1 gate" : `${gates} gates`;
 }
 
 function euros(amount: number): string {

@@ -1915,7 +1915,7 @@ describe("a gate's sentence once its answers change", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Estimate the research" }));
-    await screen.findByText(/3 gate answers to research/i);
+    await screen.findByText(/3 questions to research/i);
     await user.click(screen.getByRole("button", { name: "Research the gates" }));
 
     await waitFor(() =>
@@ -1956,7 +1956,7 @@ describe("a gate's sentence once its answers change", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "Estimate the research" }));
-    await screen.findByText(/3 gate answers to research/i);
+    await screen.findByText(/3 questions to research/i);
     await user.click(screen.getByRole("button", { name: "Research the gates" }));
 
     expect(
@@ -2004,7 +2004,7 @@ describe("a gate's sentence once its answers change", () => {
     await settled();
     const gate = await visaGate();
     await user.click(screen.getByRole("button", { name: "Estimate the research" }));
-    await screen.findByText(/3 gate answers to research/i);
+    await screen.findByText(/3 questions to research/i);
     const before = reads.count;
 
     await user.click(screen.getByRole("button", { name: "Research the gates" }));
@@ -2074,11 +2074,46 @@ describe("a research pass while the screen changes around it", () => {
     await userEvent.click(
       theProposals().getByRole("button", { name: "Estimate the research" }),
     );
-    await theProposals().findByText(/3 gate answers to research/i);
+    await theProposals().findByText(/3 questions to research/i);
     await userEvent.click(
       theProposals().getByRole("button", { name: "Research the gates" }),
     );
   }
+
+  /**
+   * PL-151. **A pass names the level it researches**, whatever level the screen shows now, and
+   * goes on asking only about the level its estimate priced. The City panel holds its Estimate
+   * while the Country pass runs, and lists no Country proposal.
+   */
+  it("says Country, and asks only about Country, after the level is switched to City mid-pass", async () => {
+    const research = watchResearch({ holdAt: 2 });
+    renderShell("/configure");
+    await settled();
+    await startAPass();
+    await waitFor(() => expect(research.sent).toHaveLength(2));
+
+    await userEvent.click(await screen.findByRole("button", { name: "City" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "City" })).toHaveAttribute("aria-pressed", "true"),
+    );
+
+    expect(theProposals().getByRole("status")).toHaveTextContent(
+      "Asking Free movement applies at the Country level",
+    );
+    expect(
+      theProposals().getByRole("button", { name: "Estimate the research" }),
+    ).toHaveAttribute("aria-disabled", "true");
+    research.release();
+    await waitFor(() =>
+      expect(theProposals().getByRole("status")).toHaveTextContent(
+        "The last pass at the Country level asked every gate",
+      ),
+    );
+    expect(research.sent.map((body) => body.level)).toEqual(
+      COUNTRY_GATES.map(() => "country"),
+    );
+    expect(await theProposals().findByText(/no proposal is waiting/i)).toBeInTheDocument();
+  });
 
   it("goes on asking when the criteria set is switched mid-pass", async () => {
     const research = watchResearch({ holdAt: 2 });
@@ -2091,12 +2126,12 @@ describe("a research pass while the screen changes around it", () => {
 
     // Another panel, drawn for another set, showing the pass the screen still holds.
     expect(theProposals().getByRole("status")).toHaveTextContent(
-      "Asking gate 2 of 5",
+      "Asking Free movement applies at the Country level",
     );
     research.release();
     await waitFor(() =>
       expect(theProposals().getByRole("status")).toHaveTextContent(
-        "The last pass asked every gate, 5 of 5",
+        "The last pass at the Country level asked every gate",
       ),
     );
     expect(gatesAsked(research)).toEqual(COUNTRY_GATES.map((gate) => [gate]));
@@ -2132,7 +2167,7 @@ describe("a research pass while the screen changes around it", () => {
 
     await waitFor(() =>
       expect(theProposals().getByRole("status")).toHaveTextContent(
-        /You stopped the last pass after 2 of 5 gates/,
+        /You stopped the last pass at the Country level/,
       ),
     );
     expect(research.sent).toHaveLength(2);

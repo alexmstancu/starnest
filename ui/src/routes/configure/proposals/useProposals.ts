@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   fetchMatchRuleResults,
   planMatchRuleResearch,
@@ -7,6 +7,7 @@ import {
   type ResearchPlan,
 } from "../../../api/endpoints";
 import type { Read } from "../../../api/read";
+import { useCandidateRoster } from "../../../api/useCandidateRoster";
 import { useRead } from "../../../api/useRead";
 
 /**
@@ -66,6 +67,8 @@ export function useProposals(
    * the proposals are read again with everything else that describes them (UI-12).
    */
   answersFreshness: number,
+  /** The panel's level: only answers about its candidates are listed and counted (PL-151). */
+  level: string,
 ): Proposals {
   const fetcher = useCallback(
     async (signal: AbortSignal) => fetchMatchRuleResults({ signal }),
@@ -89,7 +92,11 @@ export function useProposals(
   // from the moment the answers are written again they are outdated: `useRead` marks the read
   // `refresh: "running"` in the same render the freshness moves, before the re-read is even
   // sent. A re-read that failed leaves them outdated too.
-  const answers = read.state === "ready" ? read.data.items : [];
+  const roster = useCandidateRoster();
+  const answers = useMemo(
+    () => atLevel(read.state === "ready" ? read.data.items : [], roster, level),
+    [read, roster, level],
+  );
   const stale = read.state === "ready" && read.refresh !== "idle";
 
   function attempt(act: Proposals["busy"], work: () => Promise<unknown>): void {
@@ -155,3 +162,20 @@ export function useProposals(
 }
 
 const PENDING: Read<never> = { state: "pending" };
+
+/**
+ * The answers about candidates at this level (PL-151). The answers are read for every level,
+ * and a candidate's level is the roster's to say -- never read off its id. **One the roster does
+ * not place is kept**, so a roster that failed to load hides nothing.
+ */
+function atLevel(
+  answers: readonly MatchRuleResult[],
+  roster: readonly { id: string; level: string }[],
+  level: string,
+): MatchRuleResult[] {
+  const levelOf = new Map(roster.map((candidate) => [candidate.id, candidate.level]));
+  return answers.filter((answer) => {
+    const placed = levelOf.get(answer.candidate);
+    return placed === undefined || placed === level;
+  });
+}

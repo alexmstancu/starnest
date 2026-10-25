@@ -51,10 +51,26 @@ function answer(
 }
 
 function aPass(
-  scope: Partial<{ gates: Gate[]; capEur: number | null; ceilingEur: number }> = {},
+  scope: Partial<{
+    level: string;
+    gates: Gate[];
+    questionsTotal: number;
+    capEur: number | null;
+    ceilingEur: number;
+  }> = {},
 ): Pass {
-  return beginPass({ gates: GATES, capEur: null, ceilingEur: 0.12, ...scope });
+  return beginPass({
+    level: "country",
+    gates: GATES,
+    questionsTotal: 3,
+    capEur: null,
+    ceilingEur: 0.12,
+    ...scope,
+  });
 }
+
+/** What a pass reads at its start and could not: the level and the estimate, no gates. */
+const UNREAD_SCOPE = { level: "country", questionsTotal: 3, ceilingEur: 0.12 };
 
 /** A pass that has had these answers, one gate each, in order. */
 function after(pass: Pass, ...answers: ResearchAnswer[]): Pass {
@@ -267,7 +283,7 @@ describe("stopping and failing", () => {
   });
 
   it("ends before asking anything when the cap or the gates could not be read", () => {
-    const end = couldNotStart(0.12, UNREACHABLE);
+    const end = couldNotStart(UNREAD_SCOPE, UNREACHABLE);
 
     expect(end).toMatchObject({ kind: "unread", failure: UNREACHABLE });
     expect(end.pass.gates).toEqual([]);
@@ -312,7 +328,7 @@ describe("stopping and failing", () => {
 
   it("does not read them again when nothing was asked", () => {
     expect(shouldReadAnswersAgain(failedOn(aPass(), REFUSED))).toBe(false);
-    expect(shouldReadAnswersAgain(couldNotStart(0.12, UNREACHABLE))).toBe(false);
+    expect(shouldReadAnswersAgain(couldNotStart(UNREAD_SCOPE, UNREACHABLE))).toBe(false);
   });
 
   it("reads them again after a failure, which may follow a write it never reported", () => {
@@ -327,17 +343,29 @@ describe("what the screen says while a pass runs", () => {
     );
   });
 
-  it("names the gate being asked, how far through the pass it is, and the spend beside the estimate", () => {
+  it("names the gate being asked, the level, the questions against the estimate's, and the spend", () => {
     const pass = after(aPass(), answer(0.04));
 
     expect(describeProgress({ pass, gate: FREE_MOVEMENT }, false)).toBe(
-      "Asking gate 2 of 3: Free movement applies. So far 1 call, €0.04 spent of at most €0.12.",
+      "Asking Free movement applies at the Country level. So far 1 of 3 questions, €0.04 spent of at most €0.12.",
     );
   });
 
   it("counts from nothing at the first gate", () => {
     expect(describeProgress({ pass: aPass(), gate: VISA }, false)).toBe(
-      "Asking gate 1 of 3: A visa route exists. So far 0 calls, €0.00 spent of at most €0.12.",
+      "Asking A visa route exists at the Country level. So far 0 of 3 questions, €0.00 spent of at most €0.12.",
+    );
+  });
+
+  /**
+   * PL-159. **Questions, as the estimate counts them**, not gates: five gates of which three can
+   * be researched read "gate 4 of 5" against an estimate of three questions.
+   */
+  it("counts questions as the estimate does, however many gates the level has", () => {
+    const pass = after(aPass({ questionsTotal: 1 }), answer(0));
+
+    expect(describeProgress({ pass, gate: FREE_MOVEMENT }, false)).toBe(
+      "Asking Free movement applies at the Country level. So far 0 of 1 question, €0.00 spent of at most €0.12.",
     );
   });
 
@@ -345,7 +373,17 @@ describe("what the screen says while a pass runs", () => {
     const pass = after(aPass(), answer(0.04), answer(0.04, { calls: 2 }));
 
     expect(describeProgress({ pass, gate: BY_HAND }, true)).toBe(
-      "Stopping once gate 3 of 3 is answered: Not excluded by hand. So far 3 calls, €0.08 spent of at most €0.12.",
+      "Stopping once Not excluded by hand is answered at the Country level. So far 3 of 3 questions, €0.08 spent of at most €0.12.",
+    );
+  });
+
+  /** PL-151. The level the pass researches, whatever level the screen shows now. */
+  it("names the level the pass researches", () => {
+    const pass = aPass({ level: "city" });
+
+    expect(describeProgress({ pass, gate: VISA }, false)).toMatch(/^Asking A visa route exists at the City level\./);
+    expect(describeEnd(endOf(after(pass, answer(0), answer(0), answer(0))))).toMatch(
+      /^The last pass at the City level /,
     );
   });
 });
@@ -355,7 +393,7 @@ describe("what the screen says once a pass has ended", () => {
     const end = endOf(after(aPass(), answer(0.04), answer(0), answer(0.08, { calls: 2 })));
 
     expect(describeEnd(end)).toBe(
-      "The last pass asked every gate, 3 of 3: it made 3 calls and spent €0.12 of at most €0.12.",
+      "The last pass at the Country level asked every gate: it asked 3 of 3 questions and spent €0.12 of at most €0.12.",
     );
     expect(endIsWarning(end)).toBe(false);
   });
@@ -364,35 +402,25 @@ describe("what the screen says once a pass has ended", () => {
     const end = endOf(after(aPass(), answer(0), answer(0), answer(0)));
 
     expect(describeEnd(end)).toBe(
-      "The last pass asked every gate, 3 of 3: it made no calls and spent nothing.",
+      "The last pass at the Country level asked every gate: it asked 0 of 3 questions and spent nothing.",
     );
   });
 
   it("says when there was no gate to ask", () => {
     expect(describeEnd(endOf(aPass({ gates: [] })))).toBe(
-      "The last pass found no gate to ask, so it made no calls and spent nothing.",
+      "The last pass at the Country level found no gate to ask, so it made no calls and spent nothing.",
     );
   });
 
-  it("says a pass stopped at the cap, with the cap, the spend and the gates not asked", () => {
+  it("says a pass stopped at the cap, with the cap, the spend and the questions asked", () => {
     const end = endOf(
       after(aPass({ capEur: 0.08 }), answer(0.04), answer(0.04)),
     );
 
     expect(describeEnd(end)).toBe(
-      "The last pass stopped at the spend cap of €0.08: it made 2 calls and spent €0.08 of at most €0.12, and 1 gate was not asked.",
+      "The last pass at the Country level stopped at the spend cap of €0.08: it asked 2 of 3 questions and spent €0.08 of at most €0.12.",
     );
     expect(endIsWarning(end)).toBe(true);
-  });
-
-  it("counts the gate the server halted among those not asked", () => {
-    const end = endOf(
-      after(aPass({ capEur: 0 }), answer(0, { halted_on_spend_cap: true })),
-    );
-
-    expect(describeEnd(end)).toBe(
-      "The last pass stopped at the spend cap of €0.00: it made no calls and spent nothing, and 3 gates were not asked.",
-    );
   });
 
   it("says the server stopped it at the cap even when the page had read none", () => {
@@ -401,15 +429,15 @@ describe("what the screen says once a pass has ended", () => {
     );
 
     expect(describeEnd(end)).toBe(
-      "The last pass stopped at the spend cap: it made 1 call and spent €0.04 of at most €0.12, and 3 gates were not asked.",
+      "The last pass at the Country level stopped at the spend cap: it asked 1 of 3 questions and spent €0.04 of at most €0.12.",
     );
   });
 
-  it("says the reader stopped it, after how many gates, and what was left", () => {
+  it("says the reader stopped it, and how many questions it asked", () => {
     const end = endOf(after(aPass(), answer(0.04)), true);
 
     expect(describeEnd(end)).toBe(
-      "You stopped the last pass after 1 of 3 gates: it made 1 call and spent €0.04 of at most €0.12, and 2 gates were not asked.",
+      "You stopped the last pass at the Country level: it asked 1 of 3 questions and spent €0.04 of at most €0.12.",
     );
     expect(endIsWarning(end)).toBe(false);
   });
@@ -418,7 +446,7 @@ describe("what the screen says once a pass has ended", () => {
     const end = failedOn(after(aPass(), answer(0.04)), REFUSED);
 
     expect(describeEnd(end)).toBe(
-      "The last pass was refused at gate 2 of 3, which spent nothing: it made 1 call and spent €0.04 of at most €0.12, and 2 gates were not asked.",
+      "The last pass at the Country level was refused at Free movement applies, which spent nothing: it asked 1 of 3 questions and spent €0.04 of at most €0.12.",
     );
     expect(endIsWarning(end)).toBe(true);
   });
@@ -427,32 +455,16 @@ describe("what the screen says once a pass has ended", () => {
     const end = failedOn(after(aPass(), answer(0.04)), UNREACHABLE);
 
     expect(describeEnd(end)).toBe(
-      "The last pass failed at gate 2 of 3, and what that request spent is not known: before it, the pass made 1 call and spent €0.04 of at most €0.12, and the 1 gate after it was not asked.",
+      "The last pass at the Country level failed at Free movement applies, and what that request spent is not known: before it, the pass asked 1 of 3 questions and spent €0.04 of at most €0.12.",
     );
     expect(endIsWarning(end)).toBe(true);
   });
 
-  it("counts every gate after a failure at the first one", () => {
-    const end = failedOn(aPass(), UNREACHABLE);
-
-    expect(describeEnd(end)).toBe(
-      "The last pass failed at gate 1 of 3, and what that request spent is not known: before it, the pass made no calls and spent nothing, and the 2 gates after it were not asked.",
-    );
-  });
-
-  it("names no gate after a failure at the last one", () => {
-    const end = failedOn(after(aPass(), answer(0), answer(0)), UNREACHABLE);
-
-    expect(describeEnd(end)).toBe(
-      "The last pass failed at gate 3 of 3, and what that request spent is not known: before it, the pass made no calls and spent nothing.",
-    );
-  });
-
   it("says a pass that could not read what it needed asked nothing", () => {
-    const end = couldNotStart(0.12, UNREACHABLE);
+    const end = couldNotStart(UNREAD_SCOPE, UNREACHABLE);
 
     expect(describeEnd(end)).toBe(
-      "The last pass did not start, because the spend cap and the gates could not be read: it asked nothing and spent nothing.",
+      "The last pass at the Country level did not start, because the spend cap and the gates could not be read: it asked nothing and spent nothing.",
     );
     expect(endIsWarning(end)).toBe(true);
   });

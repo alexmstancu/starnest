@@ -53,7 +53,7 @@ export function ProposalsPanel({
   /** The research pass the screen holds: running, or how the last one ended. */
   pass: ResearchPass;
 }) {
-  const proposals = useProposals(onAnswered, answersFreshness);
+  const proposals = useProposals(onAnswered, answersFreshness, levelId);
   // Gates and candidates by name, never by id (PL-150). Either read failing leaves the id read
   // as words, and the proposals are listed all the same.
   const gateNames = useMatchRuleNames();
@@ -111,6 +111,7 @@ export function ProposalsPanel({
               if (held || plan === null) return;
               pass.start({
                 level: levelId,
+                questionsTotal: plan.gates_total,
                 acceptUncapped,
                 ceilingEur: plan.estimated_cost_eur,
               });
@@ -145,8 +146,9 @@ export function ProposalsPanel({
       {plan !== null && (
         <>
           <p className="screen__note">
-            {plan.gates_total} gate answers to research, {plan.llm_call_count}{" "}
-            calls, about {formatMoney(plan.estimated_cost_eur, "EUR")}.
+            {plan.gates_total} questions to research (a gate about one candidate
+            each), {plan.llm_call_count} calls, at most{" "}
+            {formatMoney(plan.estimated_cost_eur, "EUR")}.
           </p>
           {plan.estimate_basis != null && (
             <p className="screen__note">

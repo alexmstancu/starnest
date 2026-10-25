@@ -42,7 +42,7 @@ const PROPOSED_FOR_ID = "country.portugal";
  * research can answer, at one call and four cents each, against an estimate of twelve cents.
  */
 const ALL_ASKED =
-  "The last pass asked every gate, 5 of 5: it made 3 calls and spent €0.12 of at most €0.12.";
+  "The last pass at the Country level asked every gate: it asked 3 of 3 questions and spent €0.12 of at most €0.12.";
 
 /**
  * This panel, and nothing else on the screen. The household and settings panels beside it each
@@ -64,7 +64,7 @@ async function estimated(): Promise<void> {
   await userEvent.click(
     theProposals().getByRole("button", { name: "Estimate the research" }),
   );
-  await theProposals().findByText(/3 gate answers to research/i);
+  await theProposals().findByText(/3 questions to research/i);
 }
 
 /** An estimate, and then the pass it allows. */
@@ -159,6 +159,21 @@ describe("what the panel shows", () => {
     expect(row).not.toHaveTextContent("country.");
   });
 
+  /** PL-151. The level filter needs the roster; without it a proposal is kept, never hidden. */
+  it("still lists a proposal when the roster that says its level cannot be read", async () => {
+    mockServer.use(
+      http.get(`${BASE}/candidates`, () =>
+        HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 }),
+      ),
+    );
+    renderShell("/configure");
+    await screen.findByRole("region", { name: "Gate proposals" });
+
+    expect(
+      await theProposals().findByRole("row", { name: new RegExp(PROPOSED_FOR) }),
+    ).toBeInTheDocument();
+  });
+
   it("prints a page that is not a web address as text, never as a link", async () => {
     mockServer.use(
       http.get(`${BASE}/match-rule-results`, () =>
@@ -244,8 +259,8 @@ describe("spending money on research", () => {
 
     await user.click(screen.getByRole("button", { name: "Estimate the research" }));
 
-    expect(await screen.findByText(/3 gate answers to research/i)).toBeInTheDocument();
-    expect(screen.getByText(/about €0\.12/)).toBeInTheDocument();
+    expect(await screen.findByText(/3 questions to research/i)).toBeInTheDocument();
+    expect(screen.getByText(/at most €0\.12/)).toBeInTheDocument();
     expect(screen.getByText(/a ceiling, not a forecast/i)).toHaveTextContent(
       /12,000 input tokens per call/,
     );
@@ -557,7 +572,7 @@ describe("a research pass, one gate at a time", () => {
     await settled();
 
     await researched();
-    await passSays(/asked every gate, 3 of 3/);
+    await passSays(/asked every gate: it asked 2 of 3 questions/);
 
     expect(gatesAsked(research)).toEqual([
       ["country.uk_skilled_worker"],
@@ -575,7 +590,7 @@ describe("a research pass, one gate at a time", () => {
     await researched();
 
     await passSays(
-      "The last pass stopped at the spend cap of €0.08: it made 2 calls and spent €0.08 of at most €0.12, and 1 gate was not asked.",
+      "The last pass at the Country level stopped at the spend cap of €0.08: it asked 2 of 3 questions and spent €0.08 of at most €0.12.",
     );
     // Two gates research can answer, at four cents each, and the free ones between them.
     expect(gatesAsked(research)).toEqual(
@@ -615,7 +630,7 @@ describe("a research pass, one gate at a time", () => {
     await researched();
 
     await passSays(
-      "The last pass stopped at the spend cap of €10.00: it made 1 call and spent €0.04 of at most €0.12, and 4 gates were not asked.",
+      "The last pass at the Country level stopped at the spend cap of €10.00: it asked 1 of 3 questions and spent €0.04 of at most €0.12.",
     );
     expect(research.sent).toHaveLength(2);
   });
@@ -640,7 +655,7 @@ describe("a research pass, one gate at a time", () => {
       await theProposals().findByText(/no spend cap is set/i),
     ).toBeInTheDocument();
     await passSays(
-      "The last pass was refused at gate 1 of 5, which spent nothing: it made no calls and spent nothing, and 5 gates were not asked.",
+      "The last pass at the Country level was refused at A visa route exists, which spent nothing: it asked 0 of 3 questions and spent nothing.",
     );
     expect(research.sent).toHaveLength(1);
   });
@@ -658,7 +673,7 @@ describe("a research pass, one gate at a time", () => {
       await theProposals().findByText(/backend did not answer/i),
     ).toBeInTheDocument();
     await passSays(
-      "The last pass failed at gate 2 of 5, and what that request spent is not known: before it, the pass made 1 call and spent €0.04 of at most €0.12, and the 3 gates after it were not asked.",
+      "The last pass at the Country level failed at Free movement applies, and what that request spent is not known: before it, the pass asked 1 of 3 questions and spent €0.04 of at most €0.12.",
     );
     expect(research.sent).toHaveLength(2);
   });
@@ -685,7 +700,7 @@ describe("a research pass, one gate at a time", () => {
       await theProposals().findByText("The server failed while answering."),
     ).toBeInTheDocument();
     await passSays(
-      "The last pass did not start, because the spend cap and the gates could not be read: it asked nothing and spent nothing.",
+      "The last pass at the Country level did not start, because the spend cap and the gates could not be read: it asked nothing and spent nothing.",
     );
     expect(research.sent).toEqual([]);
     expect(statusLine()).toHaveClass("notice--warning");
@@ -699,7 +714,7 @@ describe("a research pass, one gate at a time", () => {
     await researched();
 
     await passSays(
-      "Asking gate 2 of 5: Free movement applies. So far 1 call, €0.04 spent of at most €0.12.",
+      "Asking Free movement applies at the Country level. So far 1 of 3 questions, €0.04 spent of at most €0.12.",
     );
     research.release();
     await passSays(ALL_ASKED);
@@ -717,11 +732,11 @@ describe("a research pass, one gate at a time", () => {
     );
 
     expect(statusLine()).toHaveTextContent(
-      "Stopping once gate 2 of 5 is answered: Free movement applies.",
+      "Stopping once Free movement applies is answered at the Country level.",
     );
     research.release();
     await passSays(
-      "You stopped the last pass after 2 of 5 gates: it made 1 call and spent €0.04 of at most €0.12, and 3 gates were not asked.",
+      "You stopped the last pass at the Country level: it asked 1 of 3 questions and spent €0.04 of at most €0.12.",
     );
     expect(research.sent).toHaveLength(2);
     expect(statusLine()).not.toHaveClass("notice--warning");
@@ -818,7 +833,7 @@ describe("a research pass, one gate at a time", () => {
     await settled();
 
     await researched();
-    await passSays("Asking gate 3 of 5");
+    await passSays("Asking Not excluded by hand at the Country level");
     research.release();
 
     // What the pass stored, in this list and in the gate's own sentence above it.
@@ -873,7 +888,7 @@ describe("what a research pass did", () => {
     await researched();
 
     await passSays(
-      "The last pass asked every gate, 5 of 5: it made no calls and spent nothing.",
+      "The last pass at the Country level asked every gate: it asked 0 of 3 questions and spent nothing.",
     );
   });
 
@@ -886,7 +901,7 @@ describe("what a research pass did", () => {
     expect(
       theProposals().queryByRole("button", { name: "Research the gates" }),
     ).toBeNull();
-    expect(theProposals().queryByText(/3 gate answers to research/i)).toBeNull();
+    expect(theProposals().queryByText(/3 questions to research/i)).toBeNull();
 
     await estimated();
     expect(
@@ -1024,7 +1039,7 @@ describe("a research pass after an earlier one", () => {
     expect(
       await screen.findByText("The server failed while answering."),
     ).toBeInTheDocument();
-    await passSays(/failed at gate 1 of 5/);
+    await passSays(/failed at A visa route exists/);
     expect(screen.queryByText(ALL_ASKED)).toBeNull();
     // A server failure may come after calls that were billed.
     expect(statusLine()).toHaveTextContent(NOT_KNOWN);
@@ -1044,7 +1059,7 @@ describe("a research pass after an earlier one", () => {
     expect(
       await screen.findByText(/no spend cap is set/i),
     ).toBeInTheDocument();
-    await passSays(/refused at gate 1 of 5, which spent nothing/);
+    await passSays(/refused at A visa route exists, which spent nothing/);
     expect(screen.queryByText(ALL_ASKED)).toBeNull();
     // Refused before the model was asked anything, so nothing about its spend is in doubt.
     expect(statusLine()).not.toHaveTextContent(NOT_KNOWN);
@@ -1071,7 +1086,7 @@ describe("a research pass after an earlier one", () => {
       await screen.findByText(/the llm source is switched off/i),
     ).toBeInTheDocument();
     expect(screen.queryByText("llm_not_configured")).toBeNull();
-    await passSays(/refused at gate 1 of 5, which spent nothing/);
+    await passSays(/refused at A visa route exists, which spent nothing/);
     expect(screen.queryByText(ALL_ASKED)).toBeNull();
     expect(statusLine()).not.toHaveTextContent(NOT_KNOWN);
   });
@@ -1135,7 +1150,7 @@ describe("a research pass after an earlier one", () => {
     await researchOnceThenAgain(() => answered({ cost_eur: 0.01, calls: 1 }));
 
     await passSays(
-      "The last pass asked every gate, 5 of 5: it made 5 calls and spent €0.05 of at most €0.12.",
+      "The last pass at the Country level asked every gate: it asked 5 of 3 questions and spent €0.05 of at most €0.12.",
     );
     expect(screen.queryByText(ALL_ASKED)).toBeNull();
   });
@@ -1210,7 +1225,7 @@ describe("the gate proposals while a write is in flight", () => {
     estimates.release();
 
     expect(
-      await theProposals().findByText(/3 gate answers to research/i),
+      await theProposals().findByText(/3 questions to research/i),
     ).toBeInTheDocument();
     await waitFor(() => expectNotHeld(estimate));
     expect(estimate).toHaveFocus();
@@ -1242,7 +1257,7 @@ describe("the gate proposals while a write is in flight", () => {
 
     await waitFor(() => expect(sent).toBe(2));
     if (refusals === 1) {
-      expect(await theProposals().findByText(/gate answers to research/i)).toBeInTheDocument();
+      expect(await theProposals().findByText(/questions to research/i)).toBeInTheDocument();
       expect(theProposals().queryByRole("alert")).toBeNull();
     } else {
       expect(await theProposals().findByText(expected)).toBeInTheDocument();
@@ -1399,7 +1414,7 @@ describe("the gate proposals while a write is in flight", () => {
     await user.keyboard("{Enter}");
     research.release();
 
-    await passSays("You stopped the last pass after 1 of 5 gates");
+    await passSays("You stopped the last pass at the Country level: it asked 1 of 3 questions");
     expect(research.sent).toHaveLength(1);
     await waitFor(() => expect(estimateButton()).toHaveFocus());
   });

@@ -39,6 +39,8 @@ import {
 
 export interface PassRequest {
   level: string;
+  /** The questions the estimate counted, which the pass's progress is said against (PL-159). */
+  questionsTotal: number;
   /** Goes with every request of this pass, and with no other pass: a sentence about this one. */
   acceptUncapped: boolean;
   /** The estimate's ceiling, which the spend is read beside. */
@@ -165,13 +167,15 @@ async function askEachGate(
       fetchMatchRules(request.level, { signal }),
     ]);
     pass = beginPass({
+      level: request.level,
       gates: rules.items,
+      questionsTotal: request.questionsTotal,
       capEur: settings.run_spend_cap_eur ?? null,
       ceilingEur: request.ceilingEur,
     });
   } catch (failure) {
     signal.throwIfAborted();
-    return couldNotStart(request.ceilingEur, failure);
+    return couldNotStart(request, failure);
   }
 
   for (;;) {

@@ -15,7 +15,12 @@ import { useResearchPass } from "./useResearchPass";
  * -- never finished in the background -- when the screen that holds it goes.
  */
 
-const A_PASS = { level: "country", acceptUncapped: false, ceilingEur: 0.12 };
+const A_PASS = {
+  level: "country",
+  questionsTotal: 3,
+  acceptUncapped: false,
+  ceilingEur: 0.12,
+};
 
 function nothingToTell(): void {
   // The answers were read again; nothing here is reading them.
