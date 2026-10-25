@@ -928,6 +928,7 @@ export interface components {
         Error: {
             /** @description Stable and machine-readable. Branch on this, never on the message. */
             code: components["schemas"]["ErrorCode"];
+            /** @description For a person reading the API; an interface words `code` and `details` and never shows this. It names things rather than printing their ids where a name is known, and carries no driver or SQL text. */
             message: string;
             details?: {
                 [key: string]: unknown;
@@ -942,11 +943,11 @@ export interface components {
             };
         };
         FieldProblem: {
-            /** @description Where the offending value is, e.g. [body, comparator_limit], [body, scale_anchors, '0', score] or [query, level]. */
+            /** @description Where the offending value is, e.g. [body, comparator_limit], [body, scale_anchors, '0', score], [query, level] or [path, criteriaSetId]. A path parameter is named as this contract names it. */
             location: string[];
             /** @description The validator's or the domain's own sentence, for a developer. A form words the refusal from kind and limit. */
             problem: string;
-            /** @description Stable. The validator's error type (less_than_equal, greater_than_equal, greater_than, int_from_float, int_parsing, float_parsing, finite_number, missing, extra_forbidden, and so on) or invalid_criterion. */
+            /** @description Stable. The validator's error type (less_than_equal, greater_than_equal, greater_than, int_from_float, int_parsing, float_parsing, finite_number, missing, extra_forbidden, and so on), malformed_identifier for an identifier that cannot be one (lowercase letters, digits and underscores, starting with a letter, in the segments its kind takes), or invalid_criterion. */
             kind: string;
             /** @description The bound that refused the value, present only where kind names a numeric bound. */
             limit?: number;
@@ -2691,9 +2692,9 @@ export interface operations {
              *     uncapped run; nothing invents a ceiling on the household's behalf (`reqs.md` 6.3).
              *
              *     `run_already_in_flight` — a run is already going, and one household runs one pass
-             *     at a time (`reqs.md` 10). The message names the run: poll it rather than starting
-             *     another. This is what stops a client timeout, which is indistinguishable from a
-             *     failure, from being retried into a second concurrent run.
+             *     at a time (`reqs.md` 10). `details.run` names the run, where the database said which
+             *     one: poll it rather than starting another. This is what stops a client timeout, which
+             *     is indistinguishable from a failure, from being retried into a second concurrent run.
              */
             409: {
                 headers: {
