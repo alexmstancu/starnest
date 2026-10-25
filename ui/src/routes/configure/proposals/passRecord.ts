@@ -48,14 +48,18 @@ export function storedFormOf(record: PassRecord): PassRecord {
 
 const UNREADABLE: Unreadable = { kind: "unreadable" };
 
-/** A stored record read back: null for none, `unreadable` for one that does not hold together. */
+/**
+ * A stored record read back: null for none, `unreadable` for one that does not hold together.
+ * **A running pass keeps one outcome, one level deep**: its `kept` is read as an outcome only, so
+ * a record nested deeper reads as unreadable rather than recursing until the stack gives out.
+ */
 export function parsePassRecord(stored: unknown): PassRecord | null {
   if (stored === null || stored === undefined) return null;
   if (isRecord(stored) && stored["kind"] === "running") {
     const progress = parseProgress(stored);
-    const kept = parsePassRecord(stored["kept"]);
-    if (progress === undefined || kept?.kind === "running") return UNREADABLE;
-    return { kind: "running", kept, ...progress };
+    if (progress === undefined) return UNREADABLE;
+    const kept = stored["kept"];
+    return { kind: "running", kept: kept == null ? null : parseOutcome(kept), ...progress };
   }
   return parseOutcome(stored);
 }
@@ -71,22 +75,34 @@ function parseOutcome(stored: unknown): Outcome {
       return progress === undefined ? UNREADABLE : { kind, ...progress };
     }
     case "finished":
+      // Nothing left to ask is what finishes a pass, so it asked every gate it held.
+      return pass.tally.asked === pass.gates.length ? { kind, pass } : UNREADABLE;
     case "cap":
     case "stopped":
       return { kind, pass };
+    case "unread":
+      // It could not read its gates, so it asked nothing and spent nothing.
+      return pass.gates.length === 0 && pass.tally.calls === 0
+        ? { kind, pass, failure: failureOf(stored["failure"]) }
+        : UNREADABLE;
     case "refused":
     case "failed":
-    case "unread":
       return { kind, pass, failure: failureOf(stored["failure"]) };
     default:
       return UNREADABLE;
   }
 }
 
+/** A pass in flight, and the gate it was asking: always the next one it held. */
 function parseProgress(stored: Record<string, unknown>): Progress | undefined {
   const pass = parsePass(stored["pass"]);
   const inFlight = stored["inFlight"] === null ? null : parseGate(stored["inFlight"]);
-  return pass === undefined || inFlight === undefined ? undefined : { pass, inFlight };
+  if (pass === undefined || inFlight === undefined) return undefined;
+  const next = pass.gates[pass.tally.asked];
+  if (inFlight !== null && (next?.id !== inFlight.id || next.name !== inFlight.name)) {
+    return undefined;
+  }
+  return { pass, inFlight };
 }
 
 /** An `ApiError` again, without its message; anything else reads as an unexpected failure. */
@@ -118,8 +134,19 @@ function parsePass(stored: unknown): Pass | undefined {
   }
   const parsedGates = gates.map(parseGate);
   if (!parsedGates.every((gate) => gate !== undefined)) return undefined;
-  if (tally.asked > parsedGates.length) return undefined;
+  if (!holdsTogether(tally, parsedGates.length)) return undefined;
   return { level, gates: parsedGates, questionsTotal, capEur, ceilingEur, tally };
+}
+
+/**
+ * Whether a tally is one a pass could have kept, so that every figure the screen says is the
+ * figure stored: no more gates asked than it holds, no spend without a call, and nothing at all
+ * asked, called or spent by a pass that held no gate -- which the screen calls "spent nothing".
+ */
+function holdsTogether(tally: PassTally, gates: number): boolean {
+  if (tally.asked > gates) return false;
+  if (tally.spentMicroEur > 0 && tally.calls === 0) return false;
+  return gates > 0 || (tally.calls === 0 && tally.spentMicroEur === 0);
 }
 
 function parseTally(stored: unknown): PassTally | undefined {

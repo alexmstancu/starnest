@@ -430,6 +430,92 @@ describe("the last pass's end, kept until it is dismissed", () => {
     expect(pass.statusLine?.text).not.toMatch(/€/);
   });
 
+  /** One research answer that made no model call and cost nothing: a gate research skipped. */
+  function noCall(proposals: unknown[] = []): Response {
+    return HttpResponse.json({
+      proposals,
+      refusals: [],
+      cost_eur: 0,
+      calls: 0,
+      halted_on_spend_cap: false,
+    });
+  }
+
+  function refusedForWantOfACap(): Response {
+    return HttpResponse.json({ code: "spend_cap_not_set", message: "no cap" }, { status: 409 });
+  }
+
+  const KEPT = /^The pass before it at the Country level asked every gate: .*spent €0\.12 of at most €0\.12\.$/;
+
+  it("keeps an outcome that spent through a pass whose answered gate made no call, then refused", async () => {
+    const { screen } = await aPassThatSpent();
+    watchResearch({
+      answer: (_body, index) => (index === 1 ? noCall([{ is_proposal: true }]) : refusedForWantOfACap()),
+    });
+
+    act(() => screen.pass().start(A_PASS));
+
+    await waitFor(() => expect(screen.pass().end?.kind).toBe("refused"));
+    expect(screen.pass().keptLine?.text).toMatch(KEPT);
+    expect(screen.reload().pass().statusLine?.text).toBe(FINISHED);
+  });
+
+  it("keeps an outcome that spent through a pass that skipped every gate, and a refusal after it", async () => {
+    const { screen } = await aPassThatSpent();
+    watchResearch({ answer: () => noCall() });
+
+    act(() => screen.pass().start(A_PASS));
+
+    await waitFor(() => expect(screen.pass().end?.kind).toBe("finished"));
+    expect(screen.pass().keptLine?.text).toMatch(KEPT);
+    watchResearch({ answer: () => refusedForWantOfACap() });
+    act(() => screen.pass().start(A_PASS));
+    await waitFor(() => expect(screen.pass().end?.kind).toBe("refused"));
+    expect(screen.pass().keptLine?.text).toMatch(KEPT);
+    expect(screen.reload().pass().statusLine?.text).toBe(FINISHED);
+  });
+
+  interface Spoilable {
+    kind: string;
+    pass: Record<string, unknown> & { gates: unknown[]; tally: Record<string, unknown> };
+  }
+
+  it.each<[string, (record: Spoilable) => void]>([
+    ["a spend with no gate to ask", (r) => { r.pass.gates = []; r.pass.tally["asked"] = 0; }],
+    ["a spend with no call", (r) => { r.pass.tally["calls"] = 0; }],
+    ["a finished pass that did not ask every gate", (r) => { r.pass.gates.push({ id: "country.eu_free_movement", name: "Free movement applies" }); }],
+    ["a pass that never started, with a spend", (r) => { r.kind = "unread"; }],
+    ["an abandoned pass asking a gate that was not next", (r) => {
+      r.kind = "abandoned";
+      Object.assign(r, { inFlight: { id: "country.eu_free_movement", name: "Free movement applies" } });
+    }],
+  ])("says an earlier outcome could not be read, rather than a figure from %s", (_case, spoil) => {
+    storedPass(spoil as never);
+
+    expect(renderScreen().pass().statusLine).toEqual({ text: UNREADABLE, warning: true });
+  });
+
+  it("reads a record nested past one kept outcome as unreadable, never as a throw", () => {
+    const depth = 12_000;
+    // Each level a sound running pass in itself, so only its depth is wrong.
+    const pass = JSON.stringify({
+      level: "country",
+      gates: [],
+      questionsTotal: 3,
+      capEur: null,
+      ceilingEur: 0.12,
+      tally: { asked: 0, calls: 0, spentMicroEur: 0, proposed: 0, refusals: [], haltedOnSpendCap: false },
+    });
+    const level = `{"kind":"running","pass":${pass},"inFlight":null,"kept":`;
+    const nested = `${level.repeat(depth)}null${"}".repeat(depth)}`;
+    window.sessionStorage.setItem(
+      SLICES_KEY,
+      `{"configure/research-pass":{"value":${nested},"level":null}}`,
+    );
+
+    expect(renderScreen().pass().statusLine).toEqual({ text: UNREADABLE, warning: true });
+  });
+
   it("forgets an outcome that could not be read once dismissed", () => {
     storedPass((r) => { r.pass.tally["spentMicroEur"] = -1; });
     const screen = renderScreen();

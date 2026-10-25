@@ -285,18 +285,17 @@ export function leavesEstimateUnspent(end: PassEnd): boolean {
 }
 
 /**
- * Whether a pass asked the model anything, or may have (PL-052): a question answered, one the
- * cap cut short, one whose answer was lost, or one in flight when the page left. **Only such a
- * pass replaces an outcome that is kept**: a start refused, unread or left before its first
- * question spent nothing, and must not take an earlier pass's spend off the page.
+ * Whether a pass made a model call, or may have (PL-052): a call or a spend the server reported,
+ * a request whose answer was lost, or one in flight when the page left. **Only such a pass
+ * replaces an outcome that is kept.** A gate answered with no call, every gate skipped, a start
+ * refused, unread or left before its first question: none spent anything, and none may take an
+ * earlier pass's spend off the page. Answered gates are not the measure -- spend and calls are.
  */
 export function askedTheModel(end: PassEnd): boolean {
   const { tally } = end.pass;
   return (
-    tally.asked > 0 ||
     tally.calls > 0 ||
     tally.spentMicroEur > 0 ||
-    tally.haltedOnSpendCap ||
     end.kind === "failed" ||
     (end.kind === "abandoned" && end.inFlight !== null)
   );
