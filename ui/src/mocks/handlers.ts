@@ -347,9 +347,11 @@ export const handlers = [
       const body = (await request.json()) as { id: string; name: string };
       const malformed = malformedIdRefusal(body.id);
       if (malformed) return malformed;
+      const named = setNameOrRefusal(body.name);
+      if ("refusal" in named) return named.refusal;
       const source = criteriaSetDetails[String(params["criteriaSetId"])];
       if (!source) return notFound(String(params["criteriaSetId"]));
-      return createFrom(source, body);
+      return createFrom(source, { id: body.id, name: named.name });
     },
   ),
 
@@ -358,6 +360,8 @@ export const handlers = [
     const body = (await request.json()) as { id: string; name: string };
     const malformed = malformedIdRefusal(body.id);
     if (malformed) return malformed;
+    const named = setNameOrRefusal(body.name);
+    if ("refusal" in named) return named.refusal;
     const source =
       criteriaSetDetails[DEFAULT_CRITERIA_SET] ??
       deletedCriteriaSets[DEFAULT_CRITERIA_SET];
@@ -370,7 +374,7 @@ export const handlers = [
         { status: 409 },
       );
     }
-    return createFrom(source, body);
+    return createFrom(source, { id: body.id, name: named.name });
   }),
 
   http.patch(
@@ -381,10 +385,12 @@ export const handlers = [
       if (!set) return notFound(id);
       const body = (await request.json()) as { name?: string };
       if (body.name !== undefined) {
-        if (nameTaken(body.name, id)) {
-          return nameTakenRefusal(body.name, `the criteria set '${id}' cannot be renamed`);
+        const named = setNameOrRefusal(body.name);
+        if ("refusal" in named) return named.refusal;
+        if (nameTaken(named.name, id)) {
+          return nameTakenRefusal(named.name, `the criteria set '${id}' cannot be renamed`);
         }
-        set.name = body.name;
+        set.name = named.name;
       }
       return HttpResponse.json(set);
     },
@@ -1801,6 +1807,27 @@ function createFrom(source: CriteriaSet, body: { id: string; name: string }) {
   const copy: CriteriaSet = { ...structuredClone(source), id: body.id, name: body.name };
   criteriaSetDetails[body.id] = copy;
   return HttpResponse.json(copy, { status: 201 });
+}
+
+/**
+ * A set's name as `api/criteria.py`'s `SetName` takes it on create, rename and duplicate: trimmed,
+ * then at least one character and at most `CriteriaSetName.maxLength` (60), or the 422 the server
+ * answers. No `limit`: the contract gives one only for a numeric bound.
+ */
+function setNameOrRefusal(name: string): { name: string } | { refusal: Response } {
+  const trimmed = name.trim();
+  const problem =
+    trimmed === ""
+      ? { problem: "String should have at least 1 character", kind: "string_too_short" }
+      : trimmed.length > 60
+        ? { problem: "String should have at most 60 characters", kind: "string_too_long" }
+        : null;
+  if (problem === null) return { name: trimmed };
+  return {
+    refusal: HttpResponse.json(invalidRequest({ location: ["body", "name"], ...problem }), {
+      status: 422,
+    }),
+  };
 }
 
 /** Whether a live set other than `except` has this name, ignoring case and surrounding spaces. */

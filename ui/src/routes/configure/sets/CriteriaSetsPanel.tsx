@@ -113,7 +113,9 @@ export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
                       void saveRename(set.id);
                     } else if (event.key === "Escape") {
                       event.preventDefault();
-                      cancelRename(set.id);
+                      // Held as Cancel is: a rename in flight keeps its field, so its refusal
+                      // has somewhere to land (PL-036).
+                      if (!form.busy) cancelRename(set.id);
                     }
                   }}
                 />

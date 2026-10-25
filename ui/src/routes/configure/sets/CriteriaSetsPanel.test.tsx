@@ -2077,6 +2077,87 @@ describe("a set's name and its row", () => {
     expect((await row("Remote only")).getByText("heaviest: Transport 100.0%")).toBeInTheDocument();
   });
 
+  /**
+   * PL-040, at the level on screen: the server lists a set's levels in order, so "city" comes
+   * before "country", and a row that read the first entry would name the wrong pillar.
+   */
+  it("names the heaviest pillar of the level on screen, and none for a level weighing nothing", async () => {
+    mockServer.use(
+      http.get("/v1/criteria-sets", () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: "default",
+              name: "Default",
+              heaviest_pillars: [
+                { level: "city", pillar: "health", weight: 55 },
+                { level: "country", pillar: "economics", weight: 40 },
+              ],
+            },
+            {
+              id: "remote_only",
+              name: "Remote only",
+              heaviest_pillars: [{ level: "city", pillar: "health", weight: 70 }],
+            },
+          ],
+        }),
+      ),
+    );
+    renderShell("/configure");
+
+    expect(await (await row("Default")).findByText("heaviest: Economy 40.0%")).toBeInTheDocument();
+    expect((await row("Remote only")).queryByText(/heaviest/)).toBeNull();
+  });
+
+  /** PL-036 with PL-037: a rename in flight keeps its field, so a refusal lands beside it. */
+  it("keeps a rename's field through Escape while it is being saved, and shows its refusal there", async () => {
+    const user = userEvent.setup();
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockServer.use(
+      http.patch("/v1/criteria-sets/:criteriaSetId", async () => {
+        await held;
+        return HttpResponse.json(
+          { code: "criteria_set_name_taken", message: "SENTINEL", details: { name: "Partner" } },
+          { status: 409 },
+        );
+      }),
+    );
+    renderShell("/configure");
+
+    await user.click((await row("Default")).getByRole("button", { name: "Rename" }));
+    const draft = (await row("Default")).getByRole("textbox", { name: /new name for Default/i });
+    await user.clear(draft);
+    await user.type(draft, "Partner{Enter}");
+    await user.keyboard("{Escape}");
+    release();
+
+    await waitFor(() =>
+      expect(draft).toHaveAccessibleDescription("Another criteria set is already called “Partner”."),
+    );
+    expect(draft).toBeInTheDocument();
+  });
+
+  /** The mock is no kinder than `SetName`: a blank or over-long name is a 422, and one is trimmed. */
+  it.each([
+    ["   ", "string_too_short"],
+    ["C".repeat(61), "string_too_long"],
+  ])("is refused by the mock as by the server: %j", async (name, kind) => {
+    await expect(createCriteriaSet("a_set", name)).rejects.toMatchObject({
+      status: 422,
+      code: "invalid_request",
+      details: { errors: [{ location: ["body", "name"], kind }] },
+    });
+  });
+
+  it("is stored trimmed by the mock, as by the server", async () => {
+    await createCriteriaSet("a_trimmed_set", "  Spaced  ");
+
+    expect(await fetchCriteriaSet("a_trimmed_set")).toMatchObject({ name: "Spaced" });
+  });
+
   /** PL-041: cut to its slot by the stylesheet, and whole in its title. */
   it("keeps a long name whole in the row's title", async () => {
     const long = "B".repeat(60);
