@@ -8,9 +8,11 @@ to be coerced into something nobody sent: `scale_anchors: null` cleared the anch
 """
 
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
+import yaml
 from pydantic import BaseModel, ValidationError
 
 from starnest.api.bodies import ContractBody, PartialChangeBody
@@ -28,6 +30,9 @@ from starnest.api.errors import ErrorBody
 from starnest.api.evaluations import SaveEvaluationBody
 from starnest.api.household import HouseholdBody, HouseholdInputBody
 from starnest.api.rules import MatchRuleResultInputBody
+from starnest.api.values import WEB_ADDRESS, ManualValueBody
+
+DESIGN = Path(__file__).resolve().parents[4] / "docs" / "openapi.yaml"
 
 
 class AChange(PartialChangeBody):
@@ -252,3 +257,48 @@ class TestWhatAContractBodyDescribes:
         refusal = ErrorBody(code="not_found", message="No such candidate.")
 
         assert refusal.model_dump() == {"code": "not_found", "message": "No such candidate."}
+
+
+A_TYPED_VALUE = {
+    "candidate": "country.portugal",
+    "attribute": "country.naturalisation_pathway",
+    "payload": {"magnitude": 5, "unit": "years"},
+    "reference_period": {"start": "2026-01-01", "end": "2026-12-31"},
+    "retrieval_date": "2026-09-11T10:00:00Z",
+}
+
+
+class TestAHandTypedCitation:
+    """A full web address or nothing (PL-086): the interface links only to one."""
+
+    def test_the_citation_rule_is_the_contracts(self) -> None:
+        design = yaml.safe_load(DESIGN.read_text())["components"]["schemas"]
+        items = design["ManualValueInput"]["properties"]["citations"]["items"]
+
+        assert items["pattern"] == WEB_ADDRESS
+
+    @pytest.mark.parametrize(
+        "citation", ["https://example.com", "http://a.eu/x?y=1#z", "HTTPS://EXAMPLE.COM/"]
+    )
+    def test_a_web_address_is_taken_exactly_as_typed(self, citation: str) -> None:
+        body = ManualValueBody.model_validate(A_TYPED_VALUE | {"citations": [citation]})
+
+        assert body.citations == (citation,)
+
+    @pytest.mark.parametrize(
+        "citation",
+        [
+            "example.com",
+            "not a url",
+            "javascript:alert(1)",
+            "ftp://x",
+            "https://",
+            "https:///path",
+            "https://example.com/a page",
+            "",
+        ],
+    )
+    def test_anything_else_is_refused_where_it_was_typed(self, citation: str) -> None:
+        sent = A_TYPED_VALUE | {"citations": ["https://example.com", citation]}
+
+        assert _refusal(ManualValueBody, sent) == [("string_pattern_mismatch", ("citations", 1))]

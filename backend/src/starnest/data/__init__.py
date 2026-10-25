@@ -80,6 +80,7 @@ from starnest.data.manual import (
     MANUAL,
     InvalidManualValueError,
     ManualEntryNotPermittedError,
+    ManualEntrySwitchedOffError,
     a_manual_value,
 )
 from starnest.data.measurements import Measurements
@@ -198,6 +199,7 @@ __all__ = [
     "MalformedStandInError",
     "MalformedValueError",
     "ManualEntryNotPermittedError",
+    "ManualEntrySwitchedOffError",
     "MatchResult",
     "MatchRule",
     "MatchRuleId",

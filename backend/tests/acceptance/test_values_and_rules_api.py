@@ -44,6 +44,15 @@ A_TYPED_VALUE = {
 }
 
 
+async def _manual_figures_on_record(api: httpx.AsyncClient) -> int:
+    params = {
+        "candidate": A_TYPED_VALUE["candidate"],
+        "attribute": A_TYPED_VALUE["attribute"],
+        "include_superseded": True,
+    }
+    return (await api.get("/v1/values", params=params)).json()["total"]
+
+
 class _HeldBeforeAppending(PostgresValueStore):
     """Holds each `append` until a second request reaches it too, so two submissions have both
     finished whatever they read before either writes."""
@@ -375,6 +384,45 @@ class TestTypingAValue:
 
         assert response.status_code == 409
         assert response.json()["code"] == "manual_entry_not_permitted"
+
+    async def test_nothing_is_typed_while_manual_entry_is_switched_off(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """A switched-off source is left out of scoring (Q232), so a figure stored then could
+        not count: it is refused and nothing is stored (PL-089)."""
+        try:
+            await api.patch("/v1/data-sources/manual", json={"is_enabled": False})
+
+            response = await api.post("/v1/values/manual", json=A_TYPED_VALUE)
+            stored = await _manual_figures_on_record(api)
+        finally:
+            await api.patch("/v1/data-sources/manual", json={"is_enabled": True})
+
+        assert (response.status_code, response.json()["code"]) == (
+            409,
+            "manual_entry_switched_off",
+        )
+        validate("enterValueManually", response.json(), status=409)
+        assert stored == 0
+
+    async def test_switched_back_on_it_takes_a_figure_again(self, api: httpx.AsyncClient) -> None:
+        try:
+            await api.patch("/v1/data-sources/manual", json={"is_enabled": False})
+        finally:
+            await api.patch("/v1/data-sources/manual", json={"is_enabled": True})
+
+        response = await api.post("/v1/values/manual", json=A_TYPED_VALUE)
+
+        assert response.status_code == 201
+
+    async def test_a_web_address_is_stored_exactly_as_typed(self, api: httpx.AsyncClient) -> None:
+        """No trailing slash added, no case folded: what is stored is what was typed (PL-086)."""
+        typed = A_TYPED_VALUE | {"citations": ["HTTPS://example.com"]}
+
+        response = await api.post("/v1/values/manual", json=typed)
+
+        assert response.status_code == 201
+        assert response.json()["citations"] == ["HTTPS://example.com"]
 
     async def test_a_value_of_the_wrong_shape_is_refused_and_says_why(
         self, api: httpx.AsyncClient

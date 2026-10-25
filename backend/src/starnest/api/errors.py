@@ -48,6 +48,7 @@ from starnest.data import (
     InvalidSourceOrderError,
     MalformedMatchRuleResultError,
     ManualEntryNotPermittedError,
+    ManualEntrySwitchedOffError,
     NoSuchDataSourceError,
     UnknownAttributeError,
     UnknownCompoundRuleError,
@@ -89,6 +90,7 @@ class ErrorCode(StrEnum):
     RUN_ALREADY_IN_FLIGHT = "run_already_in_flight"
     LLM_NOT_CONFIGURED = "llm_not_configured"
     MANUAL_ENTRY_NOT_PERMITTED = "manual_entry_not_permitted"
+    MANUAL_ENTRY_SWITCHED_OFF = "manual_entry_switched_off"
     INVALID_VALUE = "invalid_value"
     CONFLICTING_OBSERVATION = "conflicting_observation"
     ANSWER_RECORDED_BY_A_PERSON = "answer_recorded_by_a_person"
@@ -151,6 +153,7 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     RunAlreadyInFlightError: _refusal(409, "run_already_in_flight"),
     NoResearcherConfiguredError: _refusal(501, "llm_not_configured"),
     ManualEntryNotPermittedError: _refusal(409, "manual_entry_not_permitted"),
+    ManualEntrySwitchedOffError: _refusal(409, "manual_entry_switched_off"),
     InvalidManualValueError: _refusal(409, "invalid_value"),
     ConflictingObservationError: _refusal(409, "conflicting_observation"),
     AnswerRecordedByAPersonError: _refusal(409, "answer_recorded_by_a_person"),

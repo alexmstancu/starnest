@@ -11,11 +11,11 @@ from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Query
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StringConstraints
 
 from starnest.api.dependencies import Candidates, Catalog, Values
 from starnest.api.errors import built_from_the_request
@@ -70,6 +70,17 @@ class ValuesBody(BaseModel):
     total: int
 
 
+WEB_ADDRESS = r"^[Hh][Tt][Tt][Pp][Ss]?://[^\s/?#]+[^\s]*$"
+"""A full web address: http or https, a host, no whitespace (PL-086).
+
+A pattern rather than Pydantic's `HttpUrl`, which rewrites what it accepts -- "https://a.eu"
+comes back as "https://a.eu/" -- and a citation is stored exactly as typed. Declared on the body
+so the generated contract carries it, and equal to the design's by test.
+"""
+
+WebAddress = Annotated[str, StringConstraints(pattern=WEB_ADDRESS)]
+
+
 class ManualValueBody(BaseModel):
     """`ManualValueInput`. The source is implicitly `manual` and cannot be set here."""
 
@@ -83,7 +94,8 @@ class ManualValueBody(BaseModel):
     breakdown_option: BreakdownOptionId | None = None
     confidence_level: ConfidenceLevel = MANUAL_ENTRY_DEFAULT_CONFIDENCE
     quote: str | None = None
-    citations: tuple[str, ...] = ()
+    # Only here, never on `ValueBody`: what a source stored keeps what it carried (N7).
+    citations: tuple[WebAddress, ...] = ()
 
 
 @router.get("/values", operation_id="listValues", response_model=ValuesBody)
@@ -164,6 +176,7 @@ async def enter_value_manually(
     body: ManualValueBody, values: Values, catalog: Catalog, candidates: Candidates
 ) -> ValueBody:
     """Refused with 409 `manual_entry_not_permitted` where the attribute does not allow it, 409
+    `manual_entry_switched_off` while the `manual` source is switched off (PL-089), 409
     `invalid_value` where the value is not one the attribute can hold, and 409
     `conflicting_observation` where another figure is on record under the same natural key."""
     attribute = await catalog.read_attribute(body.attribute)
@@ -178,6 +191,7 @@ async def enter_value_manually(
         period = ReferencePeriod(start=body.reference_period.start, end=body.reference_period.end)
     value = a_manual_value(
         attribute,
+        sources=await catalog.read_data_sources(),
         candidate=CandidateId(body.candidate),
         payload=body.payload,
         reference_period=period,

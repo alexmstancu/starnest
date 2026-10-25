@@ -495,6 +495,39 @@ class TestAFieldNobodyDeclaredIsRefused:
         assert rule.rsplit("/", 1)[-1] not in reread[listed_in], "nothing changed"
 
 
+class TestAManualValue:
+    """PL-086, PL-089: what hand entry refuses, in the one error shape."""
+
+    @pytest.mark.parametrize(
+        "citation", ["example.com", "not a url", "javascript:alert(1)", "ftp://x"]
+    )
+    async def test_a_citation_that_is_not_a_web_address_is_refused_naming_it(
+        self, api: httpx.AsyncClient, citation: str
+    ) -> None:
+        before = await _values_stored(api)
+
+        response = await api.post(
+            "/v1/values/manual", json=A_TYPED_VALUE | {"citations": [citation]}
+        )
+
+        _assert_refused_naming("enterValueManually", response, ["body", "citations", "0"])
+        assert await _values_stored(api) == before, "nothing was stored"
+
+    async def test_the_switched_off_refusal_is_in_the_one_error_shape(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        try:
+            await api.patch("/v1/data-sources/manual", json={"is_enabled": False})
+            response = await api.post("/v1/values/manual", json=A_TYPED_VALUE)
+        finally:
+            await api.patch("/v1/data-sources/manual", json={"is_enabled": True})
+
+        assert response.status_code == 409
+        assert response_schema("enterValueManually", 409) == {"$ref": "#/components/schemas/Error"}
+        validate("enterValueManually", response.json(), status=409)
+        assert undeclared_fields("enterValueManually", response.json(), status=409) == []
+
+
 class TestANullTheDesignGivesNoMeaning:
     """BE-23. **Left out means "no change"; null is a value, and only where the design gives
     it one** -- a band's bound or a threshold, where null clears. Elsewhere a null was coerced
