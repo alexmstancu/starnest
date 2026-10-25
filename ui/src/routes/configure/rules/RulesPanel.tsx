@@ -5,7 +5,6 @@ import {
   type MatchRule,
   type RuleOutcome,
 } from "../../../api/endpoints";
-import { useCandidateNames } from "../../../api/useCandidateNames";
 import type { Read } from "../../../api/read";
 import { candidateName } from "../../../format/display";
 import { ActRefusal } from "../../../shell/ActRefusal";
@@ -44,7 +43,7 @@ export function RulesPanel({
 }) {
   const rules = useRuleToggles(criteriaSet, levelId, answersFreshness);
   // Candidates by name in the sentences, never by id (NEW-06).
-  const names = useCandidateNames();
+  const names = rules.candidateNames;
   const answers = rules.matchRuleResultsStatus;
 
   return (
@@ -68,6 +67,16 @@ export function RulesPanel({
       </p>
 
       <h3 className="panel__heading">Gates</h3>
+      {/* Hides nothing rather than guess a level: the sentences below then count every
+          level's answers, and say so (PL-151). */}
+      {rules.rosterFailed && (
+        <p className="screen__note" role="status">
+          The list of places could not be read, so each gate counts its answers at every level.{" "}
+          <button type="button" className="button" onClick={rules.reloadRoster}>
+            Try again
+          </button>
+        </p>
+      )}
       <RuleList
         read={rules.matchRules}
         what="The gates"

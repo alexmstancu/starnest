@@ -645,3 +645,63 @@ describe("what a rule costs, and its colour", () => {
     ).toHaveClass("rule-row__effect--flags");
   });
 });
+
+/**
+ * PL-151. **A gate's sentence counts only the answers about its level's candidates**, placed by
+ * the roster: answers are read for every level, and a city must not be counted at country level.
+ */
+describe("a gate's answers at the panel's level", () => {
+  const answer = (candidate: string) => ({
+    match_rule: "country.visa_route_exists",
+    candidate,
+    match_result: "not_matching",
+    data_source: "manual",
+    retrieval_date: "2026-09-12T09:00:00Z",
+    is_proposal: false,
+  });
+
+  function answersAtTwoLevels() {
+    return http.get("/v1/match-rule-results", () =>
+      HttpResponse.json({ items: [answer("country.united_kingdom"), answer("city.lisbon")] }),
+    );
+  }
+
+  it("counts only the answers about candidates at the level", async () => {
+    mockServer.use(answersAtTwoLevels());
+    renderShell("/configure");
+    await panel();
+
+    const gate = await screen.findByRole("listitem", { name: "A visa route exists" });
+    await waitFor(() => expect(gate).toHaveTextContent("Removes United Kingdom."));
+    expect(gate).not.toHaveTextContent(/Lisbon/);
+  });
+
+  it("hides nothing when the roster cannot be read, says so, and offers to read it again", async () => {
+    let rosterDown = true;
+    mockServer.use(
+      answersAtTwoLevels(),
+      http.get("/v1/candidates", () =>
+        rosterDown
+          ? HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 })
+          : undefined,
+      ),
+    );
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const rules = await panel();
+
+    const gate = await screen.findByRole("listitem", { name: "A visa route exists" });
+    await waitFor(() => expect(gate).toHaveTextContent(/Removes 2 countries/));
+    const note = await rules.findByText(
+      /The list of places could not be read, so each gate counts its answers at every level\./,
+    );
+
+    rosterDown = false;
+    await user.click(within(note).getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(gate).toHaveTextContent("Removes United Kingdom."));
+    expect(
+      rules.queryByText(/The list of places could not be read/),
+    ).toBeNull();
+  });
+});

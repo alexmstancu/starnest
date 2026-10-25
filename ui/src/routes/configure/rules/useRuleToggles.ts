@@ -8,7 +8,7 @@
  * set and not to the rule.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   fetchCompoundRules,
   fetchMatchRuleResults,
@@ -25,11 +25,22 @@ import {
 } from "../../../api/endpoints";
 import type { Idle, Read } from "../../../api/read";
 import { useRead } from "../../../api/useRead";
+import { useCandidateRosterState } from "../../../api/useCandidateRoster";
+import type { CandidateNames } from "../../../api/useCandidateNames";
+import { answersAtLevel } from "./ruleEffect";
 
 export interface RuleToggles {
   matchRules: Read<{ items: MatchRule[] }>;
-  /** Every recorded gate answer, so a rule can say what it is actually costing. */
+  /** The recorded gate answers about this level's candidates, so a rule can say what it costs. */
   matchRuleResults: MatchRuleResult[];
+  /**
+   * Whether the roster that places each answer at a level could be read. Until it is, nothing
+   * is hidden; when it failed, the panel says the sentences count every level (PL-151).
+   */
+  rosterFailed: boolean;
+  reloadRoster: () => void;
+  /** Candidates by name, from the same roster, so reading it again names them too (NEW-06). */
+  candidateNames: CandidateNames;
   /**
    * Whether the answers have been read. Until they have, what a gate costs is unknown -- and an
    * empty list read as "never fires" while they were still on their way (UI-12).
@@ -85,6 +96,12 @@ export function useRuleToggles(
       [],
     ),
     { freshness: answersFreshness },
+  );
+
+  const roster = useCandidateRosterState();
+  const candidateNames = useMemo<CandidateNames>(
+    () => new Map(roster.roster.map((candidate) => [candidate.id, candidate.name])),
+    [roster.roster],
   );
 
   const compoundRules = useRead(
@@ -159,7 +176,14 @@ export function useRuleToggles(
 
   return {
     matchRules: settled(matchRules.read),
-    matchRuleResults: results.read.state === "ready" ? results.read.data.items : [],
+    matchRuleResults: answersAtLevel(
+      results.read.state === "ready" ? results.read.data.items : [],
+      roster.roster,
+      levelId,
+    ),
+    rosterFailed: roster.status === "error",
+    reloadRoster: roster.reload,
+    candidateNames,
     matchRuleResultsStatus: statusOf(results.read),
     compoundRules: settled(compoundRules.read),
     ranking: ranking.read,

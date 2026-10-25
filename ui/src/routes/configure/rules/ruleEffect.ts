@@ -32,6 +32,24 @@ export interface RuleResult {
 const REMOVES = "not_matching";
 
 /**
+ * The answers about candidates at this level (PL-151): the answers are read for every level,
+ * and a gate's sentence must not count a city at country level. A candidate's level is the
+ * roster's to say, never read off its id, and **one the roster does not place is kept**, so a
+ * roster that could not be read hides nothing.
+ */
+export function answersAtLevel<Answer extends RuleResult>(
+  answers: readonly Answer[],
+  roster: readonly { id: string; level: string }[],
+  level: string,
+): Answer[] {
+  const levelOf = new Map(roster.map((candidate) => [candidate.id, candidate.level]));
+  return answers.filter((answer) => {
+    const placed = levelOf.get(answer.candidate);
+    return placed === undefined || placed === level;
+  });
+}
+
+/**
  * The sentence beside one gate, from its recorded answers.
  *
  * **An unenforced rule states what it *would* do**, followed by the fact that it is not doing
