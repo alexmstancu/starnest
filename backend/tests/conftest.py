@@ -11,15 +11,17 @@ testing those against a fake proves nothing -- the constraints ARE the behaviour
 (arch.md 6.7).
 """
 
+import asyncio
 import functools
 import os
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Collection, Iterator
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
 import psycopg
 import pytest
+from psycopg import AsyncConnection
 from pydantic import ValidationError
 
 from starnest.main import Environment
@@ -104,6 +106,52 @@ def connection(database_url: str) -> Iterator[psycopg.Connection]:
     with psycopg.connect(database_url) as conn:
         yield conn
         conn.rollback()
+
+
+LOCK_PATIENCE_SECONDS = 120
+"""How long a barrier waits for the database to report a wait: generous, because the machine
+running the suite may be loaded many times over, and a barrier that passes never waits this long."""
+
+
+@pytest.fixture
+def wait_until_blocked(database_url: str) -> Callable[..., Awaitable[int]]:
+    """`await wait_until_blocked(task, on={pid, ...})`: the backend pid of a session, not in `on`,
+    waiting on a lock one of `on` holds -- once the database says so.
+
+    **A barrier on the server's own account of who waits on whom**, never on time: a race test is
+    decided by lock order, so its next step is taken only once the previous one is seen waiting.
+    Each poll opens a connection of its own, in autocommit, because inside one transaction
+    `pg_stat_activity` is a snapshot taken at its first read: a session that connected later was
+    invisible to it, which is how a loaded machine made these tests flake. The test fails, rather
+    than going on, if `task` ends without ever waiting.
+
+    `on` takes more than one pid because a row lock queues behind a waiter as well as a holder:
+    the second session to want a row held by a third waits on the first waiter's tuple lock, and
+    `pg_blocking_pids` names that waiter rather than the holder.
+    """
+
+    async def until_blocked(task: asyncio.Task, *, on: Collection[int]) -> int:
+        blockers = sorted(on)
+        deadline = asyncio.get_running_loop().time() + LOCK_PATIENCE_SECONDS
+        while asyncio.get_running_loop().time() < deadline:
+            async with await AsyncConnection.connect(database_url, autocommit=True) as probing:
+                waiting = await (
+                    await probing.execute(
+                        "SELECT pid FROM pg_stat_activity"
+                        " WHERE pg_blocking_pids(pid) && %(blockers)s::int[]"
+                        " AND NOT pid = ANY (%(blockers)s::int[])"
+                        " ORDER BY pid LIMIT 1",
+                        {"blockers": blockers},
+                    )
+                ).fetchone()
+            if waiting is not None:
+                return waiting[0]
+            if task.done():
+                pytest.fail(f"it ended without waiting on any of {blockers}: {task!r}")
+            await asyncio.sleep(0.05)
+        pytest.fail(f"nothing waited on any of {blockers} within {LOCK_PATIENCE_SECONDS}s")
+
+    return until_blocked
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

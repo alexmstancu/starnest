@@ -50,9 +50,6 @@ RACED = "raced_by_a_deletion"
 FIRST = "first_of_two"
 SECOND = "second_of_two"
 
-#: Long enough for a loaded machine, short enough that a lock nobody releases fails the test.
-PATIENCE_SECONDS = 10
-
 THE_MIGRATION = (
     Path(__file__).resolve().parents[3]
     / "storage"
@@ -203,23 +200,6 @@ async def _rows_owned_by(
     return owned
 
 
-async def _a_lock_is_awaited(pool: AsyncConnectionPool) -> bool:
-    """Whether a connection to this workstream's database comes to wait on a lock."""
-    async with pool.connection() as observer:
-        for _ in range(PATIENCE_SECONDS * 50):
-            waiting = await (
-                await observer.execute(
-                    "SELECT EXISTS (SELECT 1 FROM pg_locks AS l"
-                    " JOIN pg_stat_activity AS a ON a.pid = l.pid"
-                    " WHERE NOT l.granted AND a.datname = current_database())"
-                )
-            ).fetchone()
-            if waiting is not None and waiting[0]:
-                return True
-            await asyncio.sleep(0.02)
-    return False
-
-
 class TestDeletingInPlace:
     async def test_a_deleted_set_comes_back_row_for_row(
         self,
@@ -317,6 +297,7 @@ class TestADeletionRacingAnEdit:
         criteria: PostgresCriteriaStore,
         make: Callable[[CriteriaSet], Awaitable[None]],
         pool: AsyncConnectionPool,
+        wait_until_blocked: Callable[..., Awaitable[int]],
     ) -> None:
         """The edit lands first and is kept, then the set is deleted -- with the edit in it."""
         await make(_a_set(RACED))
@@ -326,8 +307,8 @@ class TestADeletionRacingAnEdit:
                 editor, criteria_set=RACED, name="Renamed while deleted"
             )
             deletion = asyncio.create_task(criteria.discard_criteria_set(RACED))
-            assert await _a_lock_is_awaited(pool), "the deletion never waited for the edit"
-        await asyncio.wait_for(deletion, PATIENCE_SECONDS)
+            await wait_until_blocked(deletion, on={editor.info.backend_pid})
+        await deletion
 
         with pytest.raises(UnknownCriteriaSetError):
             await criteria.read_criteria_set(RACED)
@@ -338,6 +319,7 @@ class TestADeletionRacingAnEdit:
         criteria: PostgresCriteriaStore,
         make: Callable[[CriteriaSet], Awaitable[None]],
         pool: AsyncConnectionPool,
+        wait_until_blocked: Callable[..., Awaitable[int]],
     ) -> None:
         """The lock re-reads the row once the deletion commits, and a deleted row is no set: the
         edit is refused rather than written into a set nobody can see."""
@@ -349,10 +331,10 @@ class TestADeletionRacingAnEdit:
                     RACED, lambda current: current.model_copy(update={"name": "Written too late"})
                 )
             )
-            assert await _a_lock_is_awaited(pool), "the edit never waited for the deletion"
+            await wait_until_blocked(edit, on={deleter.info.backend_pid})
 
         with pytest.raises(UnknownCriteriaSetError, match="to edit"):
-            await asyncio.wait_for(edit, PATIENCE_SECONDS)
+            await edit
         assert (await criteria.restore_criteria_set(RACED)).name == RACED
 
     async def test_a_replacement_queued_behind_a_deletion_finds_no_set(
@@ -360,6 +342,7 @@ class TestADeletionRacingAnEdit:
         criteria: PostgresCriteriaStore,
         make: Callable[[CriteriaSet], Awaitable[None]],
         pool: AsyncConnectionPool,
+        wait_until_blocked: Callable[..., Awaitable[int]],
     ) -> None:
         """**A replacement locks the live set first, as an edit does** (review of 957b3f6).
 
@@ -374,10 +357,10 @@ class TestADeletionRacingAnEdit:
             replacement = asyncio.create_task(
                 criteria.replace_criteria_set(_a_set(RACED, name="Written too late", locked=True))
             )
-            assert await _a_lock_is_awaited(pool), "the replacement never waited for the deletion"
+            await wait_until_blocked(replacement, on={deleter.info.backend_pid})
 
         with pytest.raises(UnknownCriteriaSetError, match="to replace"):
-            await asyncio.wait_for(replacement, PATIENCE_SECONDS)
+            await replacement
         await criteria.restore_criteria_set(RACED)
         assert await _rows_owned_by(pool, RACED) == before
 
@@ -386,6 +369,7 @@ class TestADeletionRacingAnEdit:
         criteria: PostgresCriteriaStore,
         make: Callable[[CriteriaSet], Awaitable[None]],
         pool: AsyncConnectionPool,
+        wait_until_blocked: Callable[..., Awaitable[int]],
     ) -> None:
         """**A restore locks the set before it reads it** (review of f6d1f01).
 
@@ -400,9 +384,9 @@ class TestADeletionRacingAnEdit:
                 editor, criteria_set=RACED, name="Renamed meanwhile"
             )
             restore = asyncio.create_task(criteria.restore_criteria_set(RACED))
-            assert await _a_lock_is_awaited(pool), "the restore never waited for the edit"
+            await wait_until_blocked(restore, on={editor.info.backend_pid})
 
-        restored = await asyncio.wait_for(restore, PATIENCE_SECONDS)
+        restored = await restore
         assert restored.name == "Renamed meanwhile"
         assert restored == await criteria.read_criteria_set(RACED)
 
@@ -411,6 +395,7 @@ class TestADeletionRacingAnEdit:
         criteria: PostgresCriteriaStore,
         make: Callable[[CriteriaSet], Awaitable[None]],
         pool: AsyncConnectionPool,
+        wait_until_blocked: Callable[..., Awaitable[int]],
     ) -> None:
         """**A purge locks the set before it clears it** (review of f6d1f01).
 
@@ -422,14 +407,14 @@ class TestADeletionRacingAnEdit:
         async with pool.connection() as editor:
             await criteria._queries.lock_criteria_set(editor, criteria_set=RACED)
             purge = asyncio.create_task(criteria.purge_criteria_set(RACED))
-            assert await _a_lock_is_awaited(pool), "the purge never waited for the edit"
+            await wait_until_blocked(purge, on={editor.info.backend_pid})
             await editor.execute(
                 "INSERT INTO pillar_weight (criteria_set, pillar, level, weight)"
                 " VALUES (%s, 'housing', %s, 0)",
                 (RACED, COUNTRY),
             )
 
-        await asyncio.wait_for(purge, PATIENCE_SECONDS)
+        await purge
         assert await _rows_owned_by(pool, RACED) == {table: [] for table in ROWS_A_SET_OWNS}
 
     def test_every_rewrite_of_a_sets_rows_locks_the_live_set_first(self) -> None:

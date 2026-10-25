@@ -431,21 +431,22 @@ class TestAScoreRangeBelowAnAnchor:
         assert response.status_code == 200
 
     async def test_a_range_changed_while_an_anchor_is_written_is_refused_after_it(
-        self, api: httpx.AsyncClient, database_url: str, a_scratch_criteria_set: str
+        self,
+        api: httpx.AsyncClient,
+        database_url: str,
+        wait_until_blocked: Callable[..., Awaitable[int]],
+        a_scratch_criteria_set: str,
     ) -> None:
         """Two tabs (review of PL-006): the anchor is written under the old range, so the range
         that commits after it has to meet it. Unserialised, the anchor read 200, the range wrote
         100 meanwhile, both answered 200 and Rank met a set it could not score."""
         await api.put("/v1/settings", json={"score_scale_max": 200})
 
-        async with _two_writers(database_url) as (hold, writers_waiting):
-            await hold(
-                "SELECT id FROM criteria_set WHERE id = %s FOR UPDATE", (a_scratch_criteria_set,)
-            )
+        async with _a_held_lock(database_url, _THE_SET, (a_scratch_criteria_set,)) as holder:
             anchor = asyncio.create_task(_anchor_overburden_up_to(api, a_scratch_criteria_set, 150))
-            assert await writers_waiting(1, anchor), "the anchor never waited for its set"
+            anchoring = await wait_until_blocked(anchor, on={holder})
             scale = asyncio.create_task(api.put("/v1/settings", json={"score_scale_max": 100}))
-            await writers_waiting(2, scale)
+            await wait_until_blocked(scale, on={anchoring})
 
         anchored, rescaled = await asyncio.gather(anchor, scale)
         assert anchored.status_code == 200
@@ -456,19 +457,22 @@ class TestAScoreRangeBelowAnAnchor:
         assert (await api.get("/v1/settings")).json()["score_scale_max"] == 200
 
     async def test_an_anchor_written_while_the_range_changes_is_refused_after_it(
-        self, api: httpx.AsyncClient, database_url: str, a_scratch_criteria_set: str
+        self,
+        api: httpx.AsyncClient,
+        database_url: str,
+        wait_until_blocked: Callable[..., Awaitable[int]],
+        a_scratch_criteria_set: str,
     ) -> None:
         """The other order: the range is checked against the anchors as they stand, so the
         anchor that commits after it has to meet the new range."""
         await api.put("/v1/settings", json={"score_scale_max": 200})
         before = await _the_anchors_of_overburden(api, a_scratch_criteria_set)
 
-        async with _two_writers(database_url) as (hold, writers_waiting):
-            await hold("SELECT id FROM settings WHERE id = 1 FOR UPDATE", ())
+        async with _a_held_lock(database_url, _THE_SETTINGS, ()) as holder:
             scale = asyncio.create_task(api.put("/v1/settings", json={"score_scale_max": 100}))
-            assert await writers_waiting(1, scale), "the range never waited for the settings"
+            rescaling = await wait_until_blocked(scale, on={holder})
             anchor = asyncio.create_task(_anchor_overburden_up_to(api, a_scratch_criteria_set, 150))
-            await writers_waiting(2, anchor)
+            await wait_until_blocked(anchor, on={holder, rescaling})
 
         rescaled, anchored = await asyncio.gather(scale, anchor)
         assert rescaled.status_code == 200
@@ -484,35 +488,26 @@ class TestAScoreRangeBelowAnAnchor:
         assert await _the_anchors_of_overburden(api, a_scratch_criteria_set) == before
 
     async def test_a_range_changed_while_a_set_is_restored_is_refused_after_it(
-        self, api: httpx.AsyncClient, database_url: str, a_scratch_criteria_set: str
+        self,
+        api: httpx.AsyncClient,
+        database_url: str,
+        wait_until_blocked: Callable[..., Awaitable[int]],
+        a_scratch_criteria_set: str,
     ) -> None:
         """A restore shares the range before it locks its set (PL-006, PL-033), so a range
-        changed meanwhile waits for it, and then meets the anchors it brought back.
-
-        Each step waits on a barrier the database itself reports, never on time: the restore is
-        let go only once it is seen holding the range and the range change is seen waiting."""
+        changed meanwhile waits for it, and then meets the anchors it brought back."""
         await api.put("/v1/settings", json={"score_scale_max": 200})
         assert (await _anchor_overburden_up_to(api, a_scratch_criteria_set, 150)).status_code == 200
         assert (await api.delete(f"/v1/criteria-sets/{a_scratch_criteria_set}")).status_code == 204
 
-        async with await AsyncConnection.connect(database_url) as holder:
-            await holder.execute(
-                "SELECT id FROM criteria_set WHERE id = %s FOR UPDATE", (a_scratch_criteria_set,)
-            )
+        async with _a_held_lock(database_url, _THE_SET, (a_scratch_criteria_set,)) as holder:
             restore = asyncio.create_task(
                 api.post(f"/v1/criteria-sets/{a_scratch_criteria_set}/restore")
             )
-            assert await _until(database_url, _THE_RANGE_IS_HELD, restore), (
-                "the restore never held the range"
-            )
-            assert await _until(database_url, _waiting_on_a_lock(1), restore), (
-                "the restore never waited for its set"
-            )
+            restoring = await wait_until_blocked(restore, on={holder})
+            assert await _the_settings_are_held(database_url), "the restore waits, range unheld"
             scale = asyncio.create_task(api.put("/v1/settings", json={"score_scale_max": 100}))
-            assert await _until(database_url, _waiting_on_a_lock(2), scale), (
-                "the range never waited for the restore"
-            )
-            await holder.rollback()
+            await wait_until_blocked(scale, on={restoring})
 
         restored, rescaled = await asyncio.gather(restore, scale)
         assert restored.status_code == 200
@@ -523,76 +518,29 @@ class TestAScoreRangeBelowAnAnchor:
         assert (await api.get("/v1/settings")).json()["score_scale_max"] == 200
 
 
-_THE_RANGE_IS_HELD = "SELECT 1 FROM settings WHERE id = 1 FOR UPDATE NOWAIT"
-"""Refused at once while another transaction holds the settings row, `FOR SHARE` included."""
-
-
-def _waiting_on_a_lock(count: int) -> str:
-    return (
-        f"SELECT count(DISTINCT l.pid) >= {count} FROM pg_locks AS l"
-        " JOIN pg_stat_activity AS a ON a.pid = l.pid"
-        " WHERE NOT l.granted AND a.datname = current_database()"
-    )
-
-
-async def _until(database_url: str, probe: str, task: asyncio.Task) -> bool:
-    """Poll `probe` on a fresh autocommit connection each time, so every read sees the server
-    as it is now: inside one transaction `pg_stat_activity` is a snapshot taken at its first
-    read, which is what made a waiter that arrived later invisible. False once `task` ends."""
-    for _ in range(PATIENCE_SECONDS * 50):
-        async with await AsyncConnection.connect(database_url, autocommit=True) as probing:
-            try:
-                seen = await (await probing.execute(probe)).fetchone()
-            except errors.LockNotAvailable:
-                return probe == _THE_RANGE_IS_HELD
-        if probe != _THE_RANGE_IS_HELD and seen is not None and seen[0]:
-            return True
-        if task.done():
-            return False
-        await asyncio.sleep(0.02)
-    return False
-
-
-PATIENCE_SECONDS = 5
+_THE_SET = "SELECT id FROM criteria_set WHERE id = %s FOR UPDATE"
+_THE_SETTINGS = "SELECT id FROM settings WHERE id = 1 FOR UPDATE"
+"""A row held by the test itself, so the request under test stops at it and is seen waiting."""
 
 
 @asynccontextmanager
-async def _two_writers(database_url: str) -> AsyncIterator[tuple[Callable, Callable]]:
-    """A transaction holding one row while two writers queue, released when the block exits.
-
-    `hold` takes the row the first writer needs, so it stops partway; `writers_waiting(n, task)`
-    is true once `n` connections wait on a lock, false if `task` finishes first or never waits.
-    """
-    async with AsyncConnectionPool(database_url, min_size=2, max_size=2, open=False) as pool:
-        await pool.open(wait=True)
-        async with pool.connection() as holder, pool.connection() as observer:
-
-            async def hold(statement: str, parameters: tuple) -> None:
-                await holder.execute(statement, parameters)
-
-            async def writers_waiting(count: int, task: asyncio.Task) -> bool:
-                return await _until_waiting(observer, count, task)
-
-            try:
-                yield hold, writers_waiting
-            finally:
-                await holder.rollback()
+async def _a_held_lock(database_url: str, statement: str, parameters: tuple) -> AsyncIterator[int]:
+    """One row held by a transaction of its own until the block exits; yields its backend pid."""
+    async with await AsyncConnection.connect(database_url) as holder:
+        await holder.execute(statement, parameters)
+        try:
+            yield holder.info.backend_pid
+        finally:
+            await holder.rollback()
 
 
-async def _until_waiting(observer: AsyncConnection, count: int, task: Awaitable) -> bool:
-    for _ in range(PATIENCE_SECONDS * 50):
-        waiting = await (
-            await observer.execute(
-                "SELECT count(DISTINCT l.pid) FROM pg_locks AS l"
-                " JOIN pg_stat_activity AS a ON a.pid = l.pid"
-                " WHERE NOT l.granted AND a.datname = current_database()"
-            )
-        ).fetchone()
-        if waiting is not None and waiting[0] >= count:
+async def _the_settings_are_held(database_url: str) -> bool:
+    """Whether another transaction holds the settings row, `FOR SHARE` included."""
+    async with await AsyncConnection.connect(database_url, autocommit=True) as probing:
+        try:
+            await probing.execute("SELECT 1 FROM settings WHERE id = 1 FOR UPDATE NOWAIT")
+        except errors.LockNotAvailable:
             return True
-        if isinstance(task, asyncio.Task) and task.done():
-            return False
-        await asyncio.sleep(0.02)
     return False
 
 
