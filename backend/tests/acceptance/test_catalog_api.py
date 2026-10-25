@@ -303,3 +303,83 @@ class TestSwitchingASourceOff:
         answer = await api.patch(f"/v1/data-sources/{self.SOURCE}", json={"name": "Something else"})
 
         assert answer.status_code == 422
+
+
+class TestReorderingTheSources:
+    """One request puts every source in a new order and keeps their tiers (D36, PL-136/137).
+
+    **Every test puts the stored priorities back**, number for number, because a reorder left
+    behind would change which figure is active for every test after it.
+    """
+
+    async def _listed(self, api: httpx.AsyncClient) -> list[dict]:
+        return (await api.get("/v1/data-sources")).json()["items"]
+
+    async def _restore(self, api: httpx.AsyncClient, listed: list[dict]) -> None:
+        for source in listed:
+            await api.patch(
+                f"/v1/data-sources/{source['id']}",
+                json={"default_priority": source["default_priority"]},
+            )
+
+    async def test_a_move_reads_back_in_the_new_order_with_the_tiers_kept(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        before = await self._listed(api)
+        first, second = before[0], before[1]
+        assert first["default_priority"] < second["default_priority"], "pick two distinct tiers"
+        order = [second["id"], first["id"], *(s["id"] for s in before[2:])]
+        try:
+            answer = await api.put("/v1/data-sources/order", json={"order": order})
+
+            assert answer.status_code == 200
+            validate("reorderDataSources", answer.json())
+            assert [s["id"] for s in answer.json()["items"]] == order
+            after = {s["id"]: s["default_priority"] for s in await self._listed(api)}
+            assert after[second["id"]] == first["default_priority"]
+            assert after[first["id"]] == second["default_priority"]
+            assert all(after[s["id"]] == s["default_priority"] for s in before[2:])
+        finally:
+            await self._restore(api, before)
+
+    async def test_two_tied_sources_can_be_swapped(self, api: httpx.AsyncClient) -> None:
+        before = await self._listed(api)
+        upper, lower = before[0], before[1]
+        try:
+            await api.patch(
+                f"/v1/data-sources/{lower['id']}",
+                json={"default_priority": upper["default_priority"]},
+            )
+            tied = [s["id"] for s in await self._listed(api)]
+            order = [tied[1], tied[0], *tied[2:]]
+
+            answer = await api.put("/v1/data-sources/order", json={"order": order})
+
+            assert answer.status_code == 200
+            assert [s["id"] for s in await self._listed(api)] == order
+        finally:
+            await self._restore(api, before)
+
+    @pytest.mark.parametrize(
+        ("change", "reason"),
+        [
+            (lambda ids: ids[1:], "missing"),
+            (lambda ids: [*ids, ids[0]], "repeated"),
+            (lambda ids: [*ids, "no_such_source"], "unknown"),
+        ],
+    )
+    async def test_an_order_that_is_not_every_source_once_is_refused_and_changes_nothing(
+        self, api: httpx.AsyncClient, change, reason: str
+    ) -> None:
+        before = await self._listed(api)
+        ids = [s["id"] for s in before]
+        reversed_and_wrong = change(list(reversed(ids)))
+        try:
+            answer = await api.put("/v1/data-sources/order", json={"order": reversed_and_wrong})
+
+            assert answer.status_code == 422
+            assert answer.json()["code"] == "invalid_source_order"
+            assert answer.json()["details"][reason]
+            assert await self._listed(api) == before
+        finally:
+            await self._restore(api, before)

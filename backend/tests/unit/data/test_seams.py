@@ -145,6 +145,9 @@ class InMemoryCatalogStore(CatalogStore):
     async def set_data_source(self, data_source, *, is_enabled=None, default_priority=None):
         raise UnknownDataSourceError(data_source)
 
+    async def reorder_data_sources(self, order):
+        return ()
+
     async def read_breakdown_schemes(self):
         return {}
 

@@ -14,7 +14,7 @@ from datetime import timedelta
 from typing import ClassVar
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from starnest.api.bodies import ContractBody, PartialChangeBody
 from starnest.api.dependencies import Adapters, Candidates, Catalog, Criteria
@@ -333,19 +333,46 @@ async def list_data_sources(catalog: Catalog) -> DataSourcesBody:
     what makes a per-attribute override legible: an override names the sources somebody has an
     opinion about, and every other source keeps its place beneath them.
     """
-    return DataSourcesBody(
-        items=tuple(
-            DataSourceBody(
-                id=str(source.id),
-                name=source.name,
-                source_kind=str(source.source_kind),
-                default_priority=source.default_priority,
-                reliability_tier=str(source.reliability_tier),
-                is_enabled=source.is_enabled,
-            )
-            for source in await catalog.read_data_sources()
-        )
+    return _data_sources_body(await catalog.read_data_sources())
+
+
+def _data_sources_body(sources: Sequence[DataSource]) -> DataSourcesBody:
+    return DataSourcesBody(items=tuple(_data_source_body(source) for source in sources))
+
+
+def _data_source_body(source: DataSource) -> DataSourceBody:
+    return DataSourceBody(
+        id=str(source.id),
+        name=source.name,
+        source_kind=str(source.source_kind),
+        default_priority=source.default_priority,
+        reliability_tier=str(source.reliability_tier),
+        is_enabled=source.is_enabled,
     )
+
+
+class DataSourceOrderInput(BaseModel):
+    """Every source, highest priority first: the whole order, never one move (D36)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    order: tuple[str, ...]
+
+
+@router.put(
+    "/data-sources/order",
+    operation_id="reorderDataSources",
+    response_model=DataSourcesBody,
+)
+async def reorder_data_sources(body: DataSourceOrderInput, catalog: Catalog) -> DataSourcesBody:
+    """Put the sources in a new order, in one atomic write that keeps their tiers (PL-136, PL-137).
+
+    **The stored priorities are handed back out, not renumbered 1 to n**, so the gaps between
+    tiers survive every move; two tied sources are swapped by giving the pair distinct numbers.
+    One transaction under a lock, so a move and its undo never stop half way. Refused with
+    `invalid_source_order`, changing nothing, unless the order names every source exactly once.
+    """
+    return _data_sources_body(await catalog.reorder_data_sources(body.order))
 
 
 @router.patch(
@@ -372,14 +399,7 @@ async def update_data_source(
         is_enabled=body.is_enabled,
         default_priority=body.default_priority,
     )
-    return DataSourceBody(
-        id=str(changed.id),
-        name=changed.name,
-        source_kind=str(changed.source_kind),
-        default_priority=changed.default_priority,
-        reliability_tier=str(changed.reliability_tier),
-        is_enabled=changed.is_enabled,
-    )
+    return _data_source_body(changed)
 
 
 @router.get("/attributes/{attribute_id}", operation_id="getAttribute", response_model=AttributeBody)

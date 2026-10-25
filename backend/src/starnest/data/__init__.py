@@ -124,12 +124,14 @@ from starnest.data.rules import (
 )
 from starnest.data.sources import (
     DataSource,
+    InvalidSourceOrderError,
     InvalidSourcePriorityError,
     NoSuchDataSourceError,
     SourceKind,
     SourcePriority,
     SourcePriorityOverride,
     UnknownDataSourceError,
+    reorder_keeping_tiers,
 )
 from starnest.data.stand_in import MalformedStandInError, StandIn
 from starnest.data.store import CatalogStore, UnknownAttributeError, ValueStore
@@ -186,6 +188,7 @@ __all__ = [
     "IndexParameters",
     "InvalidManualValueError",
     "InvalidReferencePeriodError",
+    "InvalidSourceOrderError",
     "InvalidSourcePriorityError",
     "LabelSet",
     "LifecycleStatus",
@@ -236,6 +239,7 @@ __all__ = [
     "a_manual_value",
     "derive_confidence",
     "payload_class_for",
+    "reorder_keeping_tiers",
     "restates",
     "select_active_value",
     "select_active_values",

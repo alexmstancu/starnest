@@ -233,6 +233,16 @@ class CatalogStore(ABC):
         """
 
     @abstractmethod
+    async def reorder_data_sources(self, order: Sequence[str]) -> tuple[DataSource, ...]:
+        """Put every source in `order`, keeping the stored priority tiers (D36).
+
+        One transaction under a lock, so a move and its undo never stop half way and two
+        reorders run one after the other. Refuses with `InvalidSourceOrderError`, changing
+        nothing, unless `order` names every source exactly once. Returns every source in the
+        global order, as `read_data_sources` would.
+        """
+
+    @abstractmethod
     async def read_breakdown_schemes(
         self,
     ) -> Mapping[BreakdownSchemeId, tuple[BreakdownOptionId, ...]]:

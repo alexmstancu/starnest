@@ -6,16 +6,20 @@ manual`, because that is what makes connecting a new adapter free of edits to ex
 overrides.
 """
 
+from collections.abc import Sequence
+
 import pytest
 from pydantic import ValidationError
 
 from starnest.data import (
     DataSource,
+    InvalidSourceOrderError,
     InvalidSourcePriorityError,
     SourceKind,
     SourcePriority,
     SourcePriorityOverride,
     UnknownDataSourceError,
+    reorder_keeping_tiers,
 )
 
 EUROSTAT = DataSource(
@@ -161,3 +165,94 @@ class TestWhatASourceKnowsAboutItself:
                 default_priority=65,
                 reliability_tier="crowdsourced",
             )
+
+
+def _source(identifier: str, priority: int) -> DataSource:
+    return DataSource(
+        id=identifier,
+        name=identifier,
+        source_kind=SourceKind.STRUCTURED,
+        default_priority=priority,
+        reliability_tier="official_international",
+    )
+
+
+def _read_back(sources: Sequence[DataSource], priorities: dict[str, int]) -> list[str]:
+    """The order `select_data_sources` would list them in: priority, then id (P76)."""
+    return sorted((source.id for source in sources), key=lambda name: (priorities[name], name))
+
+
+class TestReorderingKeepsTheTiers:
+    """D36: one reorder, which hands the stored priorities back out in the new order (PL-136)."""
+
+    TIERED = (_source("a", 10), _source("b", 20), _source("c", 20), _source("d", 50))
+
+    def test_the_current_order_changes_nothing(self) -> None:
+        assert reorder_keeping_tiers(self.TIERED, ["a", "b", "c", "d"]) == {
+            "a": 10,
+            "b": 20,
+            "c": 20,
+            "d": 50,
+        }
+
+    def test_a_move_keeps_every_gap_between_tiers(self) -> None:
+        """Never renumbered 1 to n: the numbers stay 10, 20, 20, 50; only who holds them moves."""
+        moved = reorder_keeping_tiers(self.TIERED, ["d", "a", "b", "c"])
+
+        assert moved == {"d": 10, "a": 20, "b": 20, "c": 50}
+        assert sorted(moved.values()) == [10, 20, 20, 50]
+
+    def test_two_tied_sources_can_be_swapped(self) -> None:
+        """A tie reads back by id, so a swap that kept the tie would read back unswapped."""
+        swapped = reorder_keeping_tiers(self.TIERED, ["a", "c", "b", "d"])
+
+        assert swapped["c"] < swapped["b"]
+        assert _read_back(self.TIERED, swapped) == ["a", "c", "b", "d"]
+        assert (swapped["a"], swapped["d"]) == (10, 50)
+
+    def test_a_swap_bumps_into_the_next_tier_without_crossing_it(self) -> None:
+        sources = [_source("a", 5), _source("b", 5), _source("c", 6)]
+
+        swapped = reorder_keeping_tiers(sources, ["b", "a", "c"])
+
+        assert _read_back(sources, swapped) == ["b", "a", "c"]
+
+    @pytest.mark.parametrize(
+        "order",
+        [["d", "c", "b", "a"], ["b", "d", "a", "c"], ["c", "a", "d", "b"], ["a", "c", "b", "d"]],
+    )
+    def test_every_order_reads_back_as_asked(self, order: list[str]) -> None:
+        assert _read_back(self.TIERED, reorder_keeping_tiers(self.TIERED, order)) == order
+
+
+class TestAnOrderThatIsNotOneOfEverySource:
+    SOURCES = (_source("a", 1), _source("b", 2), _source("c", 3))
+
+    def _refusal(self, order: list[str]) -> InvalidSourceOrderError:
+        with pytest.raises(InvalidSourceOrderError) as refused:
+            reorder_keeping_tiers(self.SOURCES, order)
+        return refused.value
+
+    def test_one_that_omits_a_source_is_refused(self) -> None:
+        assert self._refusal(["a", "c"]).details == {
+            "missing": ["b"],
+            "repeated": [],
+            "unknown": [],
+        }
+
+    def test_one_that_repeats_a_source_is_refused(self) -> None:
+        assert self._refusal(["a", "b", "c", "a"]).details == {
+            "missing": [],
+            "repeated": ["a"],
+            "unknown": [],
+        }
+
+    def test_one_that_names_an_unknown_source_is_refused(self) -> None:
+        assert self._refusal(["a", "b", "c", "nobody"]).details == {
+            "missing": [],
+            "repeated": [],
+            "unknown": ["nobody"],
+        }
+
+    def test_an_empty_order_omits_every_source(self) -> None:
+        assert self._refusal([]).details["missing"] == ["a", "b", "c"]

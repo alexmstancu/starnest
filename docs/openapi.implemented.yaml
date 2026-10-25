@@ -947,6 +947,20 @@ components:
           type: boolean
       title: DataSourceInput
       type: object
+    DataSourceOrderInput:
+      additionalProperties: false
+      description: 'Every source, highest priority first: the whole order, never one
+        move (D36).'
+      properties:
+        order:
+          items:
+            type: string
+          title: Order
+          type: array
+      required:
+      - order
+      title: DataSourceOrderInput
+      type: object
     DataSourcesBody:
       properties:
         items:
@@ -1055,6 +1069,7 @@ components:
       - invalid_match_rule_result
       - unknown_data_source
       - unknown_scope
+      - invalid_source_order
       title: ErrorCode
       type: string
     EvaluationCriteriaBody:
@@ -3963,6 +3978,48 @@ paths:
             not accept; `code` says which. `invalid_request` is a malformed request,
             with each offending location in `details.errors`.
       summary: List Data Sources
+      tags:
+      - catalog
+  /v1/data-sources/order:
+    put:
+      description: 'Put the sources in a new order, in one atomic write that keeps
+        their tiers (PL-136, PL-137).
+
+
+        **The stored priorities are handed back out, not renumbered 1 to n**, so the
+        gaps between
+
+        tiers survive every move; two tied sources are swapped by giving the pair
+        distinct numbers.
+
+        One transaction under a lock, so a move and its undo never stop half way.
+        Refused with
+
+        `invalid_source_order`, changing nothing, unless the order names every source
+        exactly once.'
+      operationId: reorderDataSources
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DataSourceOrderInput'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataSourcesBody'
+          description: Successful Response
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorBody'
+          description: The request is malformed, or names something the domain will
+            not accept; `code` says which. `invalid_request` is a malformed request,
+            with each offending location in `details.errors`.
+      summary: Reorder Data Sources
       tags:
       - catalog
   /v1/data-sources/{data_source_id}:

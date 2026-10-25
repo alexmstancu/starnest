@@ -10,7 +10,7 @@ the less reliable source in general. Confidence (`confidence.py`) grades one par
 Neither subsumes the other, which is why the active-value rule consults both.
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from enum import StrEnum
 from typing import Self
 
@@ -41,6 +41,21 @@ class NoSuchDataSourceError(LookupError):
 
 class InvalidSourcePriorityError(ValueError):
     """A priority order does not describe a single ranking of distinct sources."""
+
+
+class InvalidSourceOrderError(ValueError):
+    """A reorder did not name every source exactly once (D36).
+
+    `details` lists what was `missing`, `repeated` and `unknown`, every list present and empty
+    where nothing was wrong with it, so a client words the refusal without parsing prose.
+    """
+
+    def __init__(self, *, missing: list[str], repeated: list[str], unknown: list[str]) -> None:
+        super().__init__(
+            "a source order names every source exactly once: "
+            f"missing {missing}, repeated {repeated}, unknown {unknown}"
+        )
+        self.details = {"missing": missing, "repeated": repeated, "unknown": unknown}
 
 
 class SourceKind(StrEnum):
@@ -200,3 +215,39 @@ def _distinct_override_ranks(
             )
         ranks[override.data_source] = override.rank
     return ranks
+
+
+def reorder_keeping_tiers(
+    sources: Sequence[DataSource], order: Sequence[str]
+) -> dict[DataSourceId, int]:
+    """Every source's priority once the sources stand in `order` (D36, PL-136, PL-137).
+
+    **The stored numbers are handed back out, never renumbered 1 to n**: sorted, they go to the
+    sources in their new order, so the gaps between tiers -- which a person set, and which leave
+    room for a source to be slotted in between -- survive every move.
+
+    **A tie reads back by id** (`select_data_sources`, P76), so a tie the new order puts against
+    the id order is broken by giving the later source one more than the earlier. That is the only
+    number not taken from the stored set, and it is how two tied sources are swapped.
+    """
+    _refuse_unless_each_source_once(sources, order)
+    slots = sorted(source.default_priority for source in sources)
+    priorities: dict[DataSourceId, int] = {}
+    previous: tuple[int, str] | None = None
+    for slot, name in zip(slots, order, strict=True):
+        priority = slot
+        if previous is not None and priority <= previous[0]:
+            priority = previous[0] if name > previous[1] else previous[0] + 1
+        priorities[DataSourceId(name)] = priority
+        previous = (priority, name)
+    return priorities
+
+
+def _refuse_unless_each_source_once(sources: Sequence[DataSource], order: Sequence[str]) -> None:
+    known = [str(source.id) for source in sources]
+    named = set(order)
+    missing = [name for name in sorted(known) if name not in named]
+    repeated = sorted({name for name in order if order.count(name) > 1})
+    unknown = [name for name in dict.fromkeys(order) if name not in set(known)]
+    if missing or repeated or unknown:
+        raise InvalidSourceOrderError(missing=missing, repeated=repeated, unknown=unknown)

@@ -48,6 +48,7 @@ from starnest.data import (
     UnitId,
     UnknownAttributeError,
     ValueType,
+    reorder_keeping_tiers,
 )
 from starnest.data.identifiers import HouseholdFieldId, ReliabilityTierId
 from starnest.storage.connections import acquire
@@ -135,17 +136,7 @@ class PostgresCatalogStore(CatalogStore):
     async def read_data_sources(self) -> tuple[DataSource, ...]:
         async with acquire(self._pool) as connection:
             rows = [row async for row in self._queries.select_data_sources(connection)]
-        return tuple(
-            DataSource(
-                id=DataSourceId(row.id),
-                name=row.name,
-                source_kind=SourceKind(row.source_kind),
-                default_priority=row.default_priority,
-                reliability_tier=ReliabilityTierId(row.reliability_tier),
-                is_enabled=row.is_enabled,
-            )
-            for row in rows
-        )
+        return tuple(_data_source_from(row) for row in rows)
 
     async def set_data_source(
         self,
@@ -168,14 +159,26 @@ class PostgresCatalogStore(CatalogStore):
             )
         if row is None:
             raise NoSuchDataSourceError(f"no data source called {data_source!r}")
-        return DataSource(
-            id=DataSourceId(row[0]),
-            name=row[1],
-            source_kind=SourceKind(row[2]),
-            default_priority=row[3],
-            reliability_tier=ReliabilityTierId(row[4]),
-            is_enabled=row[5],
-        )
+        return _data_source_from(row)
+
+    async def reorder_data_sources(self, order: Sequence[str]) -> tuple[DataSource, ...]:
+        """Put every source in `order`, keeping the stored tiers, in one locked transaction.
+
+        The lock is taken before the order is checked, so the check reads what this transaction
+        will write over (D36). A refusal raises inside the block, which rolls back.
+        """
+        async with acquire(self._pool) as connection:
+            locked = [
+                _data_source_from(row) async for row in self._queries.lock_data_sources(connection)
+            ]
+            priorities = reorder_keeping_tiers(locked, order)
+            await self._queries.update_data_source_priorities(
+                connection,
+                data_sources=[str(source) for source in priorities],
+                priorities=list(priorities.values()),
+            )
+            rows = [row async for row in self._queries.select_data_sources(connection)]
+        return tuple(_data_source_from(row) for row in rows)
 
     async def read_breakdown_schemes(
         self,
@@ -299,6 +302,17 @@ def _conditions_from(
             threshold_max=condition["threshold_max"],
         )
         for condition in conditions
+    )
+
+
+def _data_source_from(row: Any) -> DataSource:
+    return DataSource(
+        id=DataSourceId(row.id),
+        name=row.name,
+        source_kind=SourceKind(row.source_kind),
+        default_priority=row.default_priority,
+        reliability_tier=ReliabilityTierId(row.reliability_tier),
+        is_enabled=row.is_enabled,
     )
 
 

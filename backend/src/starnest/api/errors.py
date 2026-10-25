@@ -44,6 +44,7 @@ from starnest.data import (
     ConflictingObservationError,
     InvalidManualValueError,
     InvalidReferencePeriodError,
+    InvalidSourceOrderError,
     MalformedMatchRuleResultError,
     ManualEntryNotPermittedError,
     NoSuchDataSourceError,
@@ -105,6 +106,7 @@ class ErrorCode(StrEnum):
     INVALID_MATCH_RULE_RESULT = "invalid_match_rule_result"
     UNKNOWN_DATA_SOURCE = "unknown_data_source"
     UNKNOWN_SCOPE = "unknown_scope"
+    INVALID_SOURCE_ORDER = "invalid_source_order"
 
 
 class ErrorBody(BaseModel):
@@ -163,6 +165,7 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     ComparisonError: _refusal(409, "invalid_comparison"),
     MalformedMatchRuleResultError: _refusal(422, "invalid_match_rule_result"),
     UnknownDataSourceError: _refusal(422, "unknown_data_source"),
+    InvalidSourceOrderError: _refusal(422, "invalid_source_order"),
 }
 """Which domain fault is which kind of refusal.
 

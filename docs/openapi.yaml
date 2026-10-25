@@ -185,6 +185,49 @@ paths:
                   items: { type: array, items: { $ref: "#/components/schemas/DataSource" } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
 
+  /data-sources/order:
+    put:
+      tags: [catalog]
+      operationId: reorderDataSources
+      summary: Put every source in a new order, keeping the priority tiers
+      description: >
+        One request carrying the whole order, highest priority first, applied in one
+        transaction under a lock: a move and its undo can never stop half way, and two reorders
+        run one after the other (D36). **The stored priorities are handed back out in the new
+        order, never renumbered 1 to n**, so the gaps between tiers survive every move. Two
+        sources sharing a priority read back by id, so swapping them gives the pair distinct
+        numbers. Whether each source is switched on is untouched.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [order]
+              properties:
+                order:
+                  type: array
+                  description: Every source id exactly once, highest priority first.
+                  items: { type: string }
+      responses:
+        "200":
+          description: Every source, in the new global order
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/DataSource" } }
+        "422":
+          description: >-
+            `invalid_source_order` when the order does not name every source exactly once, with
+            `details.missing`, `details.repeated` and `details.unknown`, each a list of source
+            ids and empty where nothing was wrong with it; nothing is changed. Otherwise as
+            `InvalidRequest`.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/InvalidRequestError" } }
+
   /data-sources/{dataSourceId}:
     patch:
       tags: [catalog]
@@ -1354,6 +1397,7 @@ components:
         - invalid_match_rule_result
         - unknown_data_source
         - unknown_scope
+        - invalid_source_order
 
     ReferencePeriod:
       type: object

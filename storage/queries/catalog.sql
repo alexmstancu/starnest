@@ -126,6 +126,31 @@ SET    is_enabled       = coalesce(:is_enabled, is_enabled),
 WHERE  id = :data_source
 RETURNING id, name, source_kind, default_priority, reliability_tier, is_enabled;
 
+-- name: lock_data_sources()
+-- Every source, row-locked until the transaction ends, so two reorders run one after the other
+-- (D36): the second waits here and then reads what the first committed, rather than both
+-- reading the same order and the later write keeping half of each. Locked in id order, which
+-- every caller shares, so two lockers cannot deadlock.
+SELECT s.id,
+       s.name,
+       s.source_kind,
+       s.default_priority,
+       s.reliability_tier,
+       s.is_enabled
+FROM   data_source AS s
+ORDER  BY s.id
+FOR UPDATE;
+
+-- name: update_data_source_priorities(data_sources, priorities)!
+-- Set many sources' priorities in one statement, paired by position. A row whose number is
+-- unchanged is not touched. No uniqueness is checked, nor may it be: a move briefly puts two
+-- sources on one number, and tiers are ties by design.
+UPDATE data_source AS s
+SET    default_priority = n.priority
+FROM   unnest(:data_sources::text[], :priorities::integer[]) AS n(id, priority)
+WHERE  s.id = n.id
+AND    s.default_priority <> n.priority;
+
 -- name: select_attribute_source_priority(attribute)
 -- The per-attribute overrides, flat. An override is partial (reqs.md 6.6): the sources named
 -- here take this order and every other source keeps its global order beneath them, which is
