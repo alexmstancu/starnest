@@ -1845,7 +1845,9 @@ components:
           description: >-
             Candidate ids of countries. At least one is required: eu_free_movement and the UK
             and Swiss gates all turn on it (reqs.md 7.3), and an empty set would make every
-            such gate pass or fail silently rather than visibly.
+            such gate pass or fail silently rather than visibly. A change moves the ranking at
+            once -- a gate a held citizenship clears (MatchRule.cleared_by) rules nothing out --
+            and flags every gate answer that assumed other citizenships (needs_recheck).
           items: { type: string }
     Household:
       allOf: [ { $ref: "#/components/schemas/HouseholdInput" } ]
@@ -2074,7 +2076,7 @@ components:
 
     MatchRule:
       type: object
-      required: [id, name, level, description]
+      required: [id, name, level, description, cleared_by, decided_by_citizenship]
       properties:
         id: { type: string }
         name: { type: string }
@@ -2084,6 +2086,19 @@ components:
           description: >-
             When a candidate matches this gate, in words: catalog data seeded from reqs.md 7.3's
             "Matches when" column, never an identifier.
+        cleared_by:
+          type: array
+          description: >-
+            Candidate ids of the citizenships that clear this gate wherever it asks: a household
+            holding one matches it with no recorded answer, and an answer recorded for it rules
+            nothing out (reqs.md 7.3, Q239). Catalog data; empty where no source names one.
+          items: { type: string }
+        decided_by_citizenship:
+          type: boolean
+          description: >-
+            Whether the household's citizenships decide this gate outright (eu_free_movement):
+            where none of them clears it, it does not match, with no recorded answer, and the
+            refusal or warning names the citizenships it read. Never researched.
 
     MatchRuleResultInput:
       type: object
@@ -2135,6 +2150,21 @@ components:
                 interface computes an answer's age and whether its period has ended from (D54). An
                 ended period never expires an answer: it applies until a person changes it. Null
                 only on an answer not yet stored.
+            assumed_citizenships:
+              type: array
+              description: >-
+                Candidate ids of the household citizenships this answer assumed, copied when it was
+                recorded (Q239). Empty on an answer recorded before they were kept, or with no
+                household, and always empty on a ranking's gate evidence.
+              items: { type: string }
+            needs_recheck:
+              type: boolean
+              description: >-
+                The household's citizenships differ from those this answer assumed, so a person
+                should re-check it (`researchMatchRules` with `recheck`, or record again). A flag
+                only: the answer still applies until a person records again, and is never expired
+                or overwritten. False where it assumed nothing on record, and always false on a
+                ranking's gate evidence.
             pending_proposal:
               description: >-
                 What a re-check found about an answer a person recorded, stored beside it after it
@@ -2551,10 +2581,17 @@ components:
         gate_answer:
           description: >-
             The answer a gate held as a warning read, as it stood then, as for a refusal (D46).
-            Null for a compound rule.
+            Null for a compound rule, and for a gate decided by citizenship.
           oneOf:
             - $ref: "#/components/schemas/MatchRuleResult"
             - type: "null"
+        citizenships:
+          type: array
+          description: >-
+            Candidate ids of the household citizenships a gate decided by citizenship read in
+            place of a recorded answer, none of which clears it (Q239); a saved ranking keeps those
+            it read. Empty for anything else.
+          items: { type: string }
         detail: { type: string, description: "In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved." }
         inputs:
           type: array
@@ -2576,11 +2613,18 @@ components:
         gate_answer:
           description: >-
             The answer a gate's refusal read, as it stood then: a saved ranking keeps the version
-            it read however the gate is answered later (D46). Null for any other reason, and for
-            a refusal saved before its evidence was kept.
+            it read however the gate is answered later (D46). Null for any other reason, for
+            a refusal saved before its evidence was kept, and for a gate decided by citizenship.
           oneOf:
             - $ref: "#/components/schemas/MatchRuleResult"
             - type: "null"
+        citizenships:
+          type: array
+          description: >-
+            Candidate ids of the household citizenships a gate decided by citizenship read in
+            place of a recorded answer, none of which clears it (Q239); a saved ranking keeps those
+            it read. Empty for anything else.
+          items: { type: string }
         inputs:
           type: array
           description: >-

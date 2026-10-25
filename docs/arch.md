@@ -407,7 +407,8 @@ database rather than only in prose:
 | `level`, `candidate`, `pillar`, `attribute` | `criteria_set`, `criterion` |
 | `value` and its typed children | `evaluation`, `candidate_result` |
 | `data_source`, `run`, `external_score` | `household` |
-| `match_rule`, `match_rule_result`, `match_rule_candidate` | |
+| `match_rule`, `match_rule_result`, `match_rule_candidate` | `evaluation_citizenship` -- the citizenships a saved ranking's gates were decided on |
+| `match_rule_clearing_citizenship`, `match_rule_answer_citizenship` -- which citizenships clear a gate, and which an answer assumed (Q239). They name places, never the household | |
 | `match_rule_research_spend` -- what gate research billed, beside the runs' own spend | |
 
 **No table on the left ever carries a foreign key to one on the right.** Values do not know

@@ -1655,6 +1655,16 @@ components:
       type: string
     MatchRuleBody:
       properties:
+        cleared_by:
+          default: []
+          items:
+            type: string
+          title: Cleared By
+          type: array
+        decided_by_citizenship:
+          default: false
+          title: Decided By Citizenship
+          type: boolean
         description:
           title: Description
           type: string
@@ -1677,6 +1687,12 @@ components:
       type: object
     MatchRuleResultBody:
       properties:
+        assumed_citizenships:
+          default: []
+          items:
+            type: string
+          title: Assumed Citizenships
+          type: array
         candidate:
           title: Candidate
           type: string
@@ -1699,6 +1715,10 @@ components:
         match_rule:
           title: Match Rule
           type: string
+        needs_recheck:
+          default: false
+          title: Needs Recheck
+          type: boolean
         override_date:
           anyOf:
           - format: date-time
@@ -1827,6 +1847,15 @@ components:
       description: Exactly one of the three names the rule that said so (`reqs.md`
         5.4).
       properties:
+        citizenships:
+          default: []
+          description: The household citizenships a gate decided by citizenship read
+            in place of an answer, none of which clears it (Q239). Empty for anything
+            else.
+          items:
+            type: string
+          title: Citizenships
+          type: array
         compound_rule:
           anyOf:
           - type: string
@@ -3175,6 +3204,15 @@ components:
 
         holds as a warning (D56).'
       properties:
+        citizenships:
+          default: []
+          description: The household citizenships a gate decided by citizenship read
+            in place of an answer, none of which clears it (Q239). Empty for anything
+            else.
+          items:
+            type: string
+          title: Citizenships
+          type: array
         compound_rule:
           anyOf:
           - type: string

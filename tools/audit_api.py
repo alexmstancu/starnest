@@ -53,6 +53,7 @@ COVERED_ELSEWHERE = {
         "deliberately not exposed (Q236): it decides which pairs research asks about, and "
         "planMatchRuleResearch reports their count; the MatchRule body is unchanged"
     ),
+    "MATCH_RULE_CLEARING_CITIZENSHIP": "MatchRule.cleared_by",
     "MATCH_RULE_RESEARCH_SPEND": (
         "not exposed row by row: Holdings.spent.research_eur is its monthly sum (C04-N1)"
     ),
