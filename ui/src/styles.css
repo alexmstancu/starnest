@@ -4648,6 +4648,7 @@ select.field__control {
 
 .table--matrix > thead > tr > th.matrix__head--focus {
   color: var(--colour-accent);
+}
 
 /* PL-114. The open pillar is tinted, as the design's active row is. */
 .weight-row[data-open="true"] {

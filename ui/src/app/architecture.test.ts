@@ -44,6 +44,29 @@ function sourceFiles(directory: string = SOURCE): string[] {
   });
 }
 
+/**
+ * Each brace the sheet leaves unbalanced, by line: a block opened and never closed, or a `}`
+ * that closes nothing. Comments and quoted strings are blanked first, keeping their newlines,
+ * so a brace inside either counts for nothing and the lines still match the file's.
+ */
+function unclosedBlocksIn(sheet: string): string[] {
+  const blank = (text: string) => text.replace(/[^\n]/g, " ");
+  const code = sheet
+    .replace(/\/\*[\s\S]*?\*\//g, blank)
+    .replace(/"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'/g, blank);
+  const problems: string[] = [];
+  const opened: number[] = [];
+  let line = 1;
+  for (const character of code) {
+    if (character === "\n") line += 1;
+    else if (character === "{") opened.push(line);
+    else if (character === "}" && opened.pop() === undefined) {
+      problems.push(`line ${line}: a } that closes nothing`);
+    }
+  }
+  return [...problems, ...opened.map((at) => `line ${at}: a block never closed`)];
+}
+
 /** Every directory named in a `no-restricted-paths` zone, on either side of it. */
 function layeredDirectories(): Set<string> {
   const named = new Set<string>();
@@ -115,6 +138,17 @@ describe("the folder structure", () => {
 });
 
 describe("the design is a plugin", () => {
+  it("parses: every block the sheet opens, it closes", () => {
+    /**
+     * **Two appends to the end of the sheet can merge into one that does not parse, with no
+     * conflict.** Git took a final `}` as context both sides shared, so one lane's rules landed
+     * inside the other's last block and its closing brace was lost. Vite then refused the whole
+     * sheet and every browser test failed, while every unit test passed: jsdom never parses it.
+     */
+    const stylesheet = readFileSync(join(SOURCE, "styles.css"), "utf8");
+    expect(unclosedBlocksIn(stylesheet)).toEqual([]);
+  });
+
   it("is imported by the entry point and by nothing else", () => {
     const importers = sourceFiles()
       .filter((path) =>
