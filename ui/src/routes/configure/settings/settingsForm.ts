@@ -66,7 +66,7 @@ export const SETTING_FIELDS = [
     rule: { kind: "decimal", minimum: 0, maximum: 100, optional: true },
     label: "Minimum coverage to score",
     unit: "%",
-    description: "Below this, a candidate is insufficient_data.",
+    description: "Below this, a candidate has insufficient data and shows no score.",
     consequence:
       "No coverage floor is in force, so a candidate is scored however little is known about it.",
     severity: "advisory",
@@ -98,9 +98,12 @@ export const SETTING_FIELDS = [
     rule: { kind: "money", minimum: 0, optional: true, cents: "always" },
     label: "Spend cap per acquisition",
     unit: "€",
-    description: "A run halts here, keeping what it fetched.",
+    // **The cap bounds gate research too** (`api/rules.py`, `data_acquisition/research.py`).
+    description:
+      "An acquisition halts here, keeping what it fetched, and so does each gate-research pass.",
     consequence:
-      "A run that can spend refuses to start until a cap is set, or the request accepts going uncapped.",
+      "An acquisition or a gate-research pass that can spend refuses to start until a cap is " +
+      "set, or the request accepts going uncapped.",
     severity: "advisory",
   },
   {

@@ -58,12 +58,6 @@ const GATE_PROPOSALS: readonly KnownOffender[] = [
   },
 ];
 
-const COVERAGE_FLOOR: KnownOffender = {
-  identifier: "insufficient_data",
-  where: "stage 6, the coverage floor's description",
-  removedBy: "PL-031 (C02)",
-};
-
 const MANUAL_SOURCE: KnownOffender = {
   identifier: "manual",
   where: 'the hand-entry card\'s lead and its open form: "stored under the manual source"',
@@ -74,7 +68,6 @@ export const IDENTIFIER_LEDGER = {
   "Configure, a pillar and a rule editor open": [
     ...COMPOUND_RULES,
     ...GATE_PROPOSALS,
-    COVERAGE_FLOOR,
   ],
   "Configure, a weight change refused": [
     {
@@ -84,10 +77,9 @@ export const IDENTIFIER_LEDGER = {
     },
     ...COMPOUND_RULES,
     ...GATE_PROPOSALS,
-    COVERAGE_FLOOR,
   ],
-  "Configure, nothing set": [...COMPOUND_RULES, ...GATE_PROPOSALS, COVERAGE_FLOOR],
-  "Configure, no criteria set": [COVERAGE_FLOOR],
+  "Configure, nothing set": [...COMPOUND_RULES, ...GATE_PROPOSALS],
+  "Configure, no criteria set": [],
   "Configure, the server unreachable": [],
 
   "Acquire, a run card with its gaps open, a diff chosen and hand entry open": [MANUAL_SOURCE],

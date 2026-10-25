@@ -266,7 +266,7 @@ describe("a setting that is not set", () => {
     const settings = await panel();
 
     expect(await settings.findByRole("alert")).toHaveTextContent(
-      /nothing can be ranked or compared until the score scale maximum is set/i,
+      /nothing can be ranked or compared until the top of the score range is set/i,
     );
   });
 

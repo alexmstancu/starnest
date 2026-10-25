@@ -75,8 +75,8 @@ function SettingsFields({ settings }: { settings: Settings }) {
       {blocked && (
         <div className="notice notice--error" role="alert">
           <p className="notice__message">
-            Nothing can be ranked or compared until the score scale maximum is
-            set. It has no default, because the scale is a judgement rather
+            Nothing can be ranked or compared until the top of the score range
+            is set. It has no default, because the scale is a judgement rather
             than a fact.
           </p>
         </div>

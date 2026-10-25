@@ -172,14 +172,33 @@ describe("what a blank setting costs", () => {
    */
   it("gives every setting a consequence written in plain words", () => {
     for (const field of SETTING_FIELDS) {
-      // `insufficient_data` and `score_scale_max` are the contract's words, not a reader's --
-      // and a `description` is allowed them, because it says what the setting is for.
+      // `insufficient_data` and `score_scale_max` are the contract's words, not a reader's, and
+      // a description is read by the same reader (PL-031, C02-S6).
       expect(field.consequence).not.toMatch(/[a-z]+_[a-z_]+/);
+      expect(field.description).not.toMatch(/[a-z]+_[a-z_]+/);
       expect(field.consequence).toMatch(/^[A-Z].*\.$/);
       // A consequence is what is true while it is blank, so it must not merely restate the
       // description of what the setting is for.
       expect(field.consequence).not.toBe(field.description);
     }
+  });
+});
+
+/** PL-031. Stage 6 says what each setting does in a reader's words, and all of what it does. */
+describe("the settings in words", () => {
+  const field = (name: string) => SETTING_FIELDS.find((each) => each.name === name)!;
+
+  it("says a candidate below the floor has insufficient data and no score", () => {
+    expect(field("min_coverage").description).toBe(
+      "Below this, a candidate has insufficient data and shows no score.",
+    );
+  });
+
+  it("says the cap bounds each gate-research pass as well as an acquisition", () => {
+    expect(field("run_spend_cap_eur").description).toBe(
+      "An acquisition halts here, keeping what it fetched, and so does each gate-research pass.",
+    );
+    expect(field("run_spend_cap_eur").consequence).toMatch(/gate-research pass/);
   });
 });
 
