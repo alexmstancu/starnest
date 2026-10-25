@@ -18,6 +18,9 @@ type CriteriaSet = components["schemas"]["CriteriaSet"];
 type Criterion = components["schemas"]["Criterion"];
 type CandidateResult = components["schemas"]["CandidateResult"];
 type Ranking = components["schemas"]["Ranking"];
+type RuleWarning = components["schemas"]["Warning"];
+type RuleOutcome = components["schemas"]["RuleOutcome"];
+type NonMatchReason = components["schemas"]["NonMatchReason"];
 type Run = components["schemas"]["Run"];
 type Settings = components["schemas"]["Settings"];
 type Comparison = components["schemas"]["Comparison"];
@@ -296,6 +299,17 @@ const COUNTRY_RESULTS: CandidateResult[] = [
       { pillar: "safety", score: 70, weight: 12, contribution: 8.4 },
       { pillar: "family", score: 60, weight: 4, contribution: 2.4 },
     ],
+    // The rent rule fires here. It shows only in a set that applies the rule, and on the side
+    // that set's outcome puts it (`rankingFor`).
+    warnings: [
+      {
+        compound_rule: "country.rent_within_budget",
+        match_rule: null,
+        gate_answer: null,
+        detail: "Average rent is 41% of the household's target monthly spend, above 35%.",
+        inputs: [],
+      },
+    ],
   },
   {
     candidate: "country.spain",
@@ -435,22 +449,127 @@ function resultOnScale(
   };
 }
 
-/** A ranking as the server sends it: on the scale it was computed on, which travels with it. */
+/** Which rules a set turns on, and what each does when it fires (D56). */
+export type RulesInForce = Pick<
+  CriteriaSet,
+  | "enforced_match_rules"
+  | "applied_compound_rules"
+  | "match_rule_outcomes"
+  | "compound_rule_outcomes"
+>;
+
+/**
+ * A ranking as the server sends it: on the scale it was computed on, which travels with it.
+ *
+ * **The rules it applies are the set's** (`evaluation/ranking.py`). The fixtures record what
+ * each rule finds about a candidate; only a rule the set enforces or applies shows, as a warning
+ * or a reason for not matching as the set's outcome says, and the match status and ranks follow.
+ * Left out, the rules are the shipped set's of that name, or none at all.
+ */
 export function rankingFor(
   criteriaSet: string,
   level: string,
   scaleMax: number = MOCK_SCORE_SCALE,
+  rules: RulesInForce = makeCriteriaSetDetails()[criteriaSet] ?? {},
 ): Ranking {
+  const judged = (level === "city" ? CITY_RESULTS : COUNTRY_RESULTS).map((result) =>
+    judgedBy(result, rules),
+  );
   return {
     evaluation: null,
     criteria_set: criteriaSet,
     level,
     computed_at: "2026-08-30T09:15:00Z",
     score_scale_max: scaleMax,
-    candidates: (level === "city" ? CITY_RESULTS : COUNTRY_RESULTS).map(
-      (result) => resultOnScale(result, scaleMax),
+    candidates: inDisplayOrder(ranked(judged)).map((result) =>
+      resultOnScale(result, scaleMax),
     ),
   };
+}
+
+type Finding = { match_rule?: string | null; compound_rule?: string | null; detail: string } & Pick<
+  RuleWarning,
+  "gate_answer" | "inputs"
+>;
+
+/** A candidate's result under a set's rules: as `ranking.py` judges one candidate. */
+function judgedBy(result: CandidateResult, rules: RulesInForce): CandidateResult {
+  const findings: Finding[] = [
+    ...(result.warnings ?? []),
+    ...(result.non_match_reasons ?? [])
+      .filter((reason) => !reason.criterion)
+      .map(({ reason_detail, criterion: _criterion, ...rest }) => ({ ...rest, detail: reason_detail })),
+  ];
+  const warnings: RuleWarning[] = [];
+  const reasons: NonMatchReason[] = [];
+  // Gates before compound rules, on each side, as the server lists them.
+  for (const finding of [
+    ...findings.filter((each) => each.match_rule),
+    ...findings.filter((each) => !each.match_rule),
+  ]) {
+    const outcome = outcomeInForce(finding, rules);
+    if (outcome === null) continue;
+    const { detail, ...rule } = finding;
+    if (outcome === "warning") warnings.push({ ...rule, detail });
+    else reasons.push({ ...rule, reason_detail: detail });
+  }
+  reasons.push(...(result.non_match_reasons ?? []).filter((reason) => reason.criterion));
+
+  const { warnings: _warnings, non_match_reasons: _reasons, ...rest } = result;
+  return {
+    ...rest,
+    ...(warnings.length > 0 ? { warnings } : {}),
+    ...(reasons.length > 0 ? { non_match_reasons: reasons } : {}),
+    // A remaining reason rules it out; without one, only a missing score keeps it unranked.
+    match_status:
+      reasons.length > 0 ? "not_matching" : result.score === null ? "insufficient_data" : "matching",
+  };
+}
+
+/** What a finding's rule does in this set, or null where the set does not turn it on. */
+function outcomeInForce(finding: Finding, rules: RulesInForce): RuleOutcome | null {
+  if (finding.match_rule) {
+    const gate = finding.match_rule;
+    if (!(rules.enforced_match_rules ?? []).includes(gate)) return null;
+    return rules.match_rule_outcomes?.[gate] ?? "not_matching";
+  }
+  const ruleId = finding.compound_rule ?? "";
+  if (!(rules.applied_compound_rules ?? []).includes(ruleId)) return null;
+  return (
+    rules.compound_rule_outcomes?.[ruleId] ??
+    COMPOUND_RULES.find((rule) => rule.id === ruleId)?.outcome ??
+    "warning"
+  );
+}
+
+/** `ranking.py`'s `_ranked`: only a matching candidate with a score ranks, and ties share. */
+function ranked(results: CandidateResult[]): CandidateResult[] {
+  const running = results
+    .filter((each) => each.score != null && each.match_status === "matching")
+    .sort((one, other) => (other.score ?? 0) - (one.score ?? 0));
+  const ranks = new Map<string, number>();
+  running.forEach((each, index) => {
+    const previous = running[index - 1];
+    ranks.set(
+      each.candidate,
+      previous?.score === each.score
+        ? (ranks.get(previous.candidate) ?? index + 1)
+        : index + 1,
+    );
+  });
+  return results.map((each) => ({ ...each, rank: ranks.get(each.candidate) ?? null }));
+}
+
+/** The ranked by rank, then the unranked by score, those with none last; ties by id. */
+function inDisplayOrder(results: CandidateResult[]): CandidateResult[] {
+  const key = (each: CandidateResult): [number, number, number] =>
+    each.rank != null ? [0, each.rank, 0] : [1, each.score == null ? 1 : 0, -(each.score ?? 0)];
+  return [...results].sort((one, other) => {
+    const [a, b] = [key(one), key(other)];
+    return (
+      a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || one.candidate.localeCompare(other.candidate)
+    );
+  });
 }
 
 export const RUNS: Run[] = [
@@ -1487,7 +1606,7 @@ export const COMPOUND_RULES: CompoundRule[] = [
     level: "country",
     // A share is a fraction, as reqs.md 3.7a's rules give it ("Provisionally 0.40").
     description:
-      "Flags a candidate when Average rent is more than 35% of the household's target monthly spend.",
+      "Applies when Average rent is more than 35% of the household's target monthly spend.",
     shape: "ShareOfHouseholdField",
     outcome: "warning",
     threshold_max: 0.35,
@@ -1509,7 +1628,7 @@ export const COMPOUND_RULES: CompoundRule[] = [
     name: "Mild and connected",
     level: "country",
     description:
-      "Rules a candidate out when Summer daytime high is at most 30 and Broadband coverage is at least 90.",
+      "Applies when Summer daytime high is at most 30 and Broadband coverage is at least 90.",
     shape: "AllConditionsHold",
     outcome: "not_matching",
     inputs: [],

@@ -170,7 +170,7 @@ describe("the rules panel", () => {
     // PL-155: written from its conditions, naming attributes and bands -- never the shape or
     // the outcome as the vocabulary spells them.
     expect(row).toHaveTextContent(
-      "Rules a candidate out when Summer daytime high is at most 30 and Broadband coverage is at least 90.",
+      "Applies when Summer daytime high is at most 30 and Broadband coverage is at least 90.",
     );
     expect(row).not.toHaveTextContent("AllConditionsHold");
     expect(row).not.toHaveTextContent("not_matching");
@@ -488,15 +488,43 @@ describe("what a rule costs, and its colour", () => {
     expect(effect).toHaveClass("rule-row__effect--flags");
   });
 
-  it("says an applied rule that flags nobody applies to no country, and not in red", async () => {
+  it("says an applied rule that fires for nobody applies to no country, and not in red", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+
+    await user.click(await screen.findByRole("switch", { name: "Apply Mild and connected" }));
+
+    const effect = await effectOf("Mild and connected", "Applies to no country right now.");
+    expect(effect).not.toHaveClass("rule-row__effect--removes");
+  });
+
+  /**
+   * The mock's ranking honours the set, as the server's does: the line follows the rule from
+   * a flag, to a removal once it is held as a gate, to nobody once it is switched off.
+   */
+  it("follows the ranking as the rule is applied, held as a gate, and switched off", async () => {
     const user = userEvent.setup();
     renderShell("/configure");
     await panel();
 
     await applyRent(user);
+    expect(
+      await effectOf("Rent fits the target spend", "Flags Netherlands."),
+    ).toHaveClass("rule-row__effect--flags");
 
-    const effect = await effectOf("Rent fits the target spend", "Applies to no country right now.");
-    expect(effect).not.toHaveClass("rule-row__effect--removes");
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "What Rent fits the target spend does when it fires" }),
+      "not_matching",
+    );
+    expect(
+      await effectOf("Rent fits the target spend", "Removes Netherlands."),
+    ).toHaveClass("rule-row__effect--removes");
+
+    await user.click(screen.getByRole("switch", { name: "Apply Rent fits the target spend" }));
+    expect(
+      await effectOf("Rent fits the target spend", "Not applied, so it flags nobody."),
+    ).toHaveClass("rule-row__effect--off");
   });
 
   it("applies to no country in an empty ranking", async () => {

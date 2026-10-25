@@ -433,6 +433,66 @@ describe("the mock's outcome of a rule", () => {
   });
 });
 
+/** As `evaluation/ranking.py` judges: only the set's rules act, and on the side its outcome says. */
+describe("the mock ranking's rules", () => {
+  async function resultFor(criteriaSet: string, candidate: string) {
+    const ranking = await fetchRanking(criteriaSet, "country");
+    return ranking.candidates.find((each) => each.candidate === candidate)!;
+  }
+
+  it("leaves no warning or reason for a rule the set switches off", async () => {
+    await setMatchRuleEnforcement("default", "country.visa_route_exists", false);
+
+    const spain = await resultFor("default", "country.spain");
+    const netherlands = await resultFor("default", "country.netherlands");
+    expect(spain.non_match_reasons).toBeUndefined();
+    expect(spain.warnings).toBeUndefined();
+    expect(spain.match_status).toBe("matching");
+    expect(spain.rank).toBe(3);
+    // The rent rule fires for the Netherlands, and no set applies it.
+    expect(netherlands.warnings).toBeUndefined();
+  });
+
+  it("flags rather than removes for a gate the set holds as a warning", async () => {
+    await setMatchRuleEnforcement("default", "country.visa_route_exists", true, "warning");
+
+    const spain = await resultFor("default", "country.spain");
+    expect(spain.non_match_reasons).toBeUndefined();
+    expect(spain.warnings?.map((each) => each.match_rule)).toEqual(["country.visa_route_exists"]);
+    expect(spain.match_status).toBe("matching");
+  });
+
+  it("removes for a compound rule the set holds as a gate, and ranks the rest again", async () => {
+    await setCompoundRuleApplication("default", "country.rent_within_budget", true, "not_matching");
+
+    const ranking = await fetchRanking("default", "country");
+    const netherlands = ranking.candidates.find((each) => each.candidate === "country.netherlands")!;
+    expect(netherlands.warnings).toBeUndefined();
+    expect(netherlands.non_match_reasons?.map((each) => each.compound_rule)).toEqual([
+      "country.rent_within_budget",
+    ]);
+    expect(netherlands.match_status).toBe("not_matching");
+    expect(netherlands.rank).toBeNull();
+    // The ranked first, then the unranked by score, those with none last.
+    expect(ranking.candidates.map((each) => [each.name, each.rank])).toEqual([
+      ["Portugal", 1],
+      ["Netherlands", null],
+      ["Spain", null],
+      ["Estonia", null],
+    ]);
+  });
+
+  it("flags with a compound rule's catalog outcome when the set names none", async () => {
+    await setCompoundRuleApplication("default", "country.rent_within_budget", true);
+
+    const netherlands = await resultFor("default", "country.netherlands");
+    expect(netherlands.warnings?.map((each) => each.compound_rule)).toEqual([
+      "country.rent_within_budget",
+    ]);
+    expect(netherlands.match_status).toBe("matching");
+  });
+});
+
 describe("the mock's holdings", () => {
   const SINCE = "2026-08-01T00:00:00+02:00";
 
