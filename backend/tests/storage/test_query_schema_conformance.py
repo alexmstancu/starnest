@@ -245,10 +245,14 @@ is that every read and every edit sees live sets only. Forgetting the filter onc
 edit or rank a set somebody deleted, so every query reading the table carries it or is here.
 """
 
-MAY_ASK_FOR_A_DELETED_SET = {"_purge", "restore_criteria_set", "read_default_criteria_set"}
+MAY_ASK_FOR_A_DELETED_SET = {
+    "purge_criteria_set",
+    "restore_criteria_set",
+    "read_default_criteria_set",
+}
 """The only store methods that reach a deleted set -- by locking it whatever its state, or by
-passing `include_deleted=True` to `select_criteria_set`: the purge (through its helper), the
-restore, and the read of the default a new set copies."""
+passing `include_deleted=True` to `select_criteria_set`: the purge, the restore, and the read of
+the default a new set copies."""
 
 REACHES_A_DELETED_SET = "lock_criteria_set_live_or_deleted"
 

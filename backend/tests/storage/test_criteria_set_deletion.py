@@ -91,8 +91,8 @@ these thresholds yet. They stay in the snapshot: the day one can, it is covered.
 REWRITES_WITHOUT_THE_LOCK = {
     "create_criteria_set": "a new set: inserting its row is refused for an id any set holds, "
     "live or deleted, so there is no deleted set for it to write into",
-    "_purge": "tests and tooling only: it destroys the set, deleted or not, so it takes the "
-    "lock that reaches a deleted set, `lock_criteria_set_live_or_deleted`",
+    "purge_criteria_set": "tests and tooling only: it destroys the set, deleted or not, so it "
+    "takes the lock that reaches a deleted set, `lock_criteria_set_live_or_deleted`",
 }
 """Store methods that clear or write a set's rows without taking the live set's lock first."""
 
@@ -487,15 +487,17 @@ class TestIdentifiersAndNames:
         self, criteria: PostgresCriteriaStore, make: Callable[[CriteriaSet], Awaitable[None]]
     ) -> None:
         """P1-35. A deleted set holds no name, so another may take it; restoring the first then
-        is refused, naming the set and the name, and leaves it deleted."""
+        is refused, naming the name in its details, and leaves it deleted. The sentence names no
+        identifier (P1-07, PL-003): a screen words the refusal from its code and details."""
         await make(_a_set(FIRST, name="Partner"))
         await criteria.discard_criteria_set(FIRST)
         await make(_a_set(SECOND, name="partner"))
 
-        with pytest.raises(CriteriaSetNameTakenError, match=f"'{FIRST}'.*'Partner'") as refused:
+        with pytest.raises(CriteriaSetNameTakenError, match="'Partner'") as refused:
             await criteria.restore_criteria_set(FIRST)
 
         assert refused.value.name == "Partner"
+        assert str(FIRST) not in str(refused.value)
         with pytest.raises(UnknownCriteriaSetError):
             await criteria.read_criteria_set(FIRST)
 
