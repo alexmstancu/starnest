@@ -5,8 +5,7 @@ import { useRead } from "../../api/useRead";
 import type { SourceNames } from "../../api/useSourceNames";
 import { formatDate, matchRuleName, safeHttpUrl, sourceName } from "../../format/display";
 import { LoadedRegion } from "../../shell/LoadedRegion";
-import { dayOf, describeAge, periodHasEnded } from "../configure/gateAnswerReading";
-import { describePeriod } from "../configure/proposals/proposalReading";
+import { dayOf, describeAge, describePeriod, periodHasEnded } from "../configure/gateAnswerReading";
 import { answerInWords, answersAbout } from "./candidateGates";
 
 /**
