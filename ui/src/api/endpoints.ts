@@ -580,25 +580,38 @@ export interface ResearchScope {
  * deciding whether to trust one wants to see what has already been settled beside it.
  */
 /**
- * Switch a source on or off, and set where it stands in the global order.
+ * Switch a source on or off. Where it stands is `reorderDataSources`, which moves every source
+ * at once: one number written here would renumber a tier and could leave a move half done.
  *
  * **Switching one off stops its figures being scored and keeps every one of them**
  * (`reqs.md` 3.6, Q232): the values stay stored, stay visible in the drill-down with their
  * provenance, and return to the ranking when it is switched back on. **Scores move when this
  * changes**, because the active-value rule is evaluated on every read -- so a ranking on
  * screen is refetched rather than adjusted here.
- *
- * Both fields are optional and independent: switching one off does not restate its priority.
  */
 export function updateDataSource(
   dataSourceId: string,
-  change: { is_enabled?: boolean; default_priority?: number },
+  change: { is_enabled: boolean },
   options?: RequestOptions,
 ): Promise<DataSource> {
   return patchJson("/data-sources/{dataSourceId}", change, {
     ...options,
     pathParams: { dataSourceId },
   });
+}
+
+/**
+ * Put every source in a new order, highest priority first, in one request (D36, PL-136).
+ *
+ * **Atomic, and the tiers survive**: the server hands the stored priorities back out in the
+ * new order rather than renumbering them 1 to n, and answers every source in the order it now
+ * holds. A move and its undo can never stop half way, which a run of `PATCH`es could.
+ */
+export function reorderDataSources(
+  order: readonly string[],
+  options?: RequestOptions,
+): Promise<{ items: DataSource[] }> {
+  return putJson("/data-sources/order", { order: [...order] }, options);
 }
 
 export function fetchMatchRuleResults(

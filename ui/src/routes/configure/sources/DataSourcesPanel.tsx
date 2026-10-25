@@ -1,7 +1,7 @@
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { Stage } from "../Stage";
-import { inPriorityOrder, positionsOf } from "./sourceOrder";
+import { describeOrderRefusal, inPriorityOrder, positionsOf } from "./sourceOrder";
 import {
   attributesWithOwnOrder,
   describeMaxAge,
@@ -55,9 +55,8 @@ export function DataSourcesPanel({
   const attributes = catalog?.read.state === "ready" ? catalog.attributes : null;
   const names = new Map(sources.sources.map((source) => [source.id, source.name]));
   const positions = positionsOf(sources.sources);
-  // A reorder writes several rows one at a time, so every control is held until a change has
-  // been written and read back (UI-07): a gesture started meanwhile would be computed from a
-  // list that is partly the old one. **Held, never disabled** (NEW-34): Chromium throws focus off
+  // Every control is held until a change has been written and read back (UI-07): a gesture
+  // started meanwhile would be computed from the order before it. **Held, never disabled** (NEW-34): Chromium throws focus off
   // a control the moment it is disabled, so a switch or arrow pressed from the keyboard put the
   // reader back on the page. A held one keeps focus, says so, and the hook refuses the press.
   const held = sources.saving !== null;
@@ -79,7 +78,9 @@ export function DataSourcesPanel({
       }
     >
       {/* No "try again" here: a change is retried by making it again. */}
-      <ActRefusal act="The change to the sources" error={sources.failure} />
+      <ActRefusal act="The change to the sources" error={sources.failure}>
+        <OrderRefusal error={sources.failure} nameOf={(id) => sourceName(names, id)} />
+      </ActRefusal>
 
       {sources.read.state !== "idle" && (
         <LoadedRegion
@@ -240,6 +241,12 @@ export function DataSourcesPanel({
 }
 
 const NONE_REQUIRED: ReadonlySet<string> = new Set();
+
+/** The sources an order refusal names, beneath the code's own sentence (P1-07). */
+function OrderRefusal({ error, nameOf }: { error: unknown; nameOf: (id: string) => string }) {
+  const named = describeOrderRefusal(error, nameOf);
+  return named === null ? null : <p>{named}</p>;
+}
 
 /**
  * What switching a source off costs, where it is the only one that can fetch a required figure.

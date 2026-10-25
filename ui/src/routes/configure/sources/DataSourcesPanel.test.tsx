@@ -2,6 +2,8 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { fetchDataSources } from "../../../api/endpoints";
+import { DATA_SOURCES } from "../../../mocks/fixtures";
 import { mockServer } from "../../../mocks/server";
 import {
   expectHeld,
@@ -204,9 +206,8 @@ describe("the source priority panel", () => {
  * Dragging a source to a new place in the order.
  *
  * **A drag is a splice and the arrows are a swap**, so these do not share arithmetic with the
- * arrow tests -- and the request a drop sends is what they mostly check, because that is the
- * part the contract constrains: there is no batch reorder and no new operation, only a run of
- * the same `PATCH` the arrows already send.
+ * arrow tests -- and the request a drop sends is what they mostly check: one reorder carrying
+ * the whole new order, the same operation the arrows send (D36).
  *
  * jsdom implements no `DataTransfer` at all, so each gesture passes a stub in the event init
  * and the handler is written to survive its absence.
@@ -223,32 +224,22 @@ function dragOnto(dragged: HTMLElement, target: HTMLElement) {
   fireEvent.dragEnd(dragged, { dataTransfer });
 }
 
-/** Every priority change the panel sends, so a test can count them as well as read them. */
-function recordPriorityRequests(): { id: string; body: unknown }[] {
-  const sent: { id: string; body: unknown }[] = [];
+/**
+ * Every order the panel sends, so a test can count them as well as read them. Each is handed
+ * on to the stateful mock, so the order read back afterwards is the one it left.
+ */
+function recordOrders(): unknown[] {
+  const sent: unknown[] = [];
   mockServer.use(
-    http.patch(
-      "/v1/data-sources/:dataSourceId",
-      async ({ params, request }) => {
-        sent.push({
-          id: String(params["dataSourceId"]),
-          body: await request.json(),
-        });
-        return HttpResponse.json({});
-      },
-    ),
+    http.put("/v1/data-sources/order", async ({ request }) => {
+      sent.push(await request.clone().json());
+    }),
   );
   return sent;
 }
 
-/**
- * The two requests the ▲ on Manual entry sends, against the shipped fixture: a move is an
- * exchange of two numbers, so Manual entry takes Eurostat's 10 and Eurostat takes its 50.
- */
-const THE_ARROWS_SWAP = [
-  { id: "manual", body: { default_priority: 10 } },
-  { id: "eurostat", body: { default_priority: 50 } },
-];
+/** The one request the ▲ on Manual entry sends, against the shipped fixture: the whole order. */
+const THE_ARROWS_ORDER = { order: ["manual", "eurostat", "llm"] };
 
 /**
  * Order a request *after* the gesture under test, and wait for it to land.
@@ -261,13 +252,13 @@ const THE_ARROWS_SWAP = [
  */
 async function thenOrderALaterRequest(
   sources: Awaited<ReturnType<typeof panel>>,
-  seen: { id: string; body: unknown }[],
+  seen: unknown[],
 ): Promise<void> {
   const user = userEvent.setup();
   await user.click(
     await sources.findByRole("button", { name: "Move Manual entry up" }),
   );
-  await waitFor(() => expect(seen.length).toBeGreaterThanOrEqual(2));
+  await waitFor(() => expect(seen.length).toBeGreaterThanOrEqual(1));
 }
 
 async function row(name: string): Promise<HTMLElement> {
@@ -283,6 +274,23 @@ function namesInOrder(
   )
     .getAllByRole("listitem")
     .map((item) => item.getAttribute("aria-label"));
+}
+
+/** Every switch the panel sends, which a move must never use. */
+function recordSwitches(): unknown[] {
+  const sent: unknown[] = [];
+  mockServer.use(
+    http.patch("/v1/data-sources/:dataSourceId", async ({ request }) => {
+      sent.push(await request.clone().json());
+    }),
+  );
+  return sent;
+}
+
+/** What the mock now stores, read the way the panel reads it. */
+async function storedPriorities(): Promise<Record<string, number>> {
+  const { items } = await fetchDataSources();
+  return Object.fromEntries(items.map((source) => [source.id, source.default_priority]));
 }
 
 describe("reordering sources by dragging", () => {
@@ -411,24 +419,24 @@ describe("reordering sources by dragging", () => {
   });
 
   /**
-   * **One `PATCH` per row that moved, numbered from one.** A swap of two numbers would put the
-   * dragged row where it was dropped and leave the rows it passed untouched, which is a
-   * different order; and the numbering is dense rather than a rotation of 10, 50 and 90
-   * because two sources sharing a number are then ordered by id rather than by the drop.
+   * PL-136. **One request carrying the whole order**, never a `PATCH` per row: a run of them
+   * renumbered every source 1 to n, erasing the tiers, and could stop half way.
    */
-  it("sends the same request the arrows send, once per row that moved", async () => {
-    const sent = recordPriorityRequests();
+  it("sends one reorder carrying the whole new order, and the tiers survive it", async () => {
+    const sent = recordOrders();
+    const patched = recordSwitches();
     renderShell("/configure");
+    const sources = await panel();
     await row("Eurostat");
 
     dragOnto(await row("Eurostat"), await row("LLM with web search"));
 
-    await waitFor(() => expect(sent).toHaveLength(3));
-    expect(sent).toEqual([
-      { id: "manual", body: { default_priority: 1 } },
-      { id: "llm", body: { default_priority: 2 } },
-      { id: "eurostat", body: { default_priority: 3 } },
-    ]);
+    await waitFor(() =>
+      expect(namesInOrder(sources)).toEqual(["Manual entry", "LLM with web search", "Eurostat"]),
+    );
+    expect(sent).toEqual([{ order: ["manual", "llm", "eurostat"] }]);
+    expect(patched).toEqual([]);
+    expect(await storedPriorities()).toEqual({ manual: 10, llm: 50, eurostat: 90 });
   });
 
   /**
@@ -437,7 +445,7 @@ describe("reordering sources by dragging", () => {
    * that was already on screen.
    */
   it("sends nothing when a row is dropped on itself", async () => {
-    const sent = recordPriorityRequests();
+    const sent = recordOrders();
     renderShell("/configure");
     const sources = await panel();
     await row("Manual entry");
@@ -445,7 +453,7 @@ describe("reordering sources by dragging", () => {
     dragOnto(await row("Manual entry"), await row("Manual entry"));
 
     await thenOrderALaterRequest(sources, sent);
-    expect(sent).toEqual(THE_ARROWS_SWAP);
+    expect(sent).toEqual([THE_ARROWS_ORDER]);
   });
 
   /**
@@ -453,7 +461,7 @@ describe("reordering sources by dragging", () => {
    * delivers no `drop`, only `dragend`.
    */
   it("sends nothing when the drag is released outside the list", async () => {
-    const sent = recordPriorityRequests();
+    const sent = recordOrders();
     renderShell("/configure");
     const sources = await panel();
     const dragged = await row("Eurostat");
@@ -463,12 +471,12 @@ describe("reordering sources by dragging", () => {
     fireEvent.dragEnd(dragged, { dataTransfer });
 
     await thenOrderALaterRequest(sources, sent);
-    expect(sent).toEqual(THE_ARROWS_SWAP);
+    expect(sent).toEqual([THE_ARROWS_ORDER]);
   });
 
   /** A payload dragged in from outside the page fires a drop that no gesture here began. */
   it("sends nothing for a drop that no drag started", async () => {
-    const sent = recordPriorityRequests();
+    const sent = recordOrders();
     renderShell("/configure");
     const sources = await panel();
     const target = await row("Manual entry");
@@ -476,7 +484,7 @@ describe("reordering sources by dragging", () => {
     fireEvent.drop(target, { dataTransfer: { setData: () => undefined } });
 
     await thenOrderALaterRequest(sources, sent);
-    expect(sent).toEqual(THE_ARROWS_SWAP);
+    expect(sent).toEqual([THE_ARROWS_ORDER]);
   });
 
   /**
@@ -500,9 +508,8 @@ describe("reordering sources by dragging", () => {
   });
 
   /**
-   * **A drag refuses to start while a change is in flight.** A reorder writes several rows one
-   * at a time, so a gesture arriving mid-write would compute its order from a list that is
-   * partly the old one, and send a mixture of the two numberings.
+   * **A drag refuses to start while a change is in flight**, because it would compute its
+   * order from the list before that change, and send an order that undoes it.
    */
   it("starts no drag while a change is still being saved", async () => {
     const user = userEvent.setup();
@@ -512,14 +519,14 @@ describe("reordering sources by dragging", () => {
     });
     const sent: unknown[] = [];
     mockServer.use(
-      http.patch(
-        "/v1/data-sources/:dataSourceId",
-        async ({ params, request }) => {
-          sent.push(await request.json());
-          if (String(params["dataSourceId"]) === "eurostat") await held;
-          return HttpResponse.json({});
-        },
-      ),
+      http.patch("/v1/data-sources/:dataSourceId", async ({ request }) => {
+        sent.push(await request.json());
+        await held;
+        return HttpResponse.json({});
+      }),
+      http.put("/v1/data-sources/order", async ({ request }) => {
+        sent.push(await request.clone().json());
+      }),
     );
     renderShell("/configure");
     const sources = await panel();
@@ -600,9 +607,8 @@ describe("reordering sources by dragging", () => {
 });
 
 /**
- * UI-07. **A reorder is several writes, one after another**, so a second gesture started while
- * one is being written computes its order from a list that is partly the old one; and a failure
- * half way leaves the first writes stored while the screen kept the order from before them.
+ * UI-07. A second gesture started while a change is written would compute its order from the
+ * list before it; and what is shown after a failure is the order the server last answered.
  */
 describe("the source priority panel while a change is being written", () => {
   /** How many times the list has been read, so a test can say it was read again. */
@@ -626,11 +632,13 @@ describe("the source priority panel while a change is being written", () => {
       release = resolve;
     });
     const sent: unknown[] = [];
+    const record = async ({ request }: { request: Request }) => {
+      sent.push(await request.clone().json());
+      await held;
+    };
     mockServer.use(
-      http.patch("/v1/data-sources/:dataSourceId", async ({ request }) => {
-        sent.push(await request.clone().json());
-        await held;
-      }),
+      http.patch("/v1/data-sources/:dataSourceId", record),
+      http.put("/v1/data-sources/order", record),
     );
     renderShell("/configure");
     const sources = await panel();
@@ -661,21 +669,24 @@ describe("the source priority panel while a change is being written", () => {
     expectNotHeld(
       sources.getByRole("button", { name: "Move LLM with web search up" }),
     );
-    // The move's own two writes, and nothing from the clicks made while it was in flight.
-    expect(sent).toEqual([{ default_priority: 10 }, { default_priority: 50 }]);
+    // The move's one write, and nothing from the clicks made while it was in flight.
+    expect(sent).toEqual([THE_ARROWS_ORDER]);
   });
 
-  it("re-reads the order after a move that failed half way", async () => {
-    // The drop below writes Manual entry, then the LLM, then Eurostat. The first is stored and
-    // the second refused, so what the database holds is neither the old order nor the new one.
+  /**
+   * P1-14. **A failed move changes nothing**, because the reorder is one transaction, so the
+   * order stays as the server last answered it; and the failure offers Dismiss alone, since a
+   * move sent again is a new decision. An answering 500, so the shell does not read it as down.
+   */
+  it("leaves the order as the server last answered it after a failed move, with Dismiss only", async () => {
+    const user = userEvent.setup();
     mockServer.use(
-      http.patch("/v1/data-sources/:dataSourceId", ({ params }) => {
-        if (String(params["dataSourceId"]) !== "llm") return;
-        return HttpResponse.json(
-          { code: "internal_error", message: "the second write failed" },
+      http.put("/v1/data-sources/order", () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "the reorder failed" },
           { status: 500 },
-        );
-      }),
+        ),
+      ),
     );
     renderShell("/configure");
     const sources = await panel();
@@ -683,16 +694,53 @@ describe("the source priority panel while a change is being written", () => {
 
     dragOnto(await row("Eurostat"), await row("LLM with web search"));
 
-    expect(await sources.findByRole("alert")).toHaveTextContent("The server failed while answering.");
-    await waitFor(() =>
-      expect(namesInOrder(sources)).toEqual([
-        "Manual entry",
-        "Eurostat",
-        "LLM with web search",
-      ]),
+    const alert = await sources.findByRole("alert");
+    expect(alert).toHaveTextContent("The server failed while answering.");
+    expect(within(alert).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Dismiss",
+    ]);
+    await waitFor(() => expectNotHeld(sources.getByRole("switch", { name: "Consult Eurostat" })));
+    expect(namesInOrder(sources)).toEqual(["Eurostat", "Manual entry", "LLM with web search"]);
+    expect(await storedPriorities()).toEqual({ eurostat: 10, manual: 50, llm: 90 });
+
+    await user.click(within(alert).getByRole("button", { name: "Dismiss" }));
+    expect(sources.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  /**
+   * The order sent is the list on screen, so the server refuses it when the catalog changed
+   * underneath: here the list was read without Manual entry. The refusal names the source it
+   * left out, never its id, and the list is read again to show what is stored.
+   */
+  it("names the sources an order refusal names, and shows the stored order", async () => {
+    const user = userEvent.setup();
+    mockServer.use(
+      http.get(
+        "/v1/data-sources",
+        () =>
+          HttpResponse.json({
+            items: DATA_SOURCES.filter((source) => source.id !== "manual"),
+          }),
+        { once: true },
+      ),
     );
-    // The refusal stays on screen beside the order that is actually stored.
-    expect(sources.getByRole("alert")).toHaveTextContent("The server failed while answering.");
+    renderShell("/configure");
+    const sources = await panel();
+
+    await user.click(
+      await sources.findByRole("button", { name: "Move LLM with web search up" }),
+    );
+
+    const alert = await sources.findByRole("alert");
+    expect(alert).toHaveTextContent("The source order must name every source once, and no other.");
+    expect(alert).toHaveTextContent("Manual entry was left out of it");
+    expect(alert).not.toHaveTextContent("manual,");
+    expect(within(alert).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Dismiss",
+    ]);
+    await waitFor(() =>
+      expect(namesInOrder(sources)).toEqual(["Eurostat", "Manual entry", "LLM with web search"]),
+    );
   });
 
   it("re-reads the order after a change refused outright, too", async () => {
@@ -756,6 +804,10 @@ describe("the source priority panel while a change is being written", () => {
             await held;
           },
         ),
+        http.put("/v1/data-sources/order", async ({ request }) => {
+          sent.push({ id: "order", body: await request.clone().json() });
+          await held;
+        }),
       );
       return { sent, release: () => release() };
     }
@@ -827,10 +879,8 @@ describe("the source priority panel while a change is being written", () => {
         expect(namesInOrder(sources)[0]).toBe("LLM with web search"),
       );
       expect(writes.sent).toEqual([
-        { id: "llm", body: { default_priority: 50 } },
-        { id: "manual", body: { default_priority: 90 } },
-        { id: "llm", body: { default_priority: 10 } },
-        { id: "eurostat", body: { default_priority: 50 } },
+        { id: "order", body: { order: ["eurostat", "llm", "manual"] } },
+        { id: "order", body: { order: ["llm", "eurostat", "manual"] } },
       ]);
       // First now, so there is nowhere further up to go: disabled outright, not held. Waited
       // for, because the order is drawn from the read-back a render before the hold lets go.
@@ -913,9 +963,9 @@ describe("the source priority panel while a change is being written", () => {
       act(() => up.focus());
 
       await user.keyboard("{Enter}");
-      await waitFor(() => expect(writes.sent).toHaveLength(2));
+      await waitFor(() => expect(writes.sent).toHaveLength(1));
 
-      // Both writes are in and the order is being read again. The list shown is the one from
+      // The write is in and the order is being read again. The list shown is the one from
       // before them, so nothing may be computed from it -- but it is still there, and so is
       // the control the keyboard is on.
       expect(namesInOrder(sources)).toEqual([
@@ -939,7 +989,7 @@ describe("the source priority panel while a change is being written", () => {
       );
       await waitFor(() => expectNotHeld(up));
       expect(up).toHaveFocus();
-      expect(writes.sent).toHaveLength(2);
+      expect(writes.sent).toHaveLength(1);
     });
 
     it("lets go of the switch after a refused change, with focus still on it", async () => {

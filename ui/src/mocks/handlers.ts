@@ -136,6 +136,47 @@ export const handlers = [
     return HttpResponse.json(source);
   }),
 
+  // As `reorder_keeping_tiers` does (D36): refused whole unless every source is named once;
+  // otherwise the stored numbers are handed back out in the new order, never renumbered.
+  http.put(`${BASE}/data-sources/order`, async ({ request }) => {
+    const { order } = (await request.json()) as { order?: unknown };
+    const malformed = orderProblems(order);
+    if (malformed.length > 0) {
+      return HttpResponse.json(invalidRequest(...malformed), { status: 422 });
+    }
+    const names = order as string[];
+    const known = dataSources.map((source) => source.id);
+    const details = {
+      missing: [...known].sort().filter((id) => !names.includes(id)),
+      repeated: [...new Set(names.filter((id, at) => names.indexOf(id) !== at))].sort(),
+      unknown: [...new Set(names)].filter((id) => !known.includes(id)),
+    };
+    if (details.missing.length + details.repeated.length + details.unknown.length > 0) {
+      return HttpResponse.json(
+        {
+          code: "invalid_source_order",
+          message: "a source order names every source exactly once",
+          details,
+        },
+        { status: 422 },
+      );
+    }
+    const slots = dataSources.map((source) => source.default_priority).sort((a, b) => a - b);
+    let previous: { priority: number; id: string } | null = null;
+    for (const [at, id] of names.entries()) {
+      let priority = slots[at] ?? 0;
+      // A tie reads back by id, so one the new order puts against the id order is broken by
+      // giving the later source one more than the earlier.
+      if (previous !== null && priority <= previous.priority) {
+        priority = id > previous.id ? previous.priority : previous.priority + 1;
+      }
+      const source = dataSources.find((each) => each.id === id);
+      if (source) source.default_priority = priority;
+      previous = { priority, id };
+    }
+    return HttpResponse.json({ items: inStoredOrder(dataSources) });
+  }),
+
   http.get(`${BASE}/criteria-sets`, () =>
     HttpResponse.json({ items: criteriaSetSummaries }),
   ),
@@ -416,7 +457,7 @@ export const handlers = [
   }),
 
   http.get(`${BASE}/data-sources`, () =>
-    HttpResponse.json({ items: dataSources }),
+    HttpResponse.json({ items: inStoredOrder(dataSources) }),
   ),
 
   http.get(`${BASE}/household`, () => HttpResponse.json(household)),
@@ -1415,6 +1456,29 @@ function invalidRequest(...errors: FieldProblem[]) {
     message: "The request does not match what this operation accepts.",
     details: { errors },
   };
+}
+
+/** `select_data_sources`: priority first, and a tie broken by id (P76). */
+function inStoredOrder(sources: readonly DataSource[]): DataSource[] {
+  return [...sources].sort(
+    (one, other) =>
+      one.default_priority - other.default_priority || (one.id < other.id ? -1 : one.id > other.id ? 1 : 0),
+  );
+}
+
+/** A reorder's body as pydantic refuses it: no list, or a member that is not a string. */
+function orderProblems(order: unknown): FieldProblem[] {
+  if (order === undefined) {
+    return [{ location: ["body", "order"], problem: "Field required", kind: "missing" }];
+  }
+  if (!Array.isArray(order)) {
+    return [{ location: ["body", "order"], problem: "Input should be a valid list", kind: "list_type" }];
+  }
+  return order.flatMap((each: unknown, at) =>
+    typeof each === "string"
+      ? []
+      : [{ location: ["body", "order", String(at)], problem: "Input should be a valid string", kind: "string_type" }],
+  );
 }
 
 function savedEvaluationOf(id: unknown): SavedEvaluation | undefined {

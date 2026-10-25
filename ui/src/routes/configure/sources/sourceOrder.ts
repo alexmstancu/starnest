@@ -1,3 +1,5 @@
+import { isApiError } from "../../../api/ApiError";
+
 /**
  * Reordering the source list, and what a move means.
  *
@@ -22,94 +24,52 @@ export function inPriorityOrder<Source extends OrderedSource>(
 }
 
 /**
- * The two priority changes that move a source past its neighbour.
+ * The whole order once a source has moved one place, as every source's id, highest first.
  *
- * **A swap, not an assignment.** Giving the moved source its neighbour's number leaves the two
- * *level* rather than reordered, and a tie keeps whatever order they already had -- so the row
- * would not visibly move. Exchanging the two numbers is the smallest change that says what was
- * meant, and it needs both halves.
+ * **The order, never the numbers** (D36, PL-136): the server hands the stored priorities back
+ * out in this order, so the tiers between them survive, and it alone decides what a tie reads
+ * as. The interface only says where each source stands.
  *
  * Priorities are deliberately not unique -- two sources share 16 in the shipped catalog -- so
  * a move against an equal neighbour is refused rather than faked.
  *
  * Null when there is no neighbour in that direction, which is what disables the button.
  */
-export interface Swap {
-  id: string;
-  priority: number;
-  neighbourId: string;
-  neighbourPriority: number;
-}
-
-export function priorityForMove<Source extends OrderedSource>(
+export function orderAfterMove<Source extends OrderedSource>(
   sources: readonly Source[],
   id: string,
   direction: "up" | "down",
-): Swap | null {
+): string[] | null {
   const ordered = inPriorityOrder(sources);
   const at = ordered.findIndex((source) => source.id === id);
-  if (at === -1) return null;
-
+  const to = direction === "up" ? at - 1 : at + 1;
   const here = ordered[at];
-  const neighbour = ordered[direction === "up" ? at - 1 : at + 1];
-  if (!here || !neighbour) return null;
+  const neighbour = ordered[to];
+  if (at === -1 || !here || !neighbour) return null;
   if (here.default_priority === neighbour.default_priority) return null;
 
-  return {
-    id: here.id,
-    priority: neighbour.default_priority,
-    neighbourId: neighbour.id,
-    neighbourPriority: here.default_priority,
-  };
+  ordered[at] = neighbour;
+  ordered[to] = here;
+  return ordered.map((source) => source.id);
 }
 
 /**
- * One source's new place in the order, as the one field the contract lets us write.
+ * The whole order a drop leaves, as every source's id, highest first.
  *
- * There is no batch reorder and there is deliberately no new operation: a drop is a run of
- * `PATCH /data-sources/{id}` with `default_priority`, which is the same request the arrows
- * already send.
+ * **A drag is a splice, not a swap**: moving the top source to fourth place puts the two rows
+ * it passed one place higher each, which no exchange of two places can say.
+ *
+ * **Null for a drop that moves nothing** -- onto its own row, or with either source not in the
+ * list -- so nothing is sent: a request restating the order would still flash the row as
+ * saving and re-read the list to show what was already on screen.
  */
-export interface PriorityChange {
-  id: string;
-  default_priority: number;
-}
-
-/**
- * What a drop costs, in priorities.
- *
- * **A drag is a splice, not a swap, so it cannot reuse the arrows' arithmetic.** Moving the
- * top source to fourth place by exchanging two numbers would put it fourth and leave the two
- * rows between it untouched, which is a different order from the one that was dropped.
- *
- * **So the affected rows are renumbered densely: position one upwards, one apart.** The
- * alternative -- rotating the priorities the span already holds -- preserves the stored
- * numbers but breaks on a tie, and ties are reachable: `ecb` and `unodc` both ship at 16, and
- * the endpoint lets a household set any number. A row that lands tied with its new neighbour
- * is then ordered by id rather than by where it was dropped, so the gesture would silently
- * put it somewhere else. Dense numbering is the only assignment that cannot do that.
- *
- * `UNIQUE` on the column was tried and reverted for the reason this relies on: the changes are
- * written one at a time, so the order passes through a moment where two sources share a
- * number. That moment is legal.
- *
- * **Only the rows whose number actually changes are returned**, so a drop that lands where the
- * row already was comes back empty and nothing is sent.
- */
-export function reorderForDrop<Source extends OrderedSource>(
+export function orderAfterDrop<Source extends OrderedSource>(
   sources: readonly Source[],
   draggedId: string,
   targetId: string,
-): PriorityChange[] {
+): string[] | null {
   const dropped = droppedOrder(sources, draggedId, targetId);
-  const changes: PriorityChange[] = [];
-  dropped.forEach((source, index) => {
-    const priority = index + 1;
-    if (source.default_priority !== priority) {
-      changes.push({ id: source.id, default_priority: priority });
-    }
-  });
-  return changes;
+  return dropped.length === 0 ? null : dropped.map((source) => source.id);
 }
 
 /**
@@ -180,4 +140,46 @@ export function positionsOf<Source extends OrderedSource>(
       source.is_enabled === false ? null : ++position,
     ]),
   );
+}
+
+/**
+ * What an `invalid_source_order` refusal names, in sources rather than ids (P1-07).
+ *
+ * The order sent is the list on screen, so a refusal means the catalog changed under it: a
+ * source added since the list was read is missing, one taken away is unknown. An unknown one
+ * has no name left to read, so it is counted rather than shown by id.
+ *
+ * Null for any other failure, whose wording is the code's alone.
+ */
+export function describeOrderRefusal(
+  error: unknown,
+  nameOf: (id: string) => string,
+): string | null {
+  if (!isApiError(error) || error.code !== "invalid_source_order") return null;
+  const details = error.details ?? {};
+  const missing = idsIn(details["missing"]);
+  const repeated = idsIn(details["repeated"]);
+  const unknown = idsIn(details["unknown"]);
+  const parts = [
+    missing.length > 0 && `${listed(missing, nameOf)} ${wasOrWere(missing)} left out of it`,
+    repeated.length > 0 && `${listed(repeated, nameOf)} ${wasOrWere(repeated)} named twice`,
+    unknown.length > 0 &&
+      `${unknown.length === 1 ? "one source" : `${unknown.length} sources`} in it ${
+        unknown.length === 1 ? "is" : "are"
+      } no longer in the catalog`,
+  ].filter((part): part is string => part !== false);
+  if (parts.length === 0) return null;
+  return `In the order sent, ${parts.join("; ")}. The list now shows the order stored.`;
+}
+
+function idsIn(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((each): each is string => typeof each === "string") : [];
+}
+
+function listed(ids: readonly string[], nameOf: (id: string) => string): string {
+  return ids.map(nameOf).join(", ");
+}
+
+function wasOrWere(ids: readonly string[]): string {
+  return ids.length === 1 ? "was" : "were";
 }

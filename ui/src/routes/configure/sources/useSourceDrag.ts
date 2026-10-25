@@ -6,7 +6,7 @@ import { landingEdge, type OrderedSource } from "./sourceOrder";
  *
  * **The gesture is local and the result is not.** Which row the pointer holds and which row it
  * is over are nothing but screen state, so they live here; where the drop leaves the order is
- * `reorderForDrop` in `sourceOrder.ts`, and writing it is `useDataSources`. This hook is the
+ * `orderAfterDrop` in `sourceOrder.ts`, and writing it is `useDataSources`. This hook is the
  * join, and it holds no arithmetic of its own.
  *
  * **Nothing is previewed while the pointer moves.** The weight sliders do preview, because
@@ -43,10 +43,9 @@ export function useSourceDrag(
   /**
    * Whether a change is already in flight.
    *
-   * **A drag refuses to start rather than a drop refusing to land.** A reorder writes several
-   * rows one at a time, so a second gesture arriving mid-write would compute its new order
-   * from a list that is partly the old one -- and the row numbers it sent would be a mix of
-   * the two. Refusing at the start also means the reader never gets as far as a line drawn at
+   * **A drag refuses to start rather than a drop refusing to land.** A second gesture
+   * arriving before a reorder has been read back would compute its new order from the list
+   * before it, and send an order that undoes the first. Refusing at the start also means the reader never gets as far as a line drawn at
    * a gap the drop will not use.
    */
   saving: boolean,

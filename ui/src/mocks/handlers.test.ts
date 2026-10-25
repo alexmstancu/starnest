@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../api/ApiError";
-import { getJson, postJson } from "../api/client";
+import { getJson, patchJson, postJson } from "../api/client";
 import {
   enterValueManually,
   fetchCriteriaSet,
+  fetchDataSources,
   fetchHoldings,
   fetchRanking,
   fetchRun,
   replaceHousehold,
   replaceSettings,
+  reorderDataSources,
   researchMatchRules,
   updateCriterionRule,
   updateDataSource,
@@ -635,5 +637,70 @@ describe("the mock's manual entry", () => {
 
   it("stores a typed figure while the source is on", async () => {
     expect((await enterValueManually(TYPED)).data_source).toBe("manual");
+  });
+});
+
+/** PUT /data-sources/order, as `reorder_keeping_tiers` answers it (D36). */
+describe("the mock's source reorder", () => {
+  const priorities = (items: readonly { id: string; default_priority: number }[]) =>
+    items.map((source) => [source.id, source.default_priority]);
+
+  it("hands the stored numbers back out in the new order, so the tiers survive", async () => {
+    const { items } = await reorderDataSources(["llm", "eurostat", "manual"]);
+
+    expect(priorities(items)).toEqual([["llm", 10], ["eurostat", 50], ["manual", 90]]);
+    expect(priorities((await fetchDataSources()).items)).toEqual(priorities(items));
+  });
+
+  /** A tie reads back by id, so one the new order keeps is left a tie, and a swap splits it. */
+  it("splits a tie only when the new order puts it against the ids", async () => {
+    await patchJson("/data-sources/{dataSourceId}", { default_priority: 10 }, {
+      pathParams: { dataSourceId: "manual" },
+    });
+    expect(priorities((await fetchDataSources()).items)).toEqual([
+      ["eurostat", 10], ["manual", 10], ["llm", 90],
+    ]);
+
+    const kept = await reorderDataSources(["eurostat", "manual", "llm"]);
+    expect(priorities(kept.items)).toEqual([["eurostat", 10], ["manual", 10], ["llm", 90]]);
+
+    const swapped = await reorderDataSources(["manual", "eurostat", "llm"]);
+    expect(priorities(swapped.items)).toEqual([["manual", 10], ["eurostat", 11], ["llm", 90]]);
+  });
+
+  it("refuses an order that does not name every source once, with all three lists", async () => {
+    const error = (await reorderDataSources(["llm", "llm", "gone"]).catch(
+      (thrown: unknown) => thrown,
+    )) as ApiError;
+
+    expect(error.status).toBe(422);
+    expect(error.code).toBe("invalid_source_order");
+    expect(error.details).toEqual({
+      missing: ["eurostat", "manual"],
+      repeated: ["llm"],
+      unknown: ["gone"],
+    });
+    expect(priorities((await fetchDataSources()).items)).toEqual([
+      ["eurostat", 10], ["manual", 50], ["llm", 90],
+    ]);
+  });
+
+  it("leaves a list empty where nothing was wrong with it", async () => {
+    const error = (await reorderDataSources(["eurostat", "manual"]).catch(
+      (thrown: unknown) => thrown,
+    )) as ApiError;
+
+    expect(error.details).toEqual({ missing: ["llm"], repeated: [], unknown: [] });
+  });
+
+  it("refuses a body that is not a list of ids as a malformed request", async () => {
+    const error = (await reorderDataSources([7 as unknown as string]).catch(
+      (thrown: unknown) => thrown,
+    )) as ApiError;
+
+    expect(error.code).toBe("invalid_request");
+    expect(error.details).toEqual({
+      errors: [{ location: ["body", "order", "0"], problem: "Input should be a valid string", kind: "string_type" }],
+    });
   });
 });

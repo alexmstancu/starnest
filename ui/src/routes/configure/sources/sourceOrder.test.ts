@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { ApiError } from "../../../api/ApiError";
 import {
+  describeOrderRefusal,
   inPriorityOrder,
   landingEdge,
+  orderAfterDrop,
+  orderAfterMove,
   positionsOf,
-  priorityForMove,
-  reorderForDrop,
 } from "./sourceOrder";
 
 const sources = [
@@ -28,32 +30,18 @@ describe("the order sources are read in", () => {
 });
 
 describe("moving a source", () => {
-  /**
-   * **A swap, not an assignment.** Giving the moved source its neighbour's number leaves the
-   * two level rather than reordered, and a tie keeps whatever order they already had -- so the
-   * row would not visibly move.
-   */
-  it("exchanges its priority with the source above it", () => {
-    expect(priorityForMove(sources, "oecd", "up")).toEqual({
-      id: "oecd",
-      priority: 10,
-      neighbourId: "eurostat",
-      neighbourPriority: 11,
-    });
+  /** The whole order, never a number: the server hands the stored priorities back out. */
+  it("puts it above the source that was above it", () => {
+    expect(orderAfterMove(sources, "oecd", "up")).toEqual(["oecd", "eurostat", "numbeo"]);
   });
 
-  it("exchanges its priority with the source below it", () => {
-    expect(priorityForMove(sources, "oecd", "down")).toEqual({
-      id: "oecd",
-      priority: 60,
-      neighbourId: "numbeo",
-      neighbourPriority: 11,
-    });
+  it("puts it below the source that was below it", () => {
+    expect(orderAfterMove(sources, "oecd", "down")).toEqual(["eurostat", "numbeo", "oecd"]);
   });
 
   it("cannot move the first one up, or the last one down", () => {
-    expect(priorityForMove(sources, "eurostat", "up")).toBeNull();
-    expect(priorityForMove(sources, "numbeo", "down")).toBeNull();
+    expect(orderAfterMove(sources, "eurostat", "up")).toBeNull();
+    expect(orderAfterMove(sources, "numbeo", "down")).toBeNull();
   });
 
   /**
@@ -66,11 +54,18 @@ describe("moving a source", () => {
       { id: "ecb", default_priority: 16 },
       { id: "unodc", default_priority: 16 },
     ];
-    expect(priorityForMove(tied, "unodc", "up")).toBeNull();
+    expect(orderAfterMove(tied, "unodc", "up")).toBeNull();
   });
 
   it("knows nothing about a source that is not in the list", () => {
-    expect(priorityForMove(sources, "nowhere", "up")).toBeNull();
+    expect(orderAfterMove(sources, "nowhere", "up")).toBeNull();
+    expect(orderAfterMove(sources, "nowhere", "down")).toBeNull();
+  });
+
+  it("does not mutate the list it was given", () => {
+    const given = [...sources];
+    orderAfterMove(given, "oecd", "up");
+    expect(given.map((source) => source.id)).toEqual(["eurostat", "oecd", "numbeo"]);
   });
 });
 
@@ -101,99 +96,46 @@ describe("the position shown beside a source", () => {
 
 describe("dropping a source onto another's row", () => {
   /**
-   * **A splice, not a swap.** Exchanging two numbers would put the dragged row where it was
+   * **A splice, not a swap.** Exchanging two places would put the dragged row where it was
    * dropped and leave every row between untouched, which is a different order from the one
    * the gesture described.
    */
-  it("renumbers from one so the dropped order is the stored order", () => {
-    expect(reorderForDrop(sources, "eurostat", "numbeo")).toEqual([
-      { id: "oecd", default_priority: 1 },
-      { id: "numbeo", default_priority: 2 },
-      { id: "eurostat", default_priority: 3 },
-    ]);
+  it("puts a row dragged downwards below the row it was dropped on", () => {
+    expect(orderAfterDrop(sources, "eurostat", "numbeo")).toEqual(["oecd", "numbeo", "eurostat"]);
   });
 
   /** Dragging upwards lands the row before the target, which is where the line is drawn. */
   it("puts a row dragged upwards above the row it was dropped on", () => {
-    expect(reorderForDrop(sources, "numbeo", "eurostat")).toEqual([
-      { id: "numbeo", default_priority: 1 },
-      { id: "eurostat", default_priority: 2 },
-      { id: "oecd", default_priority: 3 },
-    ]);
+    expect(orderAfterDrop(sources, "numbeo", "eurostat")).toEqual(["numbeo", "eurostat", "oecd"]);
   });
 
-  /**
-   * **The numbering is dense on purpose.** Rotating the priorities the span already holds
-   * would keep 10, 11 and 60 -- and would tie the moved row with its new neighbour wherever
-   * the span contains a tie, which then orders it by id rather than by where it was dropped.
-   */
-  it("leaves no two sources sharing a number, whatever they shared before", () => {
+  /** A tie is a drop like any other: the order is sent, and the server numbers it. */
+  it("moves a source that is level with its neighbour", () => {
     const tied = [
-      { id: "ecb", default_priority: 16, is_enabled: true },
-      { id: "unodc", default_priority: 16, is_enabled: true },
-      { id: "imf", default_priority: 20, is_enabled: true },
+      { id: "ecb", default_priority: 16 },
+      { id: "unodc", default_priority: 16 },
     ];
-    const changes = reorderForDrop(tied, "imf", "ecb");
-    expect(changes).toEqual([
-      { id: "imf", default_priority: 1 },
-      { id: "ecb", default_priority: 2 },
-      { id: "unodc", default_priority: 3 },
-    ]);
+    expect(orderAfterDrop(tied, "unodc", "ecb")).toEqual(["unodc", "ecb"]);
   });
 
-  /** A tie the arrows refuse to cross is a drop like any other, because nothing is exchanged. */
-  it("moves a source that is level with its neighbour, which the arrows will not", () => {
-    const tied = [
-      { id: "ecb", default_priority: 16, is_enabled: true },
-      { id: "unodc", default_priority: 16, is_enabled: true },
-    ];
-    expect(priorityForMove(tied, "unodc", "up")).toBeNull();
-    expect(reorderForDrop(tied, "unodc", "ecb")).toEqual([
-      { id: "unodc", default_priority: 1 },
-      { id: "ecb", default_priority: 2 },
-    ]);
+  /** A drop where the row already was sends nothing, so nothing flashes or is re-read. */
+  it("asks for nothing when a row is dropped on itself", () => {
+    expect(orderAfterDrop(sources, "oecd", "oecd")).toBeNull();
   });
 
-  /**
-   * **A drop where the row already was sends nothing.** A request writing the number already
-   * stored would still flash the row as saving and re-read the whole list, to show the order
-   * that was already on screen.
-   */
-  it("asks for no change when a row is dropped on itself", () => {
-    expect(reorderForDrop(sources, "oecd", "oecd")).toEqual([]);
-  });
-
-  it("asks for no change when either source is not in the list", () => {
-    expect(reorderForDrop(sources, "nowhere", "oecd")).toEqual([]);
-    expect(reorderForDrop(sources, "oecd", "nowhere")).toEqual([]);
+  it("asks for nothing when either source is not in the list", () => {
+    expect(orderAfterDrop(sources, "nowhere", "oecd")).toBeNull();
+    expect(orderAfterDrop(sources, "oecd", "nowhere")).toBeNull();
   });
 
   it("asks for nothing at all from an empty list", () => {
-    expect(reorderForDrop([], "oecd", "numbeo")).toEqual([]);
-  });
-
-  /** Only what moved: a row already holding its new number is not written again. */
-  it("leaves out a row whose number does not change", () => {
-    const dense = [
-      { id: "a", default_priority: 1, is_enabled: true },
-      { id: "b", default_priority: 2, is_enabled: true },
-      { id: "c", default_priority: 3, is_enabled: true },
-      { id: "d", default_priority: 4, is_enabled: true },
-    ];
-    expect(reorderForDrop(dense, "b", "c")).toEqual([
-      { id: "c", default_priority: 2 },
-      { id: "b", default_priority: 3 },
-    ]);
+    expect(orderAfterDrop([], "oecd", "numbeo")).toBeNull();
   });
 
   it("does not mutate the list it was given", () => {
     const given = [...sources];
-    reorderForDrop(given, "eurostat", "numbeo");
-    expect(given.map((source) => source.id)).toEqual([
-      "eurostat",
-      "oecd",
-      "numbeo",
-    ]);
+    orderAfterDrop(given, "eurostat", "numbeo");
+    expect(given.map((source) => source.id)).toEqual(["eurostat", "oecd", "numbeo"]);
   });
 });
 
@@ -219,5 +161,43 @@ describe("the edge a dropped row lands against", () => {
   it("is nothing when either source is not in the list", () => {
     expect(landingEdge(sources, "nowhere", "oecd")).toBeNull();
     expect(landingEdge(sources, "oecd", "nowhere")).toBeNull();
+  });
+});
+
+describe("the sources an order refusal names", () => {
+  const nameOf = (id: string) => ({ eurostat: "Eurostat", oecd: "OECD" })[id] ?? "?";
+  const refusal = (details: Record<string, unknown>) =>
+    new ApiError({ code: "invalid_source_order", message: "server prose", status: 422, details });
+
+  it("names what was left out and what was named twice, by name", () => {
+    expect(
+      describeOrderRefusal(refusal({ missing: ["eurostat"], repeated: ["oecd"], unknown: [] }), nameOf),
+    ).toBe(
+      "In the order sent, Eurostat was left out of it; OECD was named twice. The list now shows the order stored.",
+    );
+  });
+
+  /** An unknown source has no name left to read, so it is counted, never shown by id. */
+  it("counts sources no longer in the catalog rather than showing their ids", () => {
+    const said = describeOrderRefusal(
+      refusal({ missing: ["eurostat", "oecd"], repeated: [], unknown: ["gone_a", "gone_b"] }),
+      nameOf,
+    );
+    expect(said).toBe(
+      "In the order sent, Eurostat, OECD were left out of it; 2 sources in it are no longer in the catalog. The list now shows the order stored.",
+    );
+    expect(said).not.toContain("gone_");
+  });
+
+  it("says one source in the singular", () => {
+    expect(
+      describeOrderRefusal(refusal({ missing: [], repeated: [], unknown: ["gone"] }), nameOf),
+    ).toContain("one source in it is no longer in the catalog");
+  });
+
+  it("adds nothing to another refusal, or to one whose details name nothing", () => {
+    expect(describeOrderRefusal(new ApiError({ code: "not_found", message: "x", status: 404 }), nameOf)).toBeNull();
+    expect(describeOrderRefusal(refusal({ missing: "eurostat" }), nameOf)).toBeNull();
+    expect(describeOrderRefusal(new Error("boom"), nameOf)).toBeNull();
   });
 });
