@@ -63,8 +63,18 @@ EVIDENCE_INPUTS = (
 
 
 class WarningBody(BaseModel):
-    compound_rule: str
+    """Exactly one of the two names the rule that raised it: a compound rule, or a gate the set
+    holds as a warning (D56)."""
+
+    compound_rule: str | None = None
+    match_rule: str | None = None
     detail: str
+    gate_answer: MatchRuleResultBody | None = Field(
+        default=None,
+        description=(
+            "The answer a gate held as a warning read, as it stood then. Null for a compound rule."
+        ),
+    )
     inputs: tuple[ValueBody, ...] = Field(default=(), description=EVIDENCE_INPUTS)
 
 
@@ -477,8 +487,12 @@ def _result_body(
         insufficient_reason=result.insufficient_reason,
         warnings=tuple(
             WarningBody(
-                compound_rule=str(flag.compound_rule),
+                compound_rule=None if flag.compound_rule is None else str(flag.compound_rule),
+                match_rule=None if flag.match_rule is None else str(flag.match_rule),
                 detail=flag.detail,
+                gate_answer=(
+                    None if flag.gate_answer is None else _gate_answer_body(flag.gate_answer)
+                ),
                 inputs=_cited(flag.input_values, evidence),
             )
             for flag in result.warnings

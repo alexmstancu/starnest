@@ -1333,6 +1333,64 @@ class TestWhatTheRulesDoToARanking:
 
         assert found["country.spain"].rank == 1
 
+    def test_a_gate_held_as_a_warning_warns_and_keeps_the_candidate_matching(self) -> None:
+        """D56: a set may hold a gate as a warning (PL-157). The failed answer is still shown,
+        naming the gate and the answer it read, and rules nothing out."""
+        failed = self.a_failed_gate("country.portugal")
+        held = a_set([a_criterion()]).with_match_rule(
+            "uk_skilled_worker", enforced=True, outcome=RuleOutcome.WARNING
+        )
+
+        found = by_candidate(
+            rank(
+                held,
+                values_for(portugal=90, spain=10),
+                gate_answers={"country.portugal": [failed]},
+            )
+        )
+        unjudged = by_candidate(rank(a_set([a_criterion()]), values_for(portugal=90, spain=10)))
+
+        portugal = found["country.portugal"]
+        assert portugal.match_status is MatchStatus.MATCHING
+        assert portugal.non_match_reasons == ()
+        assert [
+            (w.match_rule, w.compound_rule, w.detail, w.gate_answer) for w in portugal.warnings
+        ] == [("uk_skilled_worker", None, "no sponsor", failed)]
+        assert (portugal.score, portugal.rank) == (
+            unjudged["country.portugal"].score,
+            unjudged["country.portugal"].rank,
+        )
+
+    def test_a_warning_rule_held_as_a_gate_rules_the_candidate_out(self) -> None:
+        held = a_set([a_criterion()]).with_compound_rule(
+            "cheap_but_taxed", applied=True, outcome=RuleOutcome.NOT_MATCHING
+        )
+
+        portugal = by_candidate(
+            rank(held, values_for(portugal=90, spain=10), compound_rules=[self.a_warning_rule()])
+        )["country.portugal"]
+
+        assert portugal.match_status is MatchStatus.NOT_MATCHING
+        assert [str(r.compound_rule) for r in portugal.non_match_reasons] == ["cheap_but_taxed"]
+        assert portugal.warnings == ()
+
+    def test_a_disqualifying_rule_held_as_a_warning_only_warns(self) -> None:
+        held = a_set([a_criterion()]).with_compound_rule(
+            "cheap_but_taxed", applied=True, outcome=RuleOutcome.WARNING
+        )
+
+        portugal = by_candidate(
+            rank(
+                held,
+                values_for(portugal=90, spain=10),
+                compound_rules=[self.a_disqualifying_rule()],
+            )
+        )["country.portugal"]
+
+        assert portugal.match_status is MatchStatus.MATCHING
+        assert portugal.non_match_reasons == ()
+        assert [str(w.compound_rule) for w in portugal.warnings] == ["cheap_but_taxed"]
+
     def test_a_gate_the_set_does_not_enforce_leaves_the_candidate_matching(self) -> None:
         found = by_candidate(
             rank(

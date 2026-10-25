@@ -19,6 +19,9 @@ pytestmark = pytest.mark.storage
 MIGRATIONS = Path(__file__).resolve().parents[2].parent / "storage" / "migrations"
 THE_MIGRATION = MIGRATIONS / "0510-a-gate-answer-is-kept-once-written.sql"
 ITS_ROLLBACK = THE_MIGRATION.with_name(f"{THE_MIGRATION.stem}.rollback.sql")
+#: `0516` cites an answer version from a saved gate warning, so it is undone first, as a real
+#: rollback to before `0510` would undo it.
+A_LATER_ROLLBACK = MIGRATIONS / "0516-a-set-holds-each-rule-as-a-gate-or-a-warning.rollback.sql"
 
 GATE = "uk_skilled_worker"
 CANDIDATE = "country.united_kingdom"
@@ -40,6 +43,7 @@ def before_it(connection: psycopg.Connection) -> Iterator[psycopg.Connection]:
     and would commit it.
     """
     with connection.transaction(force_rollback=True):
+        _run(connection, A_LATER_ROLLBACK)
         _run(connection, ITS_ROLLBACK)
         connection.execute(
             "INSERT INTO match_rule_result (match_rule, candidate, match_result, reason, "

@@ -28,6 +28,7 @@ from starnest.data import (
     MatchRuleResult,
     Ratio,
     ReferencePeriod,
+    RuleOutcome,
     Value,
     ValueType,
 )
@@ -494,6 +495,45 @@ class TestTheRestOfTheReadingIsFrozen:
         finally:
             await store.sweep_test_evaluations()
             await criteria.purge_criteria_set("evaluation_freeze_rest_scratch")
+
+    async def test_each_rule_is_frozen_with_the_outcome_the_set_held_it_at(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """D56 (PL-157): a gate held as a warning and a warning held as a gate reopen so, and a
+        rule held at its default reopens at the catalog's outcome, whatever the live set does."""
+        reading = (
+            _an_interpreted_set("evaluation_outcome_scratch")
+            .with_match_rule("uk_skilled_worker", enforced=True, outcome=RuleOutcome.WARNING)
+            .with_match_rule("li_eea_quota", enforced=True)
+            .with_compound_rule("cheap_but_taxed", applied=True, outcome=RuleOutcome.NOT_MATCHING)
+            .with_compound_rule("mild_now_brutal_later", applied=True)
+        )
+        criteria = PostgresCriteriaStore(pool)
+        store = PostgresEvaluationStore(pool)
+        await criteria.create_criteria_set(reading)
+        try:
+            saved = await store.save(
+                criteria=reading,
+                level=COUNTRY,
+                results=[a_result(PORTUGAL, 60, 1, attribute_scores=())],
+                score_scale_max=100,
+                computed_at=COMPUTED_AT,
+                note=f"{TEST_EVALUATION_MARKER}frozen outcomes",
+            )
+
+            frozen = await store.read_criteria(saved.id)
+
+            assert frozen.match_rule_outcomes == {
+                "li_eea_quota": RuleOutcome.NOT_MATCHING,
+                "uk_skilled_worker": RuleOutcome.WARNING,
+            }
+            assert frozen.compound_rule_outcomes == {
+                "cheap_but_taxed": RuleOutcome.NOT_MATCHING,
+                "mild_now_brutal_later": RuleOutcome.WARNING,
+            }
+        finally:
+            await store.sweep_test_evaluations()
+            await criteria.purge_criteria_set("evaluation_outcome_scratch")
 
     async def test_a_warning_keeps_the_value_rows_behind_it(
         self, pool: AsyncConnectionPool

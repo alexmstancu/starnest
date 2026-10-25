@@ -52,7 +52,7 @@ from starnest.criteria import (
     identifiers_from,
 )
 from starnest.criteria.criteria_set import THE_SCORING_RULE
-from starnest.data import UnknownCompoundRuleError, UnknownMatchRuleError
+from starnest.data import RuleOutcome, UnknownCompoundRuleError, UnknownMatchRuleError
 
 router = APIRouter(tags=["criteria"])
 
@@ -110,6 +110,8 @@ class CriteriaSetBody(BaseModel):
     pillar_weights: tuple[PillarWeightBody, ...]
     enforced_match_rules: tuple[str, ...] = ()
     applied_compound_rules: tuple[str, ...] = ()
+    match_rule_outcomes: dict[str, RuleOutcome] = Field(default_factory=dict)
+    compound_rule_outcomes: dict[str, RuleOutcome] = Field(default_factory=dict)
 
 
 class LabelThresholdBody(BaseModel):
@@ -398,6 +400,13 @@ def _set_body(criteria_set: CriteriaSet) -> CriteriaSetBody:
         ),
         enforced_match_rules=tuple(str(rule) for rule in criteria_set.enforced_match_rules),
         applied_compound_rules=tuple(str(rule) for rule in criteria_set.applied_compound_rules),
+        match_rule_outcomes={
+            str(gate): criteria_set.outcome_of_gate(gate)
+            for gate in criteria_set.enforced_match_rules
+        },
+        compound_rule_outcomes={
+            str(rule): outcome for rule, outcome in criteria_set.compound_rule_outcomes.items()
+        },
     )
 
 
@@ -576,12 +585,14 @@ class EnforcementBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     is_enforced: bool
+    outcome: RuleOutcome | None = None
 
 
 class ApplicationBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     is_applied: bool
+    outcome: RuleOutcome | None = None
 
 
 @router.post(
@@ -738,7 +749,7 @@ async def set_match_rule_enforcement(
     criteria: Criteria,
     catalog: Catalog,
 ) -> Response:
-    """Whether this set enforces a gate.
+    """Whether this set enforces a gate, and whether as a gate or as a warning (D56).
 
     **A preference, not a fact** (`arch.md` 3.6): the gate's answer belongs to the candidate and
     stays stored either way; this decides only whether it counts against the score.
@@ -752,9 +763,9 @@ async def set_match_rule_enforcement(
         raise UnknownMatchRuleError(f"there is no gate {match_rule_id!r}")
 
     def mutate(current: CriteriaSet) -> CriteriaSet:
-        enforced = set(current.enforced_match_rules)
-        enforced.add(match_rule_id) if body.is_enforced else enforced.discard(match_rule_id)
-        return current.model_copy(update={"enforced_match_rules": frozenset(enforced)})
+        return current.with_match_rule(
+            match_rule_id, enforced=body.is_enforced, outcome=body.outcome
+        )
 
     await criteria.edit_criteria_set(criteria_set_id, mutate)
     return Response(status_code=204)
@@ -781,9 +792,9 @@ async def set_compound_rule_application(
         raise UnknownCompoundRuleError(f"there is no compound rule {compound_rule_id!r}")
 
     def mutate(current: CriteriaSet) -> CriteriaSet:
-        applied = set(current.applied_compound_rules)
-        applied.add(compound_rule_id) if body.is_applied else applied.discard(compound_rule_id)
-        return current.model_copy(update={"applied_compound_rules": frozenset(applied)})
+        return current.with_compound_rule(
+            compound_rule_id, applied=body.is_applied, outcome=body.outcome
+        )
 
     await criteria.edit_criteria_set(criteria_set_id, mutate)
     return Response(status_code=204)

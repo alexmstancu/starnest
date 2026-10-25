@@ -369,14 +369,15 @@ class PostgresCriteriaStore(CriteriaStore):
                 connection,
                 criteria_set=str(criteria_set.id),
                 match_rule=str(rule),
-                is_enforced=True,
+                outcome=str(criteria_set.outcome_of_gate(rule)),
             )
         for rule in sorted(criteria_set.applied_compound_rules):
+            outcome = criteria_set.compound_rule_outcomes.get(rule)
             await self._queries.upsert_criteria_set_compound_rule(
                 connection,
                 criteria_set=str(criteria_set.id),
                 compound_rule=str(rule),
-                is_applied=True,
+                outcome=None if outcome is None else str(outcome),
             )
         for weight in criteria_set.pillar_weights:
             await self._queries.upsert_pillar_weight(
@@ -504,6 +505,8 @@ def _criteria_set_from(row: Any) -> CriteriaSet:
         pillar_weights=tuple(_pillar_weight_from(entry) for entry in row.pillar_weights),
         enforced_match_rules=tuple(row.enforced_match_rules),
         applied_compound_rules=tuple(row.applied_compound_rules),
+        match_rule_outcomes=row.match_rule_outcomes,
+        compound_rule_outcomes=row.compound_rule_outcomes,
     )
 
 

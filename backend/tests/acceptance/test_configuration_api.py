@@ -267,6 +267,95 @@ class TestTheRulesASetEnforces:
         assert response.status_code == 404
 
 
+class TestARuleHeldAsAGateOrAWarning:
+    """D56: each set may hold a rule it turns on as a gate or as a warning (PL-157)."""
+
+    GATE = "uk_skilled_worker"
+    RULE = "cheap_but_taxed"
+
+    async def test_switching_a_gate_to_a_warning_changes_nothing_else(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        base = f"/v1/criteria-sets/{a_scratch_criteria_set}"
+        await api.put(f"{base}/match-rules/{self.GATE}", json={"is_enforced": True})
+        before = (await api.get(base)).json()
+
+        switched = await api.put(
+            f"{base}/match-rules/{self.GATE}", json={"is_enforced": True, "outcome": "warning"}
+        )
+        after = (await api.get(base)).json()
+
+        assert switched.status_code == 204
+        assert before["match_rule_outcomes"] == {self.GATE: "not_matching"}
+        assert after["match_rule_outcomes"] == {self.GATE: "warning"}
+        assert {**after, "match_rule_outcomes": None} == {**before, "match_rule_outcomes": None}
+
+    async def test_a_compound_rule_can_be_held_against_its_catalog_outcome(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        base = f"/v1/criteria-sets/{a_scratch_criteria_set}"
+        await api.put(f"{base}/compound-rules/{self.RULE}", json={"is_applied": True})
+        applied = (await api.get(base)).json()
+
+        await api.put(
+            f"{base}/compound-rules/{self.RULE}",
+            json={"is_applied": True, "outcome": "not_matching"},
+        )
+        hardened = (await api.get(base)).json()
+
+        assert applied["compound_rule_outcomes"] == {self.RULE: "warning"}, "the catalog's"
+        assert hardened["compound_rule_outcomes"] == {self.RULE: "not_matching"}
+
+    async def test_releasing_a_gate_loses_its_outcome_row(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str, database_url: str
+    ) -> None:
+        """Off is the absence of a row, outcome and all: enforced again, it is a gate again."""
+        base = f"/v1/criteria-sets/{a_scratch_criteria_set}"
+        path = f"{base}/match-rules/{self.GATE}"
+        await api.put(path, json={"is_enforced": True, "outcome": "warning"})
+
+        await api.put(path, json={"is_enforced": False})
+        released = (await api.get(base)).json()
+        async with await AsyncConnection.connect(database_url) as connection:
+            rows = await (
+                await connection.execute(
+                    "SELECT count(*) FROM criteria_set_match_rule"
+                    " WHERE criteria_set = %s AND match_rule = %s",
+                    (a_scratch_criteria_set, self.GATE),
+                )
+            ).fetchone()
+        await api.put(path, json={"is_enforced": True})
+        again = (await api.get(base)).json()
+
+        assert rows == (0,)
+        assert released["match_rule_outcomes"] == {}
+        assert again["match_rule_outcomes"] == {self.GATE: "not_matching"}
+
+    async def test_an_outcome_for_a_rule_being_switched_off_is_refused(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        base = f"/v1/criteria-sets/{a_scratch_criteria_set}"
+        await api.put(f"{base}/match-rules/{self.GATE}", json={"is_enforced": True})
+
+        response = await api.put(
+            f"{base}/match-rules/{self.GATE}", json={"is_enforced": False, "outcome": "warning"}
+        )
+        after = (await api.get(base)).json()
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_criteria_set")
+        assert after["match_rule_outcomes"] == {self.GATE: "not_matching"}, "nothing written"
+
+    async def test_an_outcome_no_rule_has_is_refused(
+        self, api: httpx.AsyncClient, a_scratch_criteria_set: str
+    ) -> None:
+        response = await api.put(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/compound-rules/{self.RULE}",
+            json={"is_applied": True, "outcome": "ignored"},
+        )
+
+        assert (response.status_code, response.json()["code"]) == (422, "invalid_request")
+
+
 class TestSettings:
     async def test_the_five_are_replaced_whole_and_returned(self, api: httpx.AsyncClient) -> None:
         response = await api.put(

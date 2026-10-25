@@ -281,7 +281,8 @@ class TestSweepingWhatATestSaved:
                 (evaluation, match_rule),
             )
             await connection.execute(
-                "INSERT INTO evaluation_compound_rule (evaluation, compound_rule) VALUES (%s, %s)",
+                "INSERT INTO evaluation_compound_rule (evaluation, compound_rule, outcome)"
+                " VALUES (%s, %s, 'warning')",
                 (evaluation, compound_rule),
             )
             await connection.execute(

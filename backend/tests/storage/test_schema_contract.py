@@ -126,6 +126,7 @@ SUBJECTIVE = {
     "candidate_attribute_score",
     "candidate_warning",
     "candidate_warning_input",
+    "candidate_gate_warning",
     "non_match_reason",
     "non_match_input",
     "household",

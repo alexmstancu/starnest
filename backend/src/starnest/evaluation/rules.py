@@ -60,16 +60,25 @@ from starnest.evaluation.wording import (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class RuleWarning:
-    """A flag beside a candidate: something worth knowing that rules nothing out."""
+    """A flag beside a candidate: something worth knowing that rules nothing out.
 
-    compound_rule: CompoundRuleId
+    Exactly one of the two names the rule that raised it: a compound rule whose outcome is a
+    warning, or a gate the criteria set holds as a warning rather than a gate (D56).
+    """
+
     detail: str
+    compound_rule: CompoundRuleId | None = None
+    match_rule: MatchRuleId | None = None
     input_values: tuple[int, ...] = ()
     """The ids of the value rows the rule read to fire -- the source/date chain behind the
     flag. Frozen with a saved evaluation so the warning can be reopened to the figures that
-    triggered it (ST-07). Empty when the caller passed figures without their value ids."""
+    triggered it (ST-07). Empty when the caller passed figures without their value ids, and for
+    a gate, which reads no value."""
+    gate_answer: MatchRuleResult | None = None
+    """The answer a gate held as a warning read, by its stored version -- the mirror of
+    `NonMatch.gate_answer`. None for a compound rule."""
 
 
 @dataclass(frozen=True)
@@ -266,19 +275,46 @@ def gates_that_rule_out(
     A gate the criteria set does not enforce is not consulted: whether a gate counts is the
     set's preference, and the answer itself is a finding about the candidate (`arch.md` 3.6).
     """
+    return tuple(
+        NonMatch(match_rule=rule, reason_detail=detail, gate_answer=answer)
+        for rule, answer, detail in _gates_failed(enforced, answers, names)
+    )
+
+
+def gates_that_warn(
+    *,
+    held_as_warnings: Sequence[MatchRuleId],
+    answers: Sequence[MatchRuleResult],
+    names: Names = NO_NAMES,
+) -> tuple[RuleWarning, ...]:
+    """The gates a set holds as warnings that a candidate fails (D56).
+
+    The same failures `gates_that_rule_out` reads -- a confirmed `not_matching` answer, never
+    `unknown` and never a proposal -- reported as a flag that keeps the candidate matching.
+    """
+    return tuple(
+        RuleWarning(match_rule=rule, detail=detail, gate_answer=answer)
+        for rule, answer, detail in _gates_failed(held_as_warnings, answers, names)
+    )
+
+
+def _gates_failed(
+    gates: Sequence[MatchRuleId], answers: Sequence[MatchRuleResult], names: Names
+) -> tuple[tuple[MatchRuleId, MatchRuleResult, str], ...]:
+    """Each of these gates the candidate fails, in the order given, with why in words."""
     failed = {
         answer.match_rule: answer
         for answer in answers
         if answer.match_result is MatchResult.NOT_MATCHING and not answer.is_proposal
     }
     return tuple(
-        NonMatch(
-            match_rule=rule,
-            reason_detail=failed[rule].reason
+        (
+            rule,
+            failed[rule],
+            failed[rule].reason
             or f"{gate_called(names, str(rule))} answered not matching, with no reason recorded",
-            gate_answer=failed[rule],
         )
-        for rule in enforced
+        for rule in gates
         if rule in failed
     )
 

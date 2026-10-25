@@ -88,6 +88,8 @@ class PostgresEvaluationStore(EvaluationStore):
         for result in results:
             for reason in result.non_match_reasons:
                 _refuse_evidence_that_does_not_fit(result.candidate, reason)
+            for flag in result.warnings:
+                _refuse_a_warning_that_does_not_fit(result.candidate, flag)
         pillar_weights = {
             str(w.pillar): w.weight for w in criteria.pillar_weights if w.level == level
         }
@@ -117,17 +119,28 @@ class PostgresEvaluationStore(EvaluationStore):
             # Which gates this reading enforced and which compound rules it applied, frozen so a
             # reopened set says what it screened on rather than what the live set screens on now
             # (ST-07). A row means on; off is the absence of a row, as for a live set.
+            # With what each did when it fired (D56), so a reopened set holds a gate as a warning
+            # exactly where the reading did.
             if criteria.enforced_match_rules:
+                enforced = sorted(criteria.enforced_match_rules)
                 await self._queries.insert_evaluation_match_rules(
                     connection,
                     evaluation=evaluation,
-                    match_rules=[str(rule) for rule in sorted(criteria.enforced_match_rules)],
+                    match_rules=[str(rule) for rule in enforced],
+                    outcomes=[str(criteria.outcome_of_gate(rule)) for rule in enforced],
                 )
             if criteria.applied_compound_rules:
+                applied = sorted(criteria.applied_compound_rules)
                 await self._queries.insert_evaluation_compound_rules(
                     connection,
                     evaluation=evaluation,
-                    compound_rules=[str(rule) for rule in sorted(criteria.applied_compound_rules)],
+                    compound_rules=[str(rule) for rule in applied],
+                    outcomes=[
+                        None
+                        if (held := criteria.compound_rule_outcomes.get(rule)) is None
+                        else str(held)
+                        for rule in applied
+                    ],
                 )
             anchors = [
                 {
@@ -203,10 +216,27 @@ class PostgresEvaluationStore(EvaluationStore):
                 }
                 for result in results
                 for flag in result.warnings
+                if flag.compound_rule is not None
             ]
             if warnings:
                 await self._queries.insert_candidate_warnings(
                     connection, warnings=json.dumps(warnings)
+                )
+            # A gate held as a warning, pinned to the answer version it read (D56, FU-A4).
+            gate_warnings = [
+                {
+                    "candidate_result": identifiers[str(result.candidate)],
+                    "match_rule": str(flag.match_rule),
+                    "match_rule_answer": flag.gate_answer.id,
+                    "detail": flag.detail,
+                }
+                for result in results
+                for flag in result.warnings
+                if flag.match_rule is not None and flag.gate_answer is not None
+            ]
+            if gate_warnings:
+                await self._queries.insert_candidate_gate_warnings(
+                    connection, warnings=json.dumps(gate_warnings)
                 )
             # The value rows behind each warning, written after the warnings so the foreign key
             # holds (ST-07). A warning with no input ids contributes none. The ordinal is the
@@ -220,6 +250,7 @@ class PostgresEvaluationStore(EvaluationStore):
                 }
                 for result in results
                 for flag in result.warnings
+                if flag.compound_rule is not None
                 for ordinal, value_id in enumerate(flag.input_values)
             ]
             if warning_inputs:
@@ -302,18 +333,18 @@ class PostgresEvaluationStore(EvaluationStore):
                     connection, evaluation=evaluation
                 )
             ]
-            enforced = [
-                row.match_rule
+            enforced = {
+                row.match_rule: row.outcome
                 async for row in self._queries.select_evaluation_match_rules(
                     connection, evaluation=evaluation
                 )
-            ]
-            applied = [
-                row.compound_rule
+            }
+            applied = {
+                row.compound_rule: row.outcome
                 async for row in self._queries.select_evaluation_compound_rules(
                     connection, evaluation=evaluation
                 )
-            ]
+            }
         # The pillar weight and its lock are copied onto every criterion row of that pillar, so
         # either is read once per pillar (ST-07): a reopened set shows the pillar locked as it
         # was, and the gates and compound rules it screened on rather than the live set's.
@@ -334,6 +365,8 @@ class PostgresEvaluationStore(EvaluationStore):
             ),
             enforced_match_rules=frozenset(MatchRuleId(rule) for rule in enforced),
             applied_compound_rules=frozenset(CompoundRuleId(rule) for rule in applied),
+            match_rule_outcomes=enforced,
+            compound_rule_outcomes=applied,
         )
 
     async def read_candidate(self, evaluation: int, candidate: str) -> CandidateResult:
@@ -410,6 +443,37 @@ def _refuse_evidence_that_does_not_fit(candidate: CandidateId, reason: NonMatch)
                 "attribute": None if reason.criterion is None else str(reason.criterion),
                 "inputs": len(reason.input_values),
             },
+        )
+
+
+def _refuse_a_warning_that_does_not_fit(candidate: CandidateId, flag: RuleWarning) -> None:
+    """A warning names exactly one rule; a gate's names the stored answer it read, of its own
+    gate and candidate, and no figure -- held to it in the writer, as a refusal is (C6)."""
+    if (flag.match_rule is None) == (flag.compound_rule is None):
+        raise UnsavableEvidenceError(
+            f"a warning for {candidate} must name exactly one rule",
+            details={"reason": "warning_rule"},
+        )
+    answer = flag.gate_answer
+    if flag.match_rule is None:
+        if answer is not None:
+            raise UnsavableEvidenceError(
+                f"the warning by {flag.compound_rule} for {candidate} is not a gate's, so it "
+                "names no gate answer",
+                details={"reason": "evidence", "compound_rule": str(flag.compound_rule)},
+            )
+        return
+    if (
+        flag.input_values
+        or answer is None
+        or answer.id is None
+        or answer.match_rule != flag.match_rule
+        or str(answer.candidate) != str(candidate)
+    ):
+        raise UnsavableEvidenceError(
+            f"the warning by {flag.match_rule} for {candidate} must name the stored answer it "
+            "read, of its own gate and candidate, and no figure",
+            details={"reason": "gate_answer", "match_rule": str(flag.match_rule)},
         )
 
 
@@ -535,9 +599,17 @@ def _result_from(row: Any, attribute_scores: tuple[AttributeScore, ...] = ()) ->
         pillar_scores=pillars_of(attribute_scores),
         warnings=tuple(
             RuleWarning(
-                compound_rule=CompoundRuleId(flag["compound_rule"]),
+                compound_rule=(
+                    None
+                    if flag.get("compound_rule") is None
+                    else CompoundRuleId(flag["compound_rule"])
+                ),
+                match_rule=(
+                    None if flag.get("match_rule") is None else MatchRuleId(flag["match_rule"])
+                ),
                 detail=flag["detail"],
                 input_values=tuple(flag.get("input_values", [])),
+                gate_answer=_gate_answer_from(flag.get("gate_answer")),
             )
             for flag in getattr(row, "warnings", []) or []
         ),

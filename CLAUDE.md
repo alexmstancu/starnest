@@ -181,7 +181,9 @@ set turns *on*: `select_criteria_set` reads `WHERE is_enforced` / `WHERE is_appl
 any edit (a weight, a rename, a toggle). **Off is the absence of a row, never a row with a false
 flag.** So a migration that turns a rule on must **upsert** the association
 (`INSERT ... ON CONFLICT DO UPDATE`), never a bare `UPDATE` -- and must not seed an
-`is_applied=false` / `is_enforced=false` row, which the first edit drops. `0496` learned this the
+`is_applied=false` / `is_enforced=false` row, which the first edit drops. **Since `0516` the row
+also carries the rule's `outcome` in that set** -- `not_matching` or `warning` (D56, Q238) -- set
+exactly when the rule is on, so the upsert must name it. `0496` learned this the
 hard way: it used `UPDATE` to apply `mild_now_brutal_later`, assuming the `is_applied=false` row
 `0104` had seeded still existed, but the app's own read/write cycle had long since dropped it. A
 fresh-DB `make check` passed because the row was there; the live DB had nothing to update and the

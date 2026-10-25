@@ -504,6 +504,51 @@ class TestASavedRankingShowsItsEvidence:
         assert len(saved["non_match_reasons"]) == 2
         assert live == saved
 
+    async def test_a_gate_held_as_a_warning_is_saved_as_a_warning(
+        self, api: httpx.AsyncClient, stored_figures: None, a_scratch_criteria_set: str
+    ) -> None:
+        """D56 (PL-157): a gate the set holds as a warning keeps Greece matching with a warning
+        that names the gate and the answer it read, and the saved ranking keeps meaning that --
+        `live == saved` over the whole drill-down, and the frozen set holds the outcome too."""
+        softened = await api.put(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/match-rules/{A_GATE}",
+            json={"is_enforced": True, "outcome": "warning"},
+        )
+        answered = await api.put(
+            f"/v1/match-rule-results/{A_GATE}/{GREECE}",
+            json={
+                "match_result": "not_matching",
+                "reason": "Ruled out by hand",
+                "citations": ["https://example.org/why"],
+            },
+        )
+        assert [softened.status_code, answered.status_code] == [204, 200]
+        params = {"criteria_set": a_scratch_criteria_set, "level": COUNTRY}
+        live = (await api.get(f"/v1/rankings/candidates/{GREECE}", params=params)).json()
+        live_ranking = (await api.get("/v1/rankings", params=params)).json()
+
+        evaluation = await _keep(api, a_scratch_criteria_set)
+        saved = (await api.get(f"/v1/evaluations/{evaluation}/candidates/{GREECE}")).json()
+        saved_ranking = (await api.get(f"/v1/evaluations/{evaluation}")).json()
+        await api.put(
+            f"/v1/criteria-sets/{a_scratch_criteria_set}/match-rules/{A_GATE}",
+            json={"is_enforced": True, "outcome": "not_matching"},
+        )
+        reopened = (await api.get(f"/v1/evaluations/{evaluation}/candidates/{GREECE}")).json()
+
+        assert saved["match_status"] == "matching"
+        assert saved["non_match_reasons"] == []
+        [warning] = saved["warnings"]
+        assert (warning["match_rule"], warning["compound_rule"], warning["detail"]) == (
+            A_GATE,
+            None,
+            "Ruled out by hand",
+        )
+        assert warning["gate_answer"]["citations"] == ["https://example.org/why"]
+        assert live == saved
+        assert saved_ranking["candidates"] == live_ranking["candidates"]
+        assert reopened == saved, "hardening the live set leaves the saved ranking as it was"
+
     async def test_each_contribution_names_the_value_it_used_with_its_provenance(
         self, api: httpx.AsyncClient, stored_figures: None
     ) -> None:

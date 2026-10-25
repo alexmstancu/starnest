@@ -25,6 +25,10 @@ components:
         is_applied:
           title: Is Applied
           type: boolean
+        outcome:
+          anyOf:
+          - $ref: '#/components/schemas/RuleOutcome'
+          - type: 'null'
       required:
       - is_applied
       title: ApplicationBody
@@ -640,6 +644,11 @@ components:
             type: string
           title: Applied Compound Rules
           type: array
+        compound_rule_outcomes:
+          additionalProperties:
+            $ref: '#/components/schemas/RuleOutcome'
+          title: Compound Rule Outcomes
+          type: object
         criteria:
           items:
             $ref: '#/components/schemas/CriterionBody'
@@ -654,6 +663,11 @@ components:
         id:
           title: Id
           type: string
+        match_rule_outcomes:
+          additionalProperties:
+            $ref: '#/components/schemas/RuleOutcome'
+          title: Match Rule Outcomes
+          type: object
         name:
           title: Name
           type: string
@@ -1000,6 +1014,10 @@ components:
         is_enforced:
           title: Is Enforced
           type: boolean
+        outcome:
+          anyOf:
+          - $ref: '#/components/schemas/RuleOutcome'
+          - type: 'null'
       required:
       - is_enforced
       title: EnforcementBody
@@ -2203,6 +2221,22 @@ components:
           type: string
       title: RetryBody
       type: object
+    RuleOutcome:
+      description: 'What a rule firing does, and it is a parameter rather than two
+        kinds of rule.
+
+
+        `warning` flags without ruling anything out and never touches the score; `not_matching`
+
+        makes the same row a computed gate, speaking the one match vocabulary a `MatchRule`
+        speaks
+
+        (`reqs.md` 3.7a).'
+      enum:
+      - warning
+      - not_matching
+      title: RuleOutcome
+      type: string
     RunBody:
       properties:
         cost_eur:
@@ -2915,13 +2949,25 @@ components:
       title: ValuesBody
       type: object
     WarningBody:
+      description: 'Exactly one of the two names the rule that raised it: a compound
+        rule, or a gate the set
+
+        holds as a warning (D56).'
       properties:
         compound_rule:
+          anyOf:
+          - type: string
+          - type: 'null'
           title: Compound Rule
-          type: string
         detail:
           title: Detail
           type: string
+        gate_answer:
+          anyOf:
+          - $ref: '#/components/schemas/MatchRuleResultBody'
+          - type: 'null'
+          description: The answer a gate held as a warning read, as it stood then.
+            Null for a compound rule.
         inputs:
           default: []
           description: The figures the rule read, each with its source and both dates,
@@ -2931,8 +2977,12 @@ components:
             $ref: '#/components/schemas/ValueBody'
           title: Inputs
           type: array
+        match_rule:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Match Rule
       required:
-      - compound_rule
       - detail
       title: WarningBody
       type: object
@@ -3561,7 +3611,8 @@ paths:
       - criteria
   /v1/criteria-sets/{criteria_set_id}/match-rules/{match_rule_id}:
     put:
-      description: 'Whether this set enforces a gate.
+      description: 'Whether this set enforces a gate, and whether as a gate or as
+        a warning (D56).
 
 
         **A preference, not a fact** (`arch.md` 3.6): the gate''s answer belongs to

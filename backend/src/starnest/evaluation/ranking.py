@@ -24,7 +24,14 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from starnest.candidates import CandidateId
 from starnest.criteria import TOTAL, CriteriaSet, Criterion
-from starnest.data import CompoundRule, ConfidenceLevel, MatchRuleResult, PillarId, Value
+from starnest.data import (
+    CompoundRule,
+    ConfidenceLevel,
+    MatchRuleResult,
+    PillarId,
+    RuleOutcome,
+    Value,
+)
 from starnest.evaluation.magnitudes import PublishedFigure, UnscoreableValueError, figure_of
 from starnest.evaluation.normalisation import scores_for
 from starnest.evaluation.results import (
@@ -35,6 +42,7 @@ from starnest.evaluation.results import (
 )
 from starnest.evaluation.rules import (
     gates_that_rule_out,
+    gates_that_warn,
     judgements_of,
     thresholds_that_rule_out,
 )
@@ -125,7 +133,13 @@ def rank_candidates(
     # warnings -- and, with an outcome of `not_matching`, still removed countries -- from every
     # other set's ranking (P43). Narrowed once here rather than per candidate: it is a property
     # of the set, and the answer is the same for all 32.
-    applied = tuple(rule for rule in compound_rules if rule.id in criteria.applied_compound_rules)
+    # **And so is what each rule does when it fires** (D56): the set may hold a warning as a
+    # gate or a gate as a warning, so each applied rule carries the set's outcome from here on.
+    applied = tuple(
+        rule.model_copy(update={"outcome": criteria.outcome_of_compound_rule(rule)})
+        for rule in compound_rules
+        if rule.id in criteria.applied_compound_rules
+    )
 
     results = tuple(
         _result_for(
@@ -558,9 +572,26 @@ def _result_for(
         value_ids=_figure_sources_of(candidate_values),
         names=names,
     )
+    enforced = sorted(criteria.enforced_match_rules)
+    warnings = (
+        gates_that_warn(
+            held_as_warnings=[
+                gate for gate in enforced if criteria.outcome_of_gate(gate) is RuleOutcome.WARNING
+            ],
+            answers=gate_answers,
+            names=names,
+        )
+        + warnings
+    )
     refusals = (
         gates_that_rule_out(
-            enforced=criteria.enforced_match_rules, answers=gate_answers, names=names
+            enforced=[
+                gate
+                for gate in enforced
+                if criteria.outcome_of_gate(gate) is RuleOutcome.NOT_MATCHING
+            ],
+            answers=gate_answers,
+            names=names,
         )
         + ruled_out_by_a_rule
         + thresholds_that_rule_out(_criteria_at(criteria, level), candidate_values, names)

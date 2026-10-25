@@ -112,22 +112,25 @@ A_ROW_OF_EVERY_KIND = (
     "INSERT INTO criterion_threshold_label (criterion, value_type, label, containment_rule)"
     " SELECT id, value_type, 'Cfb', 'must_contain' FROM criterion"
     " WHERE criteria_set = %(criteria_set)s AND attribute = 'country.climate_zone'",
-    "INSERT INTO criteria_set_match_rule (criteria_set, match_rule, is_enforced)"
-    " VALUES (%(criteria_set)s, 'uk_skilled_worker', true)"
-    " ON CONFLICT (criteria_set, match_rule) DO UPDATE SET is_enforced = true",
-    "INSERT INTO criteria_set_match_rule (criteria_set, match_rule, is_enforced)"
-    " VALUES (%(criteria_set)s, 'li_eea_quota', false)"
-    " ON CONFLICT (criteria_set, match_rule) DO UPDATE SET is_enforced = false",
-    "INSERT INTO criteria_set_compound_rule (criteria_set, compound_rule, is_applied)"
-    " VALUES (%(criteria_set)s, 'cheap_but_taxed', true)"
-    " ON CONFLICT (criteria_set, compound_rule) DO UPDATE SET is_applied = true",
-    "INSERT INTO criteria_set_compound_rule (criteria_set, compound_rule, is_applied)"
-    " VALUES (%(criteria_set)s, 'mild_now_brutal_later', false)"
-    " ON CONFLICT (criteria_set, compound_rule) DO UPDATE SET is_applied = false",
+    "INSERT INTO criteria_set_match_rule (criteria_set, match_rule, is_enforced, outcome)"
+    " VALUES (%(criteria_set)s, 'uk_skilled_worker', true, 'warning')"
+    " ON CONFLICT (criteria_set, match_rule)"
+    " DO UPDATE SET is_enforced = true, outcome = 'warning'",
+    "INSERT INTO criteria_set_match_rule (criteria_set, match_rule, is_enforced, outcome)"
+    " VALUES (%(criteria_set)s, 'li_eea_quota', false, NULL)"
+    " ON CONFLICT (criteria_set, match_rule) DO UPDATE SET is_enforced = false, outcome = NULL",
+    "INSERT INTO criteria_set_compound_rule (criteria_set, compound_rule, is_applied, outcome)"
+    " VALUES (%(criteria_set)s, 'cheap_but_taxed', true, 'not_matching')"
+    " ON CONFLICT (criteria_set, compound_rule)"
+    " DO UPDATE SET is_applied = true, outcome = 'not_matching'",
+    "INSERT INTO criteria_set_compound_rule (criteria_set, compound_rule, is_applied, outcome)"
+    " VALUES (%(criteria_set)s, 'mild_now_brutal_later', false, NULL)"
+    " ON CONFLICT (criteria_set, compound_rule) DO UPDATE SET is_applied = false, outcome = NULL",
 )
 """Both kinds of lock, a criterion left out of the score, a band label, two threshold shapes, and
-rule rows on and off. **The off rows are written by SQL**: a row whose flag is false reads as off
-and the domain never writes one, so a restore rebuilt from a domain read would drop it."""
+rule rows on and off, the on rows held against their default outcome (D56). **The off rows are
+written by SQL**: a row whose flag is false reads as off and the domain never writes one, so a
+restore rebuilt from a domain read would drop it."""
 
 
 @pytest.fixture
@@ -219,8 +222,11 @@ class TestDeletingInPlace:
         before = await _rows_owned_by(pool, RESTORED)
         as_read = await criteria.read_criteria_set(RESTORED)
         assert {table for table, rows in before.items() if not rows} == NO_ATTRIBUTE_CAN_HOLD
-        assert (RESTORED, "li_eea_quota", False) in before["criteria_set_match_rule"]
-        assert (RESTORED, "mild_now_brutal_later", False) in before["criteria_set_compound_rule"]
+        assert (RESTORED, "li_eea_quota", False, None) in before["criteria_set_match_rule"]
+        assert (RESTORED, "uk_skilled_worker", True, "warning") in before["criteria_set_match_rule"]
+        assert (RESTORED, "mild_now_brutal_later", False, None) in before[
+            "criteria_set_compound_rule"
+        ]
 
         await criteria.discard_criteria_set(RESTORED)
 

@@ -196,18 +196,32 @@ FROM   jsonb_to_recordset(:inputs::jsonb) AS input(
            value_id         bigint,
            ordinal          integer);
 
--- name: insert_evaluation_match_rules(evaluation, match_rules)!
+-- name: insert_evaluation_match_rules(evaluation, match_rules, outcomes)!
 -- The gates this reading enforced, frozen so a reopened set says what it screened on rather than
 -- what the live set screens on now (ST-07). A row means enforced; off is the absence of a row.
-INSERT INTO evaluation_match_rule (evaluation, match_rule)
-SELECT :evaluation, match_rule
-FROM   unnest(:match_rules::text[]) AS match_rule;
+-- Each with what it did when a candidate failed it, the outcome at the same position (D56).
+INSERT INTO evaluation_match_rule (evaluation, match_rule, outcome)
+SELECT :evaluation, rule.match_rule, rule.outcome
+FROM   unnest(:match_rules::text[], :outcomes::text[]) AS rule(match_rule, outcome);
 
--- name: insert_evaluation_compound_rules(evaluation, compound_rules)!
--- The compound rules this reading applied, frozen for the same reason (ST-07).
-INSERT INTO evaluation_compound_rule (evaluation, compound_rule)
-SELECT :evaluation, compound_rule
-FROM   unnest(:compound_rules::text[]) AS compound_rule;
+-- name: insert_evaluation_compound_rules(evaluation, compound_rules, outcomes)!
+-- The compound rules this reading applied, frozen for the same reason (ST-07), each with the
+-- outcome it had; a null is the rule's own, read from the catalog as it stands now (D56).
+INSERT INTO evaluation_compound_rule (evaluation, compound_rule, outcome)
+SELECT :evaluation, rule.compound_rule,
+       COALESCE(rule.outcome, (SELECT outcome FROM compound_rule WHERE id = rule.compound_rule))
+FROM   unnest(:compound_rules::text[], :outcomes::text[]) AS rule(compound_rule, outcome);
+
+-- name: insert_candidate_gate_warnings(warnings)!
+-- A gate the set held as a warning, and the candidate failed (D56): the flag, with the answer
+-- version it read, so a reopened ranking shows the answer as it stood then (FU-A4).
+INSERT INTO candidate_gate_warning (candidate_result, match_rule, match_rule_answer, detail)
+SELECT warning.candidate_result, warning.match_rule, warning.match_rule_answer, warning.detail
+FROM   jsonb_to_recordset(:warnings::jsonb) AS warning(
+           candidate_result  bigint,
+           match_rule        text,
+           match_rule_answer bigint,
+           detail            text);
 
 -- Reading a saved evaluation back.
 
@@ -316,19 +330,55 @@ SELECT r.id,
             FROM   non_match_reason AS reason
             WHERE  reason.candidate_result = r.id),
            '[]'::jsonb) AS non_match_reasons,
+       -- The gates held as warnings first, then the compound rules' warnings, each by rule:
+       -- the order the live ranking gives them.
        COALESCE(
-           (SELECT jsonb_agg(jsonb_build_object(
-                       'compound_rule', warning.compound_rule,
-                       'detail',        warning.detail,
-                       'input_values',  COALESCE(
-                           (SELECT jsonb_agg(input.value_id ORDER BY input.ordinal)
-                            FROM   candidate_warning_input AS input
-                            WHERE  input.candidate_result = warning.candidate_result
-                              AND  input.compound_rule = warning.compound_rule),
-                           '[]'::jsonb))
-                     ORDER BY warning.compound_rule)
-            FROM   candidate_warning AS warning
-            WHERE  warning.candidate_result = r.id),
+           (SELECT jsonb_agg(flag.body ORDER BY flag.kind, flag.rule)
+            FROM   (SELECT 0 AS kind,
+                           warning.match_rule AS rule,
+                           jsonb_build_object(
+                               'match_rule',  warning.match_rule,
+                               'detail',      warning.detail,
+                               -- The gate-answer VERSION the warning read, as for a refusal.
+                               'gate_answer', (
+                                   SELECT jsonb_build_object(
+                                              'id',                     version.id,
+                                              'match_rule',             version.match_rule,
+                                              'candidate',              version.candidate,
+                                              'match_result',           version.match_result,
+                                              'reason',                 version.reason,
+                                              'data_source',            version.data_source,
+                                              'reference_period_start', version.reference_period_start,
+                                              'reference_period_end',   version.reference_period_end,
+                                              'retrieval_date',         version.retrieval_date,
+                                              'override_reason',        version.override_reason,
+                                              'override_date',          version.override_date,
+                                              'is_proposal',            source.source_kind = 'llm',
+                                              'citations',              COALESCE(
+                                                  (SELECT jsonb_agg(page.url ORDER BY page.url)
+                                                   FROM   match_rule_answer_citation AS page
+                                                   WHERE  page.answer = version.id),
+                                                  '[]'::jsonb))
+                                   FROM   match_rule_answer AS version
+                                   LEFT   JOIN data_source AS source
+                                          ON source.id = version.data_source
+                                   WHERE  version.id = warning.match_rule_answer)) AS body
+                    FROM   candidate_gate_warning AS warning
+                    WHERE  warning.candidate_result = r.id
+                    UNION ALL
+                    SELECT 1,
+                           warning.compound_rule,
+                           jsonb_build_object(
+                               'compound_rule', warning.compound_rule,
+                               'detail',        warning.detail,
+                               'input_values',  COALESCE(
+                                   (SELECT jsonb_agg(input.value_id ORDER BY input.ordinal)
+                                    FROM   candidate_warning_input AS input
+                                    WHERE  input.candidate_result = warning.candidate_result
+                                      AND  input.compound_rule = warning.compound_rule),
+                                   '[]'::jsonb))
+                    FROM   candidate_warning AS warning
+                    WHERE  warning.candidate_result = r.id) AS flag),
            '[]'::jsonb) AS warnings
 FROM   candidate_result AS r
 JOIN   candidate AS c ON c.id = r.candidate
@@ -375,15 +425,15 @@ ORDER  BY ec.pillar, ec.attribute;
 
 -- name: select_evaluation_match_rules(evaluation)
 -- The gates this reading enforced, frozen (ST-07). A reopened set needs these to say what it
--- screened on, not what the live set screens on now.
-SELECT match_rule
+-- screened on, not what the live set screens on now -- and what each did (D56).
+SELECT match_rule, outcome
 FROM   evaluation_match_rule
 WHERE  evaluation = :evaluation
 ORDER  BY match_rule;
 
 -- name: select_evaluation_compound_rules(evaluation)
--- The compound rules this reading applied, frozen (ST-07).
-SELECT compound_rule
+-- The compound rules this reading applied, frozen (ST-07), with what each did (D56).
+SELECT compound_rule, outcome
 FROM   evaluation_compound_rule
 WHERE  evaluation = :evaluation
 ORDER  BY compound_rule;
@@ -460,19 +510,55 @@ SELECT r.id,
             FROM   non_match_reason AS reason
             WHERE  reason.candidate_result = r.id),
            '[]'::jsonb) AS non_match_reasons,
+       -- The gates held as warnings first, then the compound rules' warnings, each by rule:
+       -- the order the live ranking gives them.
        COALESCE(
-           (SELECT jsonb_agg(jsonb_build_object(
-                       'compound_rule', warning.compound_rule,
-                       'detail',        warning.detail,
-                       'input_values',  COALESCE(
-                           (SELECT jsonb_agg(input.value_id ORDER BY input.ordinal)
-                            FROM   candidate_warning_input AS input
-                            WHERE  input.candidate_result = warning.candidate_result
-                              AND  input.compound_rule = warning.compound_rule),
-                           '[]'::jsonb))
-                     ORDER BY warning.compound_rule)
-            FROM   candidate_warning AS warning
-            WHERE  warning.candidate_result = r.id),
+           (SELECT jsonb_agg(flag.body ORDER BY flag.kind, flag.rule)
+            FROM   (SELECT 0 AS kind,
+                           warning.match_rule AS rule,
+                           jsonb_build_object(
+                               'match_rule',  warning.match_rule,
+                               'detail',      warning.detail,
+                               -- The gate-answer VERSION the warning read, as for a refusal.
+                               'gate_answer', (
+                                   SELECT jsonb_build_object(
+                                              'id',                     version.id,
+                                              'match_rule',             version.match_rule,
+                                              'candidate',              version.candidate,
+                                              'match_result',           version.match_result,
+                                              'reason',                 version.reason,
+                                              'data_source',            version.data_source,
+                                              'reference_period_start', version.reference_period_start,
+                                              'reference_period_end',   version.reference_period_end,
+                                              'retrieval_date',         version.retrieval_date,
+                                              'override_reason',        version.override_reason,
+                                              'override_date',          version.override_date,
+                                              'is_proposal',            source.source_kind = 'llm',
+                                              'citations',              COALESCE(
+                                                  (SELECT jsonb_agg(page.url ORDER BY page.url)
+                                                   FROM   match_rule_answer_citation AS page
+                                                   WHERE  page.answer = version.id),
+                                                  '[]'::jsonb))
+                                   FROM   match_rule_answer AS version
+                                   LEFT   JOIN data_source AS source
+                                          ON source.id = version.data_source
+                                   WHERE  version.id = warning.match_rule_answer)) AS body
+                    FROM   candidate_gate_warning AS warning
+                    WHERE  warning.candidate_result = r.id
+                    UNION ALL
+                    SELECT 1,
+                           warning.compound_rule,
+                           jsonb_build_object(
+                               'compound_rule', warning.compound_rule,
+                               'detail',        warning.detail,
+                               'input_values',  COALESCE(
+                                   (SELECT jsonb_agg(input.value_id ORDER BY input.ordinal)
+                                    FROM   candidate_warning_input AS input
+                                    WHERE  input.candidate_result = warning.candidate_result
+                                      AND  input.compound_rule = warning.compound_rule),
+                                   '[]'::jsonb))
+                    FROM   candidate_warning AS warning
+                    WHERE  warning.candidate_result = r.id) AS flag),
            '[]'::jsonb) AS warnings
 FROM   candidate_result AS r
 JOIN   candidate AS c ON c.id = r.candidate

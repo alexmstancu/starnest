@@ -21,7 +21,7 @@ from starnest.criteria import (
     UnknownCriterionError,
     WeightsAllLockedError,
 )
-from starnest.data import ValueType
+from starnest.data import CompoundRule, CompoundRuleShape, RuleOutcome, ValueType
 
 SET = "local_employment"
 
@@ -266,6 +266,83 @@ def test_a_duplicate_carries_the_enforced_rules_too() -> None:
 def test_a_malformed_new_identifier_is_refused() -> None:
     with pytest.raises(ValueError):
         one_pillar().duplicated_as("Alex's Set", "Alex")
+
+
+# --- a rule held as a gate or as a warning (PL-157, D56) -----------------------
+
+
+GATE = "uk_skilled_worker"
+RULE = "cheap_but_taxed"
+
+
+def test_a_gate_is_held_as_a_gate_until_the_set_says_otherwise() -> None:
+    enforcing = one_pillar().with_match_rule(GATE, enforced=True)
+
+    assert enforcing.outcome_of_gate(GATE) is RuleOutcome.NOT_MATCHING
+
+
+def test_a_gate_can_be_held_as_a_warning() -> None:
+    softened = one_pillar().with_match_rule(GATE, enforced=True, outcome=RuleOutcome.WARNING)
+
+    assert softened.enforced_match_rules == frozenset({GATE})
+    assert softened.outcome_of_gate(GATE) is RuleOutcome.WARNING
+
+
+def test_enforcing_again_without_an_outcome_keeps_the_one_held() -> None:
+    """The plain toggle says nothing about the outcome, so it must not reset it."""
+    softened = one_pillar().with_match_rule(GATE, enforced=True, outcome=RuleOutcome.WARNING)
+
+    assert softened.with_match_rule(GATE, enforced=True).outcome_of_gate(GATE) is (
+        RuleOutcome.WARNING
+    )
+
+
+def test_releasing_a_gate_loses_its_outcome() -> None:
+    """Off is the absence of the rule, outcome and all: enforced again, it is a gate again."""
+    softened = one_pillar().with_match_rule(GATE, enforced=True, outcome=RuleOutcome.WARNING)
+
+    released = softened.with_match_rule(GATE, enforced=False)
+
+    assert released.match_rule_outcomes == {}
+    assert released.with_match_rule(GATE, enforced=True).outcome_of_gate(GATE) is (
+        RuleOutcome.NOT_MATCHING
+    )
+
+
+def test_an_outcome_for_a_rule_being_switched_off_is_refused() -> None:
+    with pytest.raises(CriteriaSetError, match="off"):
+        one_pillar().with_match_rule(GATE, enforced=False, outcome=RuleOutcome.WARNING)
+    with pytest.raises(CriteriaSetError, match="off"):
+        one_pillar().with_compound_rule(RULE, applied=False, outcome=RuleOutcome.WARNING)
+
+
+def test_a_set_holding_an_outcome_for_a_rule_it_does_not_apply_is_refused() -> None:
+    with pytest.raises(ValueError, match=GATE):
+        CriteriaSet(id=SET, name="Local employment", match_rule_outcomes={GATE: "warning"})
+    with pytest.raises(ValueError, match=RULE):
+        CriteriaSet(id=SET, name="Local employment", compound_rule_outcomes={RULE: "warning"})
+
+
+def test_a_compound_rule_keeps_its_own_outcome_unless_the_set_holds_another() -> None:
+    a_warning = CompoundRule(
+        id=RULE,
+        name="Cheap but taxed",
+        level="country",
+        shape=CompoundRuleShape.ALL_CONDITIONS_HOLD,
+        outcome=RuleOutcome.WARNING,
+    )
+    applying = one_pillar().with_compound_rule(RULE, applied=True)
+    hardened = applying.with_compound_rule(RULE, applied=True, outcome=RuleOutcome.NOT_MATCHING)
+
+    assert applying.outcome_of_compound_rule(a_warning) is RuleOutcome.WARNING
+    assert hardened.outcome_of_compound_rule(a_warning) is RuleOutcome.NOT_MATCHING
+    assert hardened.with_compound_rule(RULE, applied=False).compound_rule_outcomes == {}
+
+
+def test_a_duplicate_carries_the_outcomes_too() -> None:
+    softened = one_pillar().with_match_rule(GATE, enforced=True, outcome=RuleOutcome.WARNING)
+
+    assert softened.duplicated_as("alex", "Alex").outcome_of_gate(GATE) is RuleOutcome.WARNING
 
 
 # --- the two flags ------------------------------------------------------------

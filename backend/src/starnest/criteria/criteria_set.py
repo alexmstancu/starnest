@@ -24,7 +24,14 @@ from starnest.criteria.criterion import Criterion, CriterionDeclarationError
 from starnest.criteria.identifiers import CriteriaSetId
 from starnest.criteria.rebalancing import TOTAL, WeightedItem, rebalance
 from starnest.criteria.refusals import RuleRefusalError
-from starnest.data import AttributeId, CompoundRuleId, MatchRuleId, PillarId
+from starnest.data import (
+    AttributeId,
+    CompoundRule,
+    CompoundRuleId,
+    MatchRuleId,
+    PillarId,
+    RuleOutcome,
+)
 
 THE_SCORING_RULE = frozenset(
     {
@@ -101,15 +108,32 @@ class CriteriaSet(BaseModel):
     # enforced or it is not, and enforcing it twice means nothing.
     enforced_match_rules: frozenset[MatchRuleId] = frozenset()
     applied_compound_rules: frozenset[CompoundRuleId] = frozenset()
+    # What each rule the set turns on does when it fires: rule a candidate out, or warn (D56).
+    # Also a preference, so held per set. Only a rule that is on may hold one -- off is the
+    # absence of the rule, outcome and all. A rule with no entry does what it does by default:
+    # a gate rules out, a compound rule does what the catalog says.
+    match_rule_outcomes: dict[MatchRuleId, RuleOutcome] = Field(default_factory=dict)
+    compound_rule_outcomes: dict[CompoundRuleId, RuleOutcome] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _reject_a_set_that_could_not_produce_one_score(self) -> Self:
+        self._reject_an_outcome_for_a_rule_that_is_off()
         self._reject_a_criterion_belonging_to_another_set()
         self._reject_a_second_rule_on_one_attribute()
         self._reject_a_pillar_weighted_twice()
         self._reject_a_criterion_in_an_unweighted_pillar()
         self._reject_weights_that_do_not_sum()
         return self
+
+    def _reject_an_outcome_for_a_rule_that_is_off(self) -> None:
+        stray = sorted(
+            {str(rule) for rule in self.match_rule_outcomes} - set(self.enforced_match_rules)
+            | {str(rule) for rule in self.compound_rule_outcomes} - set(self.applied_compound_rules)
+        )
+        if stray:
+            raise CriteriaSetError(
+                f"{self.id} holds an outcome for a rule it does not turn on: {', '.join(stray)}"
+            )
 
     def _reject_a_criterion_belonging_to_another_set(self) -> None:
         for criterion in self.criteria:
@@ -246,6 +270,49 @@ class CriteriaSet(BaseModel):
         )
 
     # --- editing ------------------------------------------------------------
+
+    def outcome_of_gate(self, gate: MatchRuleId | str) -> RuleOutcome:
+        """What this gate does when a candidate fails it, in this set: by default, rule it out."""
+        return self.match_rule_outcomes.get(MatchRuleId(gate), RuleOutcome.NOT_MATCHING)
+
+    def outcome_of_compound_rule(self, rule: CompoundRule) -> RuleOutcome:
+        """What this rule does when it fires, in this set: by default, what the catalog says."""
+        return self.compound_rule_outcomes.get(rule.id, rule.outcome)
+
+    def with_match_rule(
+        self, gate: MatchRuleId | str, *, enforced: bool, outcome: RuleOutcome | None = None
+    ) -> "CriteriaSet":
+        """Turn a gate on or off, and say what it does when on.
+
+        No outcome keeps the one held, so the plain toggle never resets it; switching a gate off
+        drops its outcome with it, and an outcome sent for a gate being switched off is refused
+        rather than ignored.
+        """
+        rules, outcomes = _switched(
+            MatchRuleId(gate),
+            on=enforced,
+            outcome=outcome,
+            rules=self.enforced_match_rules,
+            outcomes=self.match_rule_outcomes,
+        )
+        return self.model_copy(
+            update={"enforced_match_rules": rules, "match_rule_outcomes": outcomes}
+        )
+
+    def with_compound_rule(
+        self, rule: CompoundRuleId | str, *, applied: bool, outcome: RuleOutcome | None = None
+    ) -> "CriteriaSet":
+        """`with_match_rule`, for a compound rule."""
+        rules, outcomes = _switched(
+            CompoundRuleId(rule),
+            on=applied,
+            outcome=outcome,
+            rules=self.applied_compound_rules,
+            outcomes=self.compound_rule_outcomes,
+        )
+        return self.model_copy(
+            update={"applied_compound_rules": rules, "compound_rule_outcomes": outcomes}
+        )
 
     def duplicated_as(self, new_id: CriteriaSetId | str, name: str) -> "CriteriaSet":
         """A full, independent copy under a new identifier.
@@ -415,6 +482,27 @@ class CriteriaSet(BaseModel):
                 )
             }
         )
+
+
+def _switched[Rule: str](
+    rule: Rule,
+    *,
+    on: bool,
+    outcome: RuleOutcome | None,
+    rules: frozenset[Rule],
+    outcomes: Mapping[Rule, RuleOutcome],
+) -> tuple[frozenset[Rule], dict[Rule, RuleOutcome]]:
+    """One rule switched on or off, with the outcome it holds while on."""
+    if not on:
+        if outcome is not None:
+            raise CriteriaSetError(
+                f"{rule} is being switched off, and a rule that is off holds no outcome"
+            )
+        return rules - {rule}, {key: held for key, held in outcomes.items() if key != rule}
+    kept = dict(outcomes)
+    if outcome is not None:
+        kept[rule] = outcome
+    return rules | {rule}, kept
 
 
 def _grouped_criterion_weights(

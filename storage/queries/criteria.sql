@@ -151,7 +151,23 @@ SELECT s.id,
             JOIN   compound_rule AS cr ON cr.id = r.compound_rule
             WHERE  r.criteria_set = s.id AND r.is_applied
               AND  (:level::text IS NULL OR cr.level = :level)),
-           '[]'::jsonb) AS applied_compound_rules
+           '[]'::jsonb) AS applied_compound_rules,
+       -- What each of those does when it fires, in this set (D56): one entry per rule that is
+       -- on, filtered exactly as the two lists above so neither names a rule the other lacks.
+       COALESCE(
+           (SELECT jsonb_object_agg(m.match_rule, m.outcome)
+            FROM   criteria_set_match_rule AS m
+            JOIN   match_rule AS mr ON mr.id = m.match_rule
+            WHERE  m.criteria_set = s.id AND m.is_enforced
+              AND  (:level::text IS NULL OR mr.level IS NULL OR mr.level = :level)),
+           '{}'::jsonb) AS match_rule_outcomes,
+       COALESCE(
+           (SELECT jsonb_object_agg(r.compound_rule, r.outcome)
+            FROM   criteria_set_compound_rule AS r
+            JOIN   compound_rule AS cr ON cr.id = r.compound_rule
+            WHERE  r.criteria_set = s.id AND r.is_applied
+              AND  (:level::text IS NULL OR cr.level = :level)),
+           '{}'::jsonb) AS compound_rule_outcomes
 FROM   criteria_set AS s
 WHERE  s.id = :criteria_set
   AND  (:include_deleted::boolean OR s.deleted_at IS NULL);
@@ -474,16 +490,23 @@ WHERE  w.criteria_set = :criteria_set
   AND  w.level = :level
   AND  w.pillar = replacement.pillar;
 
--- name: upsert_criteria_set_match_rule(criteria_set, match_rule, is_enforced)!
--- Whether a gate is enforced is a preference, so it is stored per set and never on the rule.
-INSERT INTO criteria_set_match_rule (criteria_set, match_rule, is_enforced)
-VALUES (:criteria_set, :match_rule, :is_enforced)
-ON CONFLICT (criteria_set, match_rule) DO UPDATE SET is_enforced = EXCLUDED.is_enforced;
+-- name: upsert_criteria_set_match_rule(criteria_set, match_rule, outcome)!
+-- Whether a gate is enforced is a preference, so it is stored per set and never on the rule --
+-- and so is what it does when a candidate fails it (D56). Only a gate that is on has a row.
+INSERT INTO criteria_set_match_rule (criteria_set, match_rule, is_enforced, outcome)
+VALUES (:criteria_set, :match_rule, true, :outcome)
+ON CONFLICT (criteria_set, match_rule)
+DO UPDATE SET is_enforced = EXCLUDED.is_enforced, outcome = EXCLUDED.outcome;
 
--- name: upsert_criteria_set_compound_rule(criteria_set, compound_rule, is_applied)!
-INSERT INTO criteria_set_compound_rule (criteria_set, compound_rule, is_applied)
-VALUES (:criteria_set, :compound_rule, :is_applied)
-ON CONFLICT (criteria_set, compound_rule) DO UPDATE SET is_applied = EXCLUDED.is_applied;
+-- name: upsert_criteria_set_compound_rule(criteria_set, compound_rule, outcome)!
+-- A null outcome is the rule's own, read from the catalog here so the row always says what the
+-- set does rather than leaving it to whatever the catalog says later.
+INSERT INTO criteria_set_compound_rule (criteria_set, compound_rule, is_applied, outcome)
+VALUES (:criteria_set, :compound_rule, true,
+        COALESCE(:outcome::text,
+                 (SELECT outcome FROM compound_rule WHERE id = :compound_rule)))
+ON CONFLICT (criteria_set, compound_rule)
+DO UPDATE SET is_applied = EXCLUDED.is_applied, outcome = EXCLUDED.outcome;
 
 -- Scale anchors and matching thresholds. Both are children of one criterion and both are
 -- replaced wholesale rather than patched: an anchor list with one point edited and another

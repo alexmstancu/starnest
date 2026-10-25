@@ -619,7 +619,17 @@ paths:
   /criteria-sets/{criteriaSetId}/match-rules/{matchRuleId}:
     put:
       tags: [criteria]
-      summary: Whether this set enforces a gate
+      summary: Whether this set enforces a gate, and as a gate or as a warning
+      description: |
+        Whether the gate counts in this set, and what it does when a candidate fails it (D56):
+        `not_matching` rules the candidate out, `warning` flags it and keeps it matching. Both
+        are the set's preference; the answer belongs to the candidate. Switching the outcome
+        changes nothing else about the set.
+
+        **Only a gate that is on holds an outcome.** Left out, the outcome already held is kept,
+        and a gate newly enforced is a gate (`not_matching`). Releasing a gate drops its outcome
+        with it, so enforced again it is a gate again; an `outcome` sent with `is_enforced: false`
+        is refused with `invalid_criteria_set`.
       operationId: setMatchRuleEnforcement
       parameters:
         - { $ref: "#/components/parameters/CriteriaSetId" }
@@ -631,7 +641,10 @@ paths:
             schema:
               type: object
               required: [is_enforced]
-              properties: { is_enforced: { type: boolean } }
+              additionalProperties: false
+              properties:
+                is_enforced: { type: boolean }
+                outcome: { $ref: "#/components/schemas/RuleOutcome" }
       responses:
         "204": { description: Updated }
         "422": { $ref: "#/components/responses/InvalidRequest" }
@@ -639,7 +652,12 @@ paths:
   /criteria-sets/{criteriaSetId}/compound-rules/{compoundRuleId}:
     put:
       tags: [criteria]
-      summary: Whether this set applies a compound rule
+      summary: Whether this set applies a compound rule, and as a gate or as a warning
+      description: |
+        As for a gate (D56): the outcome the rule has in this set, which may differ from the
+        catalog's. Left out, the outcome already held is kept, and a rule newly applied takes the
+        catalog's. Dropping the rule drops its outcome; an `outcome` sent with
+        `is_applied: false` is refused with `invalid_criteria_set`.
       operationId: setCompoundRuleApplication
       parameters:
         - { $ref: "#/components/parameters/CriteriaSetId" }
@@ -651,7 +669,10 @@ paths:
             schema:
               type: object
               required: [is_applied]
-              properties: { is_applied: { type: boolean } }
+              additionalProperties: false
+              properties:
+                is_applied: { type: boolean }
+                outcome: { $ref: "#/components/schemas/RuleOutcome" }
       responses:
         "204": { description: Updated }
         "422": { $ref: "#/components/responses/InvalidRequest" }
@@ -1895,6 +1916,26 @@ components:
             criteria: { type: array, items: { $ref: "#/components/schemas/Criterion" } }
             enforced_match_rules: { type: array, items: { type: string } }
             applied_compound_rules: { type: array, items: { type: string } }
+            match_rule_outcomes:
+              type: object
+              description: >-
+                What each enforced gate does in this set when a candidate fails it, keyed by gate:
+                one entry per gate in `enforced_match_rules`, and none for a gate that is off (D56).
+              additionalProperties: { $ref: "#/components/schemas/RuleOutcome" }
+            compound_rule_outcomes:
+              type: object
+              description: >-
+                What each applied compound rule does in this set when it fires, keyed by rule: one
+                entry per rule in `applied_compound_rules`, which may differ from the catalog's
+                outcome (D56).
+              additionalProperties: { $ref: "#/components/schemas/RuleOutcome" }
+
+    RuleOutcome:
+      type: string
+      enum: [warning, not_matching]
+      description: >-
+        What a rule does when it fires: `not_matching` rules the candidate out, `warning` flags it
+        and leaves it matching, its score untouched.
 
     MatchRule:
       type: object
@@ -2255,9 +2296,20 @@ components:
 
     Warning:
       type: object
-      required: [compound_rule, detail]
+      description: >-
+        Exactly one of compound_rule or match_rule is set: a compound rule whose outcome is a
+        warning, or a gate the criteria set holds as a warning (D56).
+      required: [detail]
       properties:
-        compound_rule: { type: string }
+        compound_rule: { type: [string, "null"] }
+        match_rule: { type: [string, "null"] }
+        gate_answer:
+          description: >-
+            The answer a gate held as a warning read, as it stood then, as for a refusal (D46).
+            Null for a compound rule.
+          oneOf:
+            - $ref: "#/components/schemas/MatchRuleResult"
+            - type: "null"
         detail: { type: string, description: "In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved." }
         inputs:
           type: array

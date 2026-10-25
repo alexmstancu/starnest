@@ -420,6 +420,17 @@ REFUSALS = (
         undo=RUN_UNDONE,
         says="cannot roll back 0483: 1 run(s) were stopped",
     ),
+    # A set holding a gate as a warning is a choice 0516's rollback would silently reverse,
+    # turning the warning back into a gate that rules candidates out (PL-157, D56).
+    Refusal(
+        migration="0516-a-set-holds-each-rule-as-a-gate-or-a-warning",
+        write="INSERT INTO criteria_set_match_rule "
+        "(criteria_set, match_rule, is_enforced, outcome) "
+        "VALUES ('minimal', 'uk_skilled_worker', true, 'warning')",
+        undo="DELETE FROM criteria_set_match_rule "
+        "WHERE criteria_set = 'minimal' AND match_rule = 'uk_skilled_worker'",
+        says="cannot roll back 0516: 1 criteria set rule(s)",
+    ),
 )
 
 

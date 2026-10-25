@@ -36,6 +36,7 @@ from starnest.evaluation.rules import (
     RuleWarning,
     describe_compound_rule,
     gates_that_rule_out,
+    gates_that_warn,
     judgements_of,
     thresholds_that_rule_out,
 )
@@ -77,6 +78,7 @@ __all__ = [
     "describe_compound_rule",
     "figure_of",
     "gates_that_rule_out",
+    "gates_that_warn",
     "in_display_order",
     "is_scoreable",
     "judgements_of",
