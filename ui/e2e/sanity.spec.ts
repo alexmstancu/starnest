@@ -343,9 +343,8 @@ test.describe("a run", () => {
     });
     await expect(card.getByText("At most")).toBeVisible();
     await expect(card.getByText("Items")).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: /Start this acquisition/ }),
-    ).toBeEnabled();
+    // Armed, not started (PL-121): the strip in the card is where it is agreed to.
+    await expect(card.getByRole("button", { name: "Yes, start it" })).toBeEnabled();
   });
 
   test("lists past runs with what each one did", async ({ page }) => {

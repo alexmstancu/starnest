@@ -307,7 +307,8 @@ test.describe("a run", () => {
     // **Named, not filtered.** The last acquisition's report opens with the screen now, and
     // its per-source breakdown names each source.
     await expect(page.getByRole("table", { name: /per source/i })).toBeVisible();
-    await expect(card.getByRole("button", { name: "Start this acquisition" })).toBeVisible();
+    // **Nothing spends on a click** (PL-121): the estimate arms the card's confirmation strip.
+    await expect(card.getByRole("button", { name: "Yes, start it" })).toBeVisible();
 
     // The estimate is an estimate. Nothing was started, which is the whole point of showing it.
     expect(started).toEqual([]);
