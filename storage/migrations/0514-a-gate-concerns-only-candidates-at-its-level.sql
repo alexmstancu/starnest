@@ -1,6 +1,6 @@
 -- A gate concerns only candidates at its own level (PL-149, NEW-64).
 --
--- depends: 0510-a-gate-answer-is-kept-once-written
+-- depends: 0511-a-re-confirmation-names-the-figure-it-restated
 --
 -- `match_rule_candidate` (0502) named a gate and a candidate through two single-column keys, and
 -- nothing tied the candidate's level to the gate's. The level was checked only on read, where a

@@ -912,7 +912,7 @@ export interface components {
                 [key: string]: unknown;
             };
         };
-        /** @description The `Error` a 422 answers with. `details` stays open, because a domain refusal carries its own fields there; a malformed request lists its fields in `details.errors`. */
+        /** @description The `Error` a 422 answers with. `details` stays open, because a domain refusal carries its own fields there; a malformed request, or a refused rule, lists its fields in `details.errors`. */
         InvalidRequestError: components["schemas"]["Error"] & {
             details?: {
                 errors?: components["schemas"]["FieldProblem"][];
@@ -921,11 +921,11 @@ export interface components {
             };
         };
         FieldProblem: {
-            /** @description Where the offending value is, e.g. [body, comparator_limit] or [query, level]. */
+            /** @description Where the offending value is, e.g. [body, comparator_limit], [body, scale_anchors, '0', score] or [query, level]. */
             location: string[];
-            /** @description The validator's own sentence, for a developer. A form words the refusal from kind and limit. */
+            /** @description The validator's or the domain's own sentence, for a developer. A form words the refusal from kind and limit. */
             problem: string;
-            /** @description Stable. The validator's error type: less_than_equal, greater_than_equal, int_parsing, float_parsing, finite_number, missing, extra_forbidden, and so on. */
+            /** @description Stable. The validator's error type (less_than_equal, greater_than_equal, greater_than, int_from_float, int_parsing, float_parsing, finite_number, missing, extra_forbidden, and so on) or invalid_criterion. */
             kind: string;
             /** @description The bound that refused the value, present only where kind names a numeric bound. */
             limit?: number;
@@ -1255,6 +1255,8 @@ export interface components {
             name: string;
             /** @description Null for a gate asked at every level, such as not_manually_excluded. */
             level: string | null;
+            /** @description When a candidate matches this gate, in words: catalog data seeded from reqs.md 7.3's "Matches when" column, never an identifier. */
+            description: string;
         };
         MatchRuleResultInput: {
             /** @enum {string} */
@@ -1287,6 +1289,8 @@ export interface components {
         CompoundRule: {
             id: string;
             name: string;
+            /** @description What the rule tests, in words: what it does when it fires, and each condition's attribute by its catalog name with its band and unit -- "Warns when Cost of living index is at most 80 and Total tax rate is at least 40%." Written from the conditions when they are read, so it cannot disagree with them; never an identifier. */
+            description: string;
             level: string;
             /** @enum {string} */
             shape: "ShareOfHouseholdField" | "SumBelowFloor" | "AllConditionsHold";
@@ -1649,7 +1653,7 @@ export interface components {
                 "application/json": components["schemas"]["CriteriaSet"];
             };
         };
-        /** @description The request is malformed, or names something the domain will not accept; `code` says which. `invalid_request` is a malformed request -- a body field or query parameter the operation does not declare, a value of the wrong type or out of range, a null the field refuses, an identifier that cannot be one -- and each entry of `details.errors` says where (`location`), what (`kind`, with `limit` where a bound refused it) and, for a developer, why (`problem`). Any other code is the domain's own refusal, such as `invalid_criterion`, `unknown_place` or `unknown_scope`. `cannot_be_ranked` names its cause in `details.reason` where it is one of four: `scores_nothing`, no criterion is scored at the level; `pillar_without_criteria`, pillars carry weight that no criterion scores into; `criteria_without_weight`, the criteria still scored in a pillar carry no weight between them; or `pillars_without_weight`, the pillars still scored carry no weight between them. All but the first list their pillars in `details.pillars`. `invalid_criterion` raised against the score range carries `details.reason: anchor_above_scale`, with the `attribute`, its `anchor_score` and the `score_scale_max` it is above. */
+        /** @description The request is malformed, or names something the domain will not accept; `code` says which. `invalid_request` is a malformed request -- a body field or query parameter the operation does not declare, a value of the wrong type or out of range, a null the field refuses, an identifier that cannot be one -- and each entry of `details.errors` says where (`location`), what (`kind`, with `limit` where a bound refused it) and, for a developer, why (`problem`). Any other code is the domain's own refusal, such as `invalid_criterion`, `unknown_place` or `unknown_scope`. `cannot_be_ranked` names its cause in `details.reason` where it is one of four: `scores_nothing`, no criterion is scored at the level; `pillar_without_criteria`, pillars carry weight that no criterion scores into; `criteria_without_weight`, the criteria still scored in a pillar carry no weight between them; or `pillars_without_weight`, the pillars still scored carry no weight between them. All but the first list their pillars in `details.pillars`. `invalid_criterion` raised against the score range carries `details.reason: anchor_above_scale`, with the `attribute`, its `anchor_score` and the `score_scale_max` it is above. A domain refusal about request fields -- `invalid_criterion` -- lists them the same way in `details.errors`, one entry per field of the rule it refused (`location` `[body, target_range_max]`, say), with `kind: invalid_criterion`, the domain's sentence as `problem`, and `limit` where a bound refused it. */
         InvalidRequest: {
             headers: {
                 [name: string]: unknown;
@@ -2407,7 +2411,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         proposals: components["schemas"]["MatchRuleResult"][];
-                        /** @description Gates asked whose answer was not stored: the model cited nothing (or could not be reached), or a person answered the gate while the pass ran (NEW-63). Each line gives its reason. */
+                        /** @description Gates asked whose answer was not stored: the model cited nothing (or could not be reached), or a person answered the gate while the pass ran (NEW-63). Each line names the gate and the candidate as the catalog names them, never by id (PL-150), and gives its reason. */
                         refusals?: string[];
                         cost_eur: number;
                         calls: number;
@@ -2514,7 +2518,7 @@ export interface operations {
                     "application/json": components["schemas"]["MatchRuleResult"];
                 };
             };
-            /** @description `answer_recorded_by_a_person` -- the answer comes from a model, and a person has already answered this gate for this candidate. A model's answer is a proposal and never replaces a person's (reqs.md 6.10 use 3), so nothing is stored; send it as `manual` to replace the person's answer. */
+            /** @description `answer_recorded_by_a_person` -- the answer comes from a model, and a person has already answered this gate for this candidate. A model's answer is a proposal and never replaces a person's (reqs.md 6.10 use 3), so nothing is stored; send it as `manual` to replace the person's answer. The message names the gate and the candidate; `details.match_rule` and `details.candidate` carry their ids (PL-150). */
             409: {
                 headers: {
                     [name: string]: unknown;

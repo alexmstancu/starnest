@@ -1098,22 +1098,33 @@ export const MATCH_RULES: MatchRule[] = [
     id: "country.visa_route_exists",
     name: "A visa route exists",
     level: "country",
+    description: "A realistic visa route exists for this household.",
   },
   {
     id: "country.eu_free_movement",
     name: "Free movement applies",
     level: "country",
+    description:
+      "The candidate is an EU or EEA state, and the household's citizenship carries free movement there.",
   },
-  { id: "not_manually_excluded", name: "Not excluded by hand", level: null },
+  {
+    id: "not_manually_excluded",
+    name: "Not excluded by hand",
+    level: null,
+    description: "You have not ruled this candidate out by hand.",
+  },
   {
     id: "country.uk_skilled_worker",
     name: "UK Skilled Worker route",
     level: "country",
+    description:
+      "A realistic Skilled Worker route exists: sponsorship available in the local market, or the salary threshold met.",
   },
   {
     id: "country.residence_quota_open",
     name: "A residence quota is open",
     level: "country",
+    description: "The annual residence-permit quota has capacity for this household.",
   },
 ];
 
@@ -1198,9 +1209,12 @@ export const COMPOUND_RULES: CompoundRule[] = [
     id: "country.rent_within_budget",
     name: "Rent fits the target spend",
     level: "country",
+    // A share is a fraction, as reqs.md 3.7a's rules give it ("Provisionally 0.40").
+    description:
+      "Flags a candidate when Average rent is more than 35% of the household's target monthly spend.",
     shape: "ShareOfHouseholdField",
     outcome: "warning",
-    threshold_max: 35,
+    threshold_max: 0.35,
     inputs: [
       {
         input_order: 1,
@@ -1218,6 +1232,8 @@ export const COMPOUND_RULES: CompoundRule[] = [
     id: "country.mild_and_connected",
     name: "Mild and connected",
     level: "country",
+    description:
+      "Rules a candidate out when Summer daytime high is at most 30 and Broadband coverage is at least 90.",
     shape: "AllConditionsHold",
     outcome: "not_matching",
     inputs: [],
