@@ -361,9 +361,11 @@ export function useRunScreen(
   const newestId = runs === null ? undefined : newestRun(runs)?.id;
   useEffect(() => {
     if (opened.current || runs === null) return;
-    opened.current = true;
     const newest = newestRun(runs);
-    if (newest === undefined || !unclaimed()) return;
+    // Not settled by an empty history: one started elsewhere arrives with the next re-read.
+    if (newest === undefined) return;
+    opened.current = true;
+    if (!unclaimed()) return;
     void readOpening(newest.id);
   }, [runs, unclaimed, readOpening]);
 

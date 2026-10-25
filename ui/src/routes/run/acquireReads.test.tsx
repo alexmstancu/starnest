@@ -396,6 +396,38 @@ describe("the last acquisition when it could not be read", () => {
 });
 
 /**
+ * PL-001. **An empty history is not the end of the opening view**: an acquisition started
+ * elsewhere reaches the screen when an act reads the history again, and the screen opens it then.
+ * Settled on the first, empty answer, it drew "The last acquisition" busy for ever and never
+ * read it.
+ */
+describe("the last acquisition when the history was empty at first", () => {
+  it("is read and shown once a re-read of the history finds one", async () => {
+    let empty = true;
+    let detailReads = 0;
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, () =>
+        empty ? HttpResponse.json({ items: [], total: 0 }) : undefined,
+      ),
+      http.get(`${BASE}/data-acquisition-runs/7`, () => {
+        detailReads += 1;
+      }),
+    );
+    renderShell("/acquire");
+    await within(await findRegion(HOLDS)).findByText(/nothing has been acquired yet/i);
+
+    empty = false;
+    await userEvent.click(
+      await screen.findByRole("button", { name: /estimate an acquisition/i }),
+    );
+
+    await findRegion(/^acquisition 7$/i);
+    expect(detailReads).toBeGreaterThan(0);
+    expect(within(theScreen()).queryByRole("region", { name: LAST_ACQUISITION })).toBeNull();
+  });
+});
+
+/**
  * The focus rule. **Try again finding nothing open to hand entry keeps the reader in the card**:
  * the card used to leave the screen when the catalog answered with none, taking the focused
  * button with it, and focus fell to the page.
