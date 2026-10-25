@@ -405,6 +405,51 @@ describe("the last pass's end, kept until it is dismissed", () => {
     );
   }
 
+  it.each<[string, (record: { pass: Record<string, unknown> & { tally: Record<string, unknown> } }) => void, string]>([
+    [
+      "a pass that found no gate to ask",
+      (r) => {
+        r.pass["gates"] = [];
+        Object.assign(r.pass.tally, { asked: 0, calls: 0, spentMicroEur: 0 });
+      },
+      "The last pass at the Country level found no gate to ask, so it made no calls and spent nothing.",
+    ],
+    [
+      "a pass that skipped every gate it asked",
+      (r) => Object.assign(r.pass.tally, { calls: 0, spentMicroEur: 0 }),
+      "The last pass at the Country level asked every gate: it asked 0 of 3 questions and spent nothing.",
+    ],
+  ])("reads %s, which spent nothing, as it was", (_case, spoil, says) => {
+    storedPass(spoil);
+
+    expect(renderScreen().pass().statusLine).toEqual({ text: says, warning: false });
+  });
+
+  it("keeps an outcome that spent through a re-check that made no model call", async () => {
+    const { screen } = await aPassThatSpent();
+    // A person's answer research cannot ask about: re-checked, it makes no call.
+    await putMatchRuleResult("country.eu_free_movement", "country.spain", {
+      match_result: "matching",
+      data_source: "manual",
+    });
+
+    act(() =>
+      screen.pass().start({
+        ...A_PASS,
+        questionsTotal: 0,
+        ceilingEur: 0,
+        recheck: [
+          { id: "country.eu_free_movement", candidate: "country.spain", name: "Free movement applies for Spain" },
+        ],
+      }),
+    );
+
+    await waitFor(() => expect(screen.pass().end?.kind).toBe("finished"));
+    expect(screen.pass().statusLine?.text).toMatch(/^The last re-check .* spent nothing\.$/);
+    expect(screen.pass().keptLine?.text).toMatch(/^The pass before it .*spent €0\.12 of at most €0\.12\.$/);
+    expect(screen.reload().pass().statusLine?.text).toBe(FINISHED);
+  });
+
   it("reads a sound stored record as it was", () => {
     storedPass(() => undefined);
 
