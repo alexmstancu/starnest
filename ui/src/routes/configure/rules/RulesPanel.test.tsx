@@ -908,7 +908,8 @@ describe("a gate and the household's citizenships", () => {
 
     await waitFor(() =>
       expect(gate).toHaveTextContent(
-        "Decided by citizenship, and none of yours clears it: you hold citizenship of United Kingdom.",
+        // Under the Common Travel Area a British passport clears it in Ireland alone (0526).
+        "Decided by citizenship. Cleared only where yours does: citizenship of United Kingdom (in Ireland).",
       ),
     );
     await waitFor(() =>

@@ -31,10 +31,25 @@ describe("a gate decided by citizenship, on Rank", () => {
 
     expect(
       await within(reason).findByText(
-        "Free movement applies: no citizenship the household holds (United Kingdom) clears it. Decided by citizenship alone; no answer was recorded or read.",
+        "Free movement applies: no citizenship the household holds (United Kingdom) clears it. Cleared only where yours does: United Kingdom (in Ireland). Decided by citizenship alone; no answer was recorded or read.",
       ),
     ).toBeInTheDocument();
     expect(reason).not.toHaveTextContent(/country\.|united_kingdom/);
+  });
+
+  it("says where a held citizenship clears it instead, as the Common Travel Area does", async () => {
+    await replaceHousehold({ ...HOUSEHOLD, citizenships: ["country.united_kingdom"] });
+    await setMatchRuleEnforcement("default", FREE_MOVEMENT, true);
+    renderShell("/rank");
+
+    const reason = await reasonFor("Netherlands");
+
+    // 0526: a British passport clears free movement in Ireland alone, which the verdict names.
+    expect(
+      await within(reason).findByText(
+        /^Free movement applies: no citizenship the household holds \(United Kingdom\) clears it\. Cleared only where yours does: United Kingdom \(in Ireland\)\./,
+      ),
+    ).toBeInTheDocument();
   });
 
   it("says it as a warning where the set holds the gate as one", async () => {

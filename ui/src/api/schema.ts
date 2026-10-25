@@ -1367,10 +1367,16 @@ export interface components {
             level: string | null;
             /** @description When a candidate matches this gate, in words: catalog data seeded from reqs.md 7.3's "Matches when" column, never an identifier. */
             description: string;
-            /** @description Candidate ids of the citizenships that clear this gate wherever it asks: a household holding one matches it with no recorded answer, and an answer recorded for it rules nothing out (reqs.md 7.3, Q239). Catalog data; empty where no source names one. */
-            cleared_by: string[];
+            /** @description The citizenships that clear this gate, each with where it clears it: a household holding one matches the gate there with no recorded answer, and an answer recorded for it rules nothing out (reqs.md 7.3, Q239). Catalog data; empty where no source names one. */
+            cleared_by: components["schemas"]["ClearingCitizenship"][];
             /** @description Whether the household's citizenships decide this gate outright (eu_free_movement): where none of them clears it, it does not match, with no recorded answer, and the refusal or warning names the citizenships it read. Never researched. */
             decided_by_citizenship: boolean;
+        };
+        ClearingCitizenship: {
+            /** @description The candidate id of the country whose citizenship clears the gate. */
+            citizenship: string;
+            /** @description The candidates it clears the gate in, each one the gate concerns. Empty means everywhere the gate asks. A British citizenship clears eu_free_movement in Ireland only, under the Common Travel Area (0526). */
+            candidates: string[];
         };
         MatchRuleResultInput: {
             /** @enum {string} */

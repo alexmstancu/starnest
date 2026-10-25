@@ -7,7 +7,7 @@ import { useRead } from "../../api/useRead";
 import { useAttributeNames } from "../../api/useAttributeNames";
 import { useSourceNames } from "../../api/useSourceNames";
 import { useCandidateNames } from "../../api/useCandidateNames";
-import { useMatchRuleNames } from "../../api/useMatchRuleNames";
+import { useMatchRuleClearing, useMatchRuleNames } from "../../api/useMatchRuleNames";
 import { attributeName } from "../../format/display";
 import { scoreRange } from "../../format/scoreScale";
 import { LoadedRegion } from "../../shell/LoadedRegion";
@@ -149,7 +149,11 @@ function RuleEvidence({
   detail: CandidateScoreDetail;
   sources: ReadonlyMap<string, string>;
 }) {
-  const names = { gates: useMatchRuleNames(), candidates: useCandidateNames() };
+  const names = {
+    gates: useMatchRuleNames(),
+    candidates: useCandidateNames(),
+    clearing: useMatchRuleClearing(),
+  };
   const reasons = detail.non_match_reasons ?? [];
   const warnings = detail.warnings ?? [];
   if (reasons.length === 0 && warnings.length === 0) return null;

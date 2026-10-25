@@ -2,7 +2,7 @@ import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "re
 import { type CandidateResult, type Ranking } from "../../api/endpoints";
 import { usePillarNames, type PillarNames } from "../../api/usePillarNames";
 import { useCandidateNames } from "../../api/useCandidateNames";
-import { useMatchRuleNames } from "../../api/useMatchRuleNames";
+import { useMatchRuleClearing, useMatchRuleNames } from "../../api/useMatchRuleNames";
 import {
   criteriaSetName,
   deltaTone,
@@ -98,7 +98,11 @@ export function RankingTable({
   onArrived?: () => void;
 }) {
   const names = usePillarNames();
-  const ruleNames: RuleNames = { gates: useMatchRuleNames(), candidates: useCandidateNames() };
+  const ruleNames: RuleNames = {
+    gates: useMatchRuleNames(),
+    candidates: useCandidateNames(),
+    clearing: useMatchRuleClearing(),
+  };
   // Where the ranking stops and the set below it starts. Null when everything matches.
   const band = excludedBand(ranking.candidates);
   // **A set rather than one id**, because home is a candidate at every level and this table

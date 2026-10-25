@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { CandidateResult, Ranking } from "../../../api/endpoints";
 import type { Idle, Read } from "../../../api/read";
 import {
+  type Clearing,
   describeClearance,
+  describeGateEffect,
   type RuleResult,
   describeCompoundEffect,
   describeGateEffect,
@@ -370,10 +372,58 @@ describe("what a compound rule does", () => {
 /** PL-164. What clears a gate, said with names, and what is not known said as such. */
 describe("what clears a gate", () => {
   const nameOf = (id: string) => id.replace("country.", "").toUpperCase();
-  const gate = (cleared_by: string[], decided_by_citizenship = false) => ({
+  const gate = (
+    cleared_by: string[],
+    decided_by_citizenship = false,
+    scoped: Clearing[] = [],
+  ) => ({
     id: "g",
-    cleared_by,
+    cleared_by: [...cleared_by.map((citizenship) => ({ citizenship, candidates: [] })), ...scoped],
     decided_by_citizenship,
+  });
+  // 0526: the Common Travel Area clears free movement for a British household in Ireland only.
+  const BRITISH_IN_IRELAND: Clearing = {
+    citizenship: "country.united_kingdom",
+    candidates: ["country.ireland"],
+  };
+
+  it("names a citizenship that clears it in one place with that place", () => {
+    expect(
+      describeClearance(gate(["country.a"], false, [BRITISH_IN_IRELAND]), { state: "reading" }, nameOf),
+    ).toBe("Cleared by citizenship of A, or citizenship of UNITED_KINGDOM (in IRELAND).");
+  });
+
+  it("says where yours clears a gate decided by citizenship when it clears it only there", () => {
+    expect(
+      describeClearance(
+        gate(["country.a"], true, [BRITISH_IN_IRELAND]),
+        { state: "held", citizenships: ["country.united_kingdom"] },
+        nameOf,
+      ),
+    ).toBe(
+      "Decided by citizenship. Cleared only where yours does: citizenship of UNITED_KINGDOM (in IRELAND).",
+    );
+  });
+
+  it("spares only the answers about the place a scoped citizenship clears", () => {
+    const answers = ["country.ireland", "country.spain"].map((candidate) => ({
+      match_rule: "g",
+      candidate,
+      match_result: "not_matching",
+    }));
+
+    const effect = describeGateEffect(gate([], false, [BRITISH_IN_IRELAND]), {
+      enforced: false,
+      outcome: "not_matching",
+      level: "country",
+      ranking: { state: "idle" },
+      answers,
+      held: { state: "held", citizenships: ["country.united_kingdom"] },
+      nameOf,
+    });
+
+    expect(effect.sentence).toContain("SPAIN");
+    expect(effect.sentence).not.toContain("IRELAND");
   });
 
   it("says nothing for a gate no citizenship clears", () => {

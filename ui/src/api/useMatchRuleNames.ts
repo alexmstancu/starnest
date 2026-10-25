@@ -10,26 +10,25 @@
  * a label, and `matchRuleName` falls back to the id made readable.
  */
 
-import { useCallback } from "react";
-import { fetchMatchRules } from "./endpoints";
+import { useCallback, useMemo } from "react";
+import { fetchMatchRules, type MatchRule } from "./endpoints";
 import { useRead } from "./useRead";
 
 export type MatchRuleNames = ReadonlyMap<string, string>;
+/** Each gate's clearing citizenships, each with where it clears it (0517, 0526). */
+export type MatchRuleClearing = ReadonlyMap<string, MatchRule["cleared_by"]>;
 
 /**
  * The names once, shared by every caller on the page. The gates are catalog rows that change
  * only with a migration, and a migration means a restart, so there is nothing to invalidate.
  */
-let theNames: Promise<MatchRuleNames> | null = null;
+let theNames: Promise<readonly MatchRule[]> | null = null;
 
-function readThem(signal: AbortSignal): Promise<MatchRuleNames> {
+function readThem(signal: AbortSignal): Promise<readonly MatchRule[]> {
   // The request is shared: one component unmounting must not cancel it for the others.
   void signal;
   theNames ??= fetchMatchRules(null)
-    .then(
-      (answer) =>
-        new Map(answer.items.map((rule) => [rule.id, rule.name])) as MatchRuleNames,
-    )
+    .then((answer) => answer.items)
     .catch((failure: unknown) => {
       // A failure is not remembered: the next caller tries again.
       theNames = null;
@@ -43,11 +42,22 @@ export function forgetMatchRuleNames(): void {
   theNames = null;
 }
 
-const NONE: MatchRuleNames = new Map();
+const NONE: readonly MatchRule[] = [];
 
-export function useMatchRuleNames(): MatchRuleNames {
+function useMatchRules(): readonly MatchRule[] {
   const { read } = useRead(
     useCallback((signal: AbortSignal) => readThem(signal), []),
   );
   return read.state === "ready" ? read.data : NONE;
+}
+
+export function useMatchRuleNames(): MatchRuleNames {
+  const rules = useMatchRules();
+  return useMemo(() => new Map(rules.map((rule) => [rule.id, rule.name])), [rules]);
+}
+
+/** Which citizenships clear each gate, and where -- for a verdict that names them (PL-164). */
+export function useMatchRuleClearing(): MatchRuleClearing {
+  const rules = useMatchRules();
+  return useMemo(() => new Map(rules.map((rule) => [rule.id, rule.cleared_by])), [rules]);
 }

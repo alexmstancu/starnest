@@ -540,9 +540,13 @@ function gateFindings(result: CandidateResult, level: string, evidence: GateEvid
       inputs: [],
     }));
   const held = evidence.citizenships ?? [];
+  // Where a clearing row names candidates it clears only there (0526), as `is_cleared_for` reads.
   const clears = (gate: string) =>
-    MATCH_RULES.find((rule) => rule.id === gate)?.cleared_by.some((each) => held.includes(each)) ??
-    false;
+    MATCH_RULES.find((rule) => rule.id === gate)?.cleared_by.some(
+      (each) =>
+        held.includes(each.citizenship) &&
+        (each.candidates.length === 0 || each.candidates.includes(result.candidate)),
+    ) ?? false;
   const decided: Finding[] = MATCH_RULES.filter(
     (rule) =>
       rule.decided_by_citizenship &&
@@ -1597,6 +1601,11 @@ const FREE_MOVEMENT_CITIZENSHIPS = [
   "country.iceland", "country.liechtenstein", "country.norway", "country.switzerland",
 ];
 
+/** Clearing rows with no scope: the citizenship clears the gate everywhere it asks. */
+function everywhere(citizenships: readonly string[]): MatchRule["cleared_by"] {
+  return citizenships.map((citizenship) => ({ citizenship, candidates: [] }));
+}
+
 export const MATCH_RULES: MatchRule[] = [
   {
     id: "country.visa_route_exists",
@@ -1612,7 +1621,11 @@ export const MATCH_RULES: MatchRule[] = [
     level: "country",
     description:
       "The candidate is an EU or EEA state, and the household's citizenship carries free movement there.",
-    cleared_by: FREE_MOVEMENT_CITIZENSHIPS,
+    cleared_by: [
+      ...everywhere(FREE_MOVEMENT_CITIZENSHIPS),
+      // The Common Travel Area: British citizens clear it in Ireland only (0526).
+      { citizenship: "country.united_kingdom", candidates: ["country.ireland"] },
+    ],
     decided_by_citizenship: true,
   },
   {
@@ -1629,7 +1642,7 @@ export const MATCH_RULES: MatchRule[] = [
     level: "country",
     description:
       "A realistic Skilled Worker route exists: sponsorship available in the local market, or the salary threshold met.",
-    cleared_by: ["country.united_kingdom", "country.ireland"],
+    cleared_by: everywhere(["country.united_kingdom", "country.ireland"]),
     decided_by_citizenship: false,
   },
   {

@@ -8,7 +8,7 @@
  */
 
 import type { Idle, Read } from "../../../api/read";
-import type { Ranking, RuleOutcome } from "../../../api/endpoints";
+import type { MatchRule, Ranking, RuleOutcome } from "../../../api/endpoints";
 
 /**
  * What a rule's sentence reports, which is what colours it (PL-156): red only for a rule that
@@ -218,12 +218,38 @@ export type HeldCitizenships =
   | { readonly state: "failed" }
   | { readonly state: "held"; readonly citizenships: readonly string[] };
 
+/**
+ * A citizenship that clears a gate, and where: no candidates means everywhere the gate asks, and
+ * otherwise only in those (0526) -- a British passport clears free movement in Ireland alone.
+ */
+export type Clearing = MatchRule["cleared_by"][number];
+
 /** What a gate's line needs to know about the gate: the catalog's clearing citizenships. */
 export interface GateClearing {
   readonly id: string;
   /** Optional here, as a gate written before 0517 lacks them: nothing then clears it. */
-  readonly cleared_by?: readonly string[];
+  readonly cleared_by?: readonly Clearing[];
   readonly decided_by_citizenship?: boolean;
+}
+
+/** Whether these citizenships clear a gate about that candidate, as `is_cleared_for` reads. */
+export function clearsIn(
+  clearing: readonly Clearing[],
+  citizenships: readonly string[],
+  candidate: string,
+): boolean {
+  return clearing.some(
+    (each) =>
+      citizenships.includes(each.citizenship) &&
+      (each.candidates.length === 0 || each.candidates.includes(candidate)),
+  );
+}
+
+/** "United Kingdom (in Ireland)" for a scoped clearing; the citizenship's name otherwise. */
+export function clearingName(clearing: Clearing, nameOf: (candidate: string) => string): string {
+  return clearing.candidates.length === 0
+    ? nameOf(clearing.citizenship)
+    : `${nameOf(clearing.citizenship)} (in ${clearing.candidates.map(nameOf).sort().join(", ")})`;
 }
 
 /**
@@ -281,11 +307,14 @@ export function describeGateEffect(
         tone: "unknown",
       };
     }
-    if (holdsOneOf(options.held, clearers)) {
+    if (holdsOneOf(options.held, everywhereOf(clearers))) {
       return offWhen(true, { sentence: "Removes nobody: your citizenship clears it.", tone: "nothing" });
     }
   }
-  return describeEffect(gate.id, answers, {
+  // A citizenship that clears it in some places only spares the answers about those.
+  const held = options.held.state === "held" ? options.held.citizenships : [];
+  const uncleared = answers.filter((answer) => !clearsIn(clearers, held, answer.candidate));
+  return describeEffect(gate.id, uncleared, {
     enforced: false,
     outcome: options.outcome,
     level: options.level,
@@ -304,25 +333,51 @@ export function describeClearance(
 ): string | null {
   const yours = held.state === "held" ? held.citizenships : [];
   const catalog = gate.cleared_by ?? [];
-  const clearing = yours.filter((each) => catalog.includes(each)).map(nameOf).sort();
-  const cleared = clearing.length > 0 ? ` Cleared: you hold ${citizenshipOf(clearing, "and")}.` : "";
+  const everywhere = everywhereOf(catalog);
+  const clearing = yours.filter((each) => everywhere.includes(each)).map(nameOf).sort();
+  // Yours that clear it only in some places, said with them: "United Kingdom (in Ireland)".
+  const somewhere = catalog
+    .filter((each) => each.candidates.length > 0 && yours.includes(each.citizenship))
+    .filter((each) => !everywhere.includes(each.citizenship))
+    .map((each) => clearingName(each, nameOf))
+    .sort();
+  const cleared =
+    clearing.length > 0
+      ? ` Cleared: you hold ${citizenshipOf(clearing, "and")}.`
+      : somewhere.length > 0
+        ? ` Cleared only where yours does: ${citizenshipOf(somewhere, "and")}.`
+        : "";
   if (gate.decided_by_citizenship) {
     if (held.state === "no-household") {
       return "Decided by citizenship, and no household is recorded, so it decides nothing yet.";
     }
     if (held.state === "failed") return "Decided by citizenship. Yours could not be read.";
-    if (held.state === "held" && clearing.length === 0) {
+    if (held.state === "held" && clearing.length === 0 && somewhere.length === 0) {
       return `Decided by citizenship, and none of yours clears it: you hold ${citizenshipOf(yours.map(nameOf).sort(), "and")}.`;
     }
     return `Decided by citizenship.${cleared}`;
   }
   if (catalog.length === 0) return null;
-  const clearers = catalog.map(nameOf).sort();
-  const what =
+  const clearers = everywhere.map(nameOf).sort();
+  const scoped = catalog
+    .filter((each) => each.candidates.length > 0 && !everywhere.includes(each.citizenship))
+    .map((each) => clearingName(each, nameOf))
+    .sort();
+  const broad =
     clearers.length > 3
       ? `a citizenship of any of ${clearers.length} countries`
-      : citizenshipOf(clearers, "or");
+      : clearers.length > 0
+        ? citizenshipOf(clearers, "or")
+        : "";
+  const what = [broad, scoped.length > 0 ? citizenshipOf(scoped, "or") : ""]
+    .filter((part) => part !== "")
+    .join(", or ");
   return `Cleared by ${what}.${cleared}`;
+}
+
+/** The citizenships that clear a gate everywhere it asks. */
+function everywhereOf(clearing: readonly Clearing[]): string[] {
+  return clearing.filter((each) => each.candidates.length === 0).map((each) => each.citizenship);
 }
 
 function holdsOneOf(held: HeldCitizenships, clearing: readonly string[]): boolean {
