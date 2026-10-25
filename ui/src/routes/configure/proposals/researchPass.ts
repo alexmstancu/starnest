@@ -231,9 +231,14 @@ export function describeProgress({ pass, gate }: Asking, stopAsked: boolean): st
  * finished**: the spend is a fact and the estimate a ceiling, so the two are said together, and
  * the questions asked are said beside the questions the estimate counted.
  */
-export function describeEnd(end: PassEnd): string {
+export function describeEnd(
+  end: PassEnd,
+  /** `earlier` for an outcome kept beside a later start that asked nothing (PL-052). */
+  which: "last" | "earlier" = "last",
+): string {
   const { pass } = end;
-  const the = `The last pass ${atLevel(pass)}`;
+  const subject = which === "last" ? "the last pass" : "the pass before it";
+  const the = `${subject.charAt(0).toUpperCase()}${subject.slice(1)} ${atLevel(pass)}`;
   const did = whatItDid(pass);
   const atGate = pass.gates[pass.tally.asked]?.name ?? "its last gate";
   switch (end.kind) {
@@ -244,7 +249,7 @@ export function describeEnd(end: PassEnd): string {
     case "cap":
       return `${the} stopped at the spend cap${capOf(pass)}: it ${did}.`;
     case "stopped":
-      return `You stopped the last pass ${atLevel(pass)}: it ${did}.`;
+      return `You stopped ${subject} ${atLevel(pass)}: it ${did}.`;
     case "refused":
       return `${the} was refused at ${atGate}, which spent nothing: it ${did}.`;
     case "failed":
@@ -276,6 +281,24 @@ export function leavesEstimateUnspent(end: PassEnd): boolean {
     (end.kind === "refused" || end.kind === "unread") &&
     tally.calls === 0 &&
     tally.spentMicroEur === 0
+  );
+}
+
+/**
+ * Whether a pass asked the model anything, or may have (PL-052): a question answered, one the
+ * cap cut short, one whose answer was lost, or one in flight when the page left. **Only such a
+ * pass replaces an outcome that is kept**: a start refused, unread or left before its first
+ * question spent nothing, and must not take an earlier pass's spend off the page.
+ */
+export function askedTheModel(end: PassEnd): boolean {
+  const { tally } = end.pass;
+  return (
+    tally.asked > 0 ||
+    tally.calls > 0 ||
+    tally.spentMicroEur > 0 ||
+    tally.haltedOnSpendCap ||
+    end.kind === "failed" ||
+    (end.kind === "abandoned" && end.inFlight !== null)
   );
 }
 

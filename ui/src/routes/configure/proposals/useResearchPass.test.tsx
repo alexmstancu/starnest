@@ -20,6 +20,10 @@ import { type ResearchPass, useResearchPass } from "./useResearchPass";
  * -- never finished in the background -- when the screen that holds it goes.
  */
 
+/** What is said of a stored outcome this build cannot trust: never a figure. */
+const UNREADABLE =
+  "An earlier pass's outcome could not be read. What research spent this month is counted in Acquire's “Spent this month”.";
+
 const A_PASS = {
   level: "country",
   questionsTotal: 3,
@@ -296,6 +300,143 @@ describe("the last pass's end, kept until it is dismissed", () => {
     const failure = reloaded.pass().failure;
     expect(isApiError(failure) && [failure.code, failure.status]).toEqual(["internal_error", 500]);
     expect(window.sessionStorage.getItem(SLICES_KEY)).not.toContain("locked");
+  });
+
+  const FINISHED =
+    "The last pass at the Country level asked every gate: it asked 3 of 3 questions and spent €0.12 of at most €0.12.";
+
+  /** A pass that spent twelve cents, still on screen: what a later start must not take away. */
+  async function aPassThatSpent() {
+    const research = watchResearch();
+    const screen = renderScreen();
+    act(() => screen.pass().start(A_PASS));
+    await waitFor(() => expect(screen.pass().statusLine?.text).toBe(FINISHED));
+    return { screen, research };
+  }
+
+  it("keeps an outcome that spent when the next start is refused before it asks anything", async () => {
+    const { screen } = await aPassThatSpent();
+    mockServer.use(
+      http.post("/v1/match-rule-research", () =>
+        HttpResponse.json({ code: "spend_cap_not_set", message: "no cap" }, { status: 409 }),
+      ),
+    );
+
+    act(() => screen.pass().start(A_PASS));
+
+    await waitFor(() => expect(screen.pass().end?.kind).toBe("refused"));
+    expect(screen.pass().statusLine?.text).toMatch(/was refused at A visa route exists, which spent nothing/);
+    expect(screen.pass().keptLine?.text).toBe(
+      "The pass before it at the Country level asked every gate: it asked 3 of 3 questions and spent €0.12 of at most €0.12.",
+    );
+    expect(screen.reload().pass().statusLine?.text).toBe(FINISHED);
+  });
+
+  it("keeps an outcome that spent when the next pass cannot read its spend cap", async () => {
+    const { screen } = await aPassThatSpent();
+    mockServer.use(
+      http.get("/v1/settings", () =>
+        HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 }),
+      ),
+    );
+
+    act(() => screen.pass().start(A_PASS));
+
+    await waitFor(() => expect(screen.pass().end?.kind).toBe("unread"));
+    expect(screen.pass().keptLine?.text).toMatch(/spent €0\.12 of at most €0\.12/);
+    expect(screen.reload().pass().statusLine?.text).toBe(FINISHED);
+  });
+
+  it("keeps an outcome that spent through a later pass left before it asked anything", async () => {
+    const { screen } = await aPassThatSpent();
+    const reads = { sent: 0 };
+    mockServer.use(
+      http.get("/v1/settings", async () => {
+        reads.sent += 1;
+        await new Promise<void>(() => undefined);
+      }),
+    );
+    act(() => screen.pass().start(A_PASS));
+    await waitFor(() => expect(reads.sent).toBe(1));
+    expect(screen.pass().keptLine?.text).toMatch(/spent €0\.12/);
+
+    screen.leave();
+    screen.comeBack();
+
+    await waitFor(() => expect(screen.pass().statusLine?.text).toBe(FINISHED));
+    expect(screen.pass().keptLine).toBeNull();
+  });
+
+  it("replaces an outcome with a later pass that asked", async () => {
+    const { screen } = await aPassThatSpent();
+
+    act(() => screen.pass().start({ ...A_PASS, ceilingEur: 0.2 }));
+
+    await waitFor(() =>
+      expect(screen.pass().statusLine?.text).toMatch(/spent €0\.12 of at most €0\.20/),
+    );
+    expect(screen.pass().keptLine).toBeNull();
+  });
+
+  /** A record as a pass stores it, which each case below spoils in one place. */
+  function storedPass(spoil: (record: { pass: { tally: Record<string, unknown> } & Record<string, unknown> }) => void) {
+    const record = {
+      kind: "finished",
+      pass: {
+        level: "country",
+        gates: [{ id: "country.visa_route_exists", name: "A visa route exists" }],
+        questionsTotal: 3,
+        capEur: 10,
+        ceilingEur: 0.12,
+        tally: {
+          asked: 1,
+          calls: 1,
+          spentMicroEur: 40_000,
+          proposed: 0,
+          refusals: [],
+          haltedOnSpendCap: false,
+        },
+      },
+    };
+    spoil(record);
+    window.sessionStorage.setItem(
+      SLICES_KEY,
+      JSON.stringify({ "configure/research-pass": { value: record, level: null } }),
+    );
+  }
+
+  it("reads a sound stored record as it was", () => {
+    storedPass(() => undefined);
+
+    expect(renderScreen().pass().statusLine?.text).toMatch(/spent €0\.04 of at most €0\.12/);
+  });
+
+  it.each([
+    ["a negative spend", (r: { pass: { tally: Record<string, unknown> } }) => { r.pass.tally["spentMicroEur"] = -40_000; }],
+    ["a fractional spend", (r: { pass: { tally: Record<string, unknown> } }) => { r.pass.tally["spentMicroEur"] = 0.5; }],
+    ["an absurd spend", (r: { pass: { tally: Record<string, unknown> } }) => { r.pass.tally["spentMicroEur"] = 1e18; }],
+    ["a spend that is not a number", (r: { pass: { tally: Record<string, unknown> } }) => { r.pass.tally["spentMicroEur"] = null; }],
+    ["a negative count of calls", (r: { pass: { tally: Record<string, unknown> } }) => { r.pass.tally["calls"] = -1; }],
+    ["more gates asked than there are", (r: { pass: { tally: Record<string, unknown> } }) => { r.pass.tally["asked"] = 2; }],
+    ["a negative ceiling", (r: { pass: Record<string, unknown> }) => { r.pass["ceilingEur"] = -0.12; }],
+    ["a negative cap", (r: { pass: Record<string, unknown> }) => { r.pass["capEur"] = -10; }],
+    ["a fractional count of questions", (r: { pass: Record<string, unknown> }) => { r.pass["questionsTotal"] = 2.5; }],
+  ])("says an earlier outcome could not be read, rather than show %s", (_case, spoil) => {
+    storedPass(spoil);
+
+    const pass = renderScreen().pass();
+
+    expect(pass.statusLine).toEqual({ text: UNREADABLE, warning: true });
+    expect(pass.statusLine?.text).not.toMatch(/€/);
+  });
+
+  it("forgets an outcome that could not be read once dismissed", () => {
+    storedPass((r) => { r.pass.tally["spentMicroEur"] = -1; });
+    const screen = renderScreen();
+
+    act(() => screen.pass().dismiss());
+
+    expect(screen.pass().statusLine).toBeNull();
   });
 
   it("starts with no end when what was stored cannot be read", () => {

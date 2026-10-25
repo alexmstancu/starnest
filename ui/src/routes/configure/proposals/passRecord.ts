@@ -5,20 +5,37 @@
  * session store rather than in the screen: how far it had got while it ran, then how it ended,
  * until the reader dismisses it. A record still `running` that no page is running is a pass the
  * page stopped -- left for another tab, or reloaded -- and reads as abandoned, never as nothing.
+ * **A running pass carries the outcome it would replace**, which stays until the pass asks the
+ * model something (`askedTheModel`).
  *
  * **A failure is kept as its code, status and details, never its message** (P1-07, P1-11): the
  * words come from the code, so a reload words it the same way, and the server's sentence is
  * written nowhere.
+ *
+ * **A record that does not hold together reads as unreadable, never as a figure.** Storage can
+ * be edited, or written by another build: a negative, fractional or absurd amount is refused
+ * whole, and the screen says an earlier outcome could not be read rather than show €0.
  */
 
 import { ApiError, isApiError } from "../../../api/ApiError";
 import { isRecord } from "../../../shell/sessionState";
 import type { Gate, Pass, PassEnd, PassTally, Progress } from "./researchPass";
 
-export type PassRecord = ({ kind: "running" } & Progress) | PassEnd;
+/** A stored outcome this build cannot trust. */
+export interface Unreadable {
+  kind: "unreadable";
+}
+
+/** What the screen says of the last pass once it is over. */
+export type Outcome = PassEnd | Unreadable;
+
+export type PassRecord = ({ kind: "running"; kept: Outcome | null } & Progress) | Outcome;
 
 /** The record as the session store holds it: plain data, a failure reduced to its code. */
 export function storedFormOf(record: PassRecord): PassRecord {
+  if (record.kind === "running") {
+    return { ...record, kept: record.kept === null ? null : storedFormOf(record.kept) as Outcome };
+  }
   if (!("failure" in record)) return record;
   const { failure } = record;
   return {
@@ -29,17 +46,29 @@ export function storedFormOf(record: PassRecord): PassRecord {
   };
 }
 
-/** A stored record read back; undefined for anything this build does not recognise. */
-export function parsePassRecord(stored: unknown): PassRecord | undefined {
-  if (!isRecord(stored)) return undefined;
+const UNREADABLE: Unreadable = { kind: "unreadable" };
+
+/** A stored record read back: null for none, `unreadable` for one that does not hold together. */
+export function parsePassRecord(stored: unknown): PassRecord | null {
+  if (stored === null || stored === undefined) return null;
+  if (isRecord(stored) && stored["kind"] === "running") {
+    const progress = parseProgress(stored);
+    const kept = parsePassRecord(stored["kept"]);
+    if (progress === undefined || kept?.kind === "running") return UNREADABLE;
+    return { kind: "running", kept, ...progress };
+  }
+  return parseOutcome(stored);
+}
+
+function parseOutcome(stored: unknown): Outcome {
+  if (!isRecord(stored)) return UNREADABLE;
   const pass = parsePass(stored["pass"]);
-  if (pass === undefined) return undefined;
+  if (pass === undefined) return UNREADABLE;
   const kind = stored["kind"];
   switch (kind) {
-    case "running":
     case "abandoned": {
-      const inFlight = stored["inFlight"] === null ? null : parseGate(stored["inFlight"]);
-      return inFlight === undefined ? undefined : { kind, pass, inFlight };
+      const progress = parseProgress(stored);
+      return progress === undefined ? UNREADABLE : { kind, ...progress };
     }
     case "finished":
     case "cap":
@@ -50,8 +79,14 @@ export function parsePassRecord(stored: unknown): PassRecord | undefined {
     case "unread":
       return { kind, pass, failure: failureOf(stored["failure"]) };
     default:
-      return undefined;
+      return UNREADABLE;
   }
+}
+
+function parseProgress(stored: Record<string, unknown>): Progress | undefined {
+  const pass = parsePass(stored["pass"]);
+  const inFlight = stored["inFlight"] === null ? null : parseGate(stored["inFlight"]);
+  return pass === undefined || inFlight === undefined ? undefined : { pass, inFlight };
 }
 
 /** An `ApiError` again, without its message; anything else reads as an unexpected failure. */
@@ -74,15 +109,16 @@ function parsePass(stored: unknown): Pass | undefined {
   if (
     typeof level !== "string" ||
     !Array.isArray(gates) ||
-    !isAmount(questionsTotal) ||
-    !(capEur === null || isAmount(capEur)) ||
-    !isAmount(ceilingEur) ||
+    !isCount(questionsTotal) ||
+    !(capEur === null || isEuros(capEur)) ||
+    !isEuros(ceilingEur) ||
     tally === undefined
   ) {
     return undefined;
   }
   const parsedGates = gates.map(parseGate);
   if (!parsedGates.every((gate) => gate !== undefined)) return undefined;
+  if (tally.asked > parsedGates.length) return undefined;
   return { level, gates: parsedGates, questionsTotal, capEur, ceilingEur, tally };
 }
 
@@ -90,10 +126,10 @@ function parseTally(stored: unknown): PassTally | undefined {
   if (!isRecord(stored)) return undefined;
   const { asked, calls, spentMicroEur, proposed, refusals, haltedOnSpendCap } = stored;
   if (
-    !isAmount(asked) ||
-    !isAmount(calls) ||
-    !isAmount(spentMicroEur) ||
-    !isAmount(proposed) ||
+    !isCount(asked) ||
+    !isCount(calls) ||
+    !isMicroEuros(spentMicroEur) ||
+    !isCount(proposed) ||
     !Array.isArray(refusals) ||
     !refusals.every((refusal) => typeof refusal === "string") ||
     typeof haltedOnSpendCap !== "boolean"
@@ -109,6 +145,28 @@ function parseGate(stored: unknown): Gate | undefined {
   return typeof id === "string" && typeof name === "string" ? { id, name } : undefined;
 }
 
-function isAmount(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
+/**
+ * Bounds past which a stored figure is not a pass this application could have run: no estimate
+ * here comes near a million euros or a million questions, so beyond them the record is corrupt.
+ */
+const MOST_EUR = 1_000_000;
+const MOST_COUNT = 1_000_000;
+const MICRO_EUR_PER_EUR = 1_000_000;
+
+/** A whole number of things, neither negative nor absurd. */
+function isCount(value: unknown): value is number {
+  return isWholeUpTo(value, MOST_COUNT);
+}
+
+/** A spend as a pass sums it: whole micro-euros, neither negative nor absurd. */
+function isMicroEuros(value: unknown): value is number {
+  return isWholeUpTo(value, MOST_EUR * MICRO_EUR_PER_EUR);
+}
+
+function isWholeUpTo(value: unknown, most: number): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= most;
+}
+
+function isEuros(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= MOST_EUR;
 }

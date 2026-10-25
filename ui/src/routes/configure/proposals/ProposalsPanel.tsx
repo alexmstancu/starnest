@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import type { MatchRuleResult } from "../../../api/endpoints";
 import { useCandidateNames } from "../../../api/useCandidateNames";
 import { useMatchRuleNames } from "../../../api/useMatchRuleNames";
@@ -13,6 +13,7 @@ import {
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { CheckboxField } from "../../../shell/CheckboxField";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
+import { RefusalNotice } from "../../../shell/RefusalNotice";
 import { refocusIfLost } from "../../../shell/focusReturn";
 import { describePeriod } from "./proposalReading";
 import { leavesEstimateUnspent } from "./researchPass";
@@ -206,11 +207,23 @@ export function ProposalsPanel({
       >
         {pass.statusLine?.text}
       </p>
+      {/* The outcome a later start has not replaced (PL-052): said beside it, spend and all. */}
+      {pass.keptLine !== null && (
+        <p
+          className={
+            pass.keptLine.warning
+              ? "panel__hint notice notice--warning"
+              : "panel__hint"
+          }
+        >
+          {pass.keptLine.text}
+        </p>
+      )}
       {/* **Kept until put away** (PL-052): what a pass spent is said here through a visit to
           another tab and a reload, and only the reader's Dismiss removes it. Focus goes to
           Estimate, the act the next pass needs, as the button leaves with the line -- or, when
           the panel leaves with it, to what stays in its stage. */}
-      {pass.end !== null && !pass.running && (
+      {pass.dismissable && (
         <div className="rule-form__actions">
           <button
             type="button"
@@ -226,7 +239,7 @@ export function ProposalsPanel({
           </button>
         </div>
       )}
-      <ActRefusal act="The research pass" error={pass.failure} />
+      <PassRefusal error={pass.failure} next={estimateButton} />
 
       {pass.refusals.length > 0 && (
         <>
@@ -311,6 +324,37 @@ export function ProposalsPanel({
         )}
       </LoadedRegion>
     </section>
+  );
+}
+
+/**
+ * Why the last pass ended early, as `ActRefusal` draws a refusal -- except where focus goes once
+ * it is dismissed (PL-052). A card read back after a reload was drawn with nothing pressed to
+ * give focus back to, so its Dismiss took its own button away and left focus on the page:
+ * focus still inside the card goes to `next` instead.
+ */
+function PassRefusal({
+  error,
+  next,
+}: {
+  error: unknown;
+  next: RefObject<HTMLElement | null>;
+}) {
+  const [dismissed, setDismissed] = useState<unknown>(null);
+  if (error === null || error === undefined || error === dismissed) return null;
+  return (
+    <RefusalNotice
+      act="The research pass"
+      error={error}
+      onDismiss={() => {
+        const focused = document.activeElement;
+        if (focused instanceof HTMLElement && focused.closest(".failure-card") !== null) {
+          focused.blur();
+          refocusIfLost(next.current);
+        }
+        setDismissed(error);
+      }}
+    />
   );
 }
 

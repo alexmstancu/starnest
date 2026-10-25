@@ -5,10 +5,11 @@ import {
   researchMatchRules,
 } from "../../../api/endpoints";
 import { useSessionState } from "../../../shell/SessionProvider";
-import { type PassRecord, parsePassRecord, storedFormOf } from "./passRecord";
+import { type Outcome, type PassRecord, parsePassRecord, storedFormOf } from "./passRecord";
 import {
   STARTING,
   abandoned,
+  askedTheModel,
   beginPass,
   couldNotStart,
   describeEnd,
@@ -42,7 +43,9 @@ import {
  * the session store, above the routes and mirrored to this tab's storage, so leaving Configure
  * and a reload keep them. A pass still recorded as running when a screen mounts is one no page
  * is running any more, and is recorded as abandoned with what it had spent. The end stays until
- * the reader dismisses it, or the next pass starts.
+ * the reader dismisses it, or a later pass asks the model something: **a start refused, unread
+ * or left before its first question replaces nothing** -- it is said beside the kept outcome,
+ * whose spend stays on the page.
  *
  * **The decisions are `researchPass.ts`'s** -- which gate is next, whether the cap is reached, how
  * the pass ended. This hook only asks, one request after another, and keeps what the screen shows.
@@ -64,11 +67,21 @@ export interface ResearchPass {
   stopAsked: boolean;
   /** What to say now: the pass's progress while it runs, how the last one ended after. */
   statusLine: { text: string; warning: boolean } | null;
+  /**
+   * The outcome kept beside a pass that has not replaced it (PL-052): one running that has asked
+   * nothing yet, or a start that ended before asking anything. Null when the status line says it.
+   */
+  keptLine: { text: string; warning: boolean } | null;
+  /** Something is kept that Dismiss would remove. */
+  dismissable: boolean;
   /** Gates asked but not stored: the model cited nothing, or a person answered first. */
   refusals: readonly string[];
   /** Why the last pass ended early, when a request was refused or failed. Null otherwise. */
   failure: unknown;
-  /** How the last pass ended. Null until one has, while the next runs, and once dismissed. */
+  /**
+   * How the last start ended -- the kept outcome, or a later start that asked nothing. Null until
+   * one has, while the next runs, and once dismissed.
+   */
   end: PassEnd | null;
   start: (request: PassRequest) => void;
   stop: () => void;
@@ -94,6 +107,9 @@ export function useResearchPass(
     { scope: "session" },
   );
   const [stopAsked, setStopAsked] = useState(false);
+  // A start that ended before asking anything while an outcome that did is kept: said, never
+  // stored, because it spent nothing and replaces nothing.
+  const [askedNothing, setAskedNothing] = useState<PassEnd | null>(null);
   // Refs, because the pass reads them between its requests -- long after the render that a
   // press changed -- and two presses in one tick would both pass a check on state.
   const inFlight = useRef(false);
@@ -108,15 +124,19 @@ export function useResearchPass(
     return () => controller.abort();
   }, []);
 
-  // A record running that this page is not running was left by a screen that has gone.
-  useEffect(() => {
-    if (record?.kind === "running" && !inFlight.current) setRecord(abandoned(record));
-  }, [record, setRecord]);
-
   const keep = useCallback(
     (next: PassRecord | null) => setRecord(next === null ? null : storedFormOf(next)),
     [setRecord],
   );
+
+  // A record running that this page is not running was left by a screen that has gone.
+  useEffect(() => {
+    if (record?.kind === "running" && !inFlight.current) {
+      keep(outcomeAfter(abandoned(record), record.kept));
+    }
+  }, [record, keep]);
+
+  const kept: Outcome | null = record?.kind === "running" ? record.kept : record;
 
   function start(request: PassRequest): void {
     const signal = lifetime.current?.signal;
@@ -124,14 +144,16 @@ export function useResearchPass(
     inFlight.current = true;
     stopping.current = false;
     setStopAsked(false);
-    keep({ kind: "running", ...notYetAsking(request) });
+    setAskedNothing(null);
+    const before = kept;
+    keep({ kind: "running", kept: before, ...notYetAsking(request) });
     setPhase({ kind: "starting" });
 
     askEachGate(request, signal, {
       reached: (progress) => {
         // A screen that has gone records nothing more: its pass is abandoned where it was.
         if (signal.aborted) return;
-        keep({ kind: "running", ...progress });
+        keep({ kind: "running", kept: before, ...progress });
         if (progress.inFlight !== null) {
           setPhase({ kind: "asking", pass: progress.pass, gate: progress.inFlight });
         }
@@ -141,7 +163,9 @@ export function useResearchPass(
       (ended) => {
         inFlight.current = false;
         setPhase(IDLE);
-        keep(ended);
+        const outcome = outcomeAfter(ended, before);
+        keep(outcome);
+        setAskedNothing(outcome === ended ? null : ended);
         if (shouldReadAnswersAgain(ended)) onAnswered();
       },
       () => {
@@ -160,14 +184,21 @@ export function useResearchPass(
 
   function dismiss(): void {
     if (inFlight.current) return;
+    setAskedNothing(null);
     keep(null);
   }
 
-  const end = record === null || record.kind === "running" ? null : record;
+  const keptEnd = kept === null || kept.kind === "unreadable" ? null : kept;
+  const end = askedNothing ?? (record?.kind === "running" ? null : keptEnd);
+  const running = phase.kind !== "idle";
+  const statusLine = statusLineOf(phase, askedNothing ?? kept, stopAsked);
   return {
-    running: phase.kind !== "idle",
+    running,
     stopAsked,
-    statusLine: statusLineOf(phase, end, stopAsked),
+    statusLine,
+    keptLine:
+      kept !== null && (running || askedNothing !== null) ? outcomeLine(kept, "earlier") : null,
+    dismissable: !running && (kept !== null || askedNothing !== null),
     refusals:
       phase.kind === "asking"
         ? phase.pass.tally.refusals
@@ -180,20 +211,38 @@ export function useResearchPass(
   };
 }
 
+/**
+ * The outcome to keep once a pass has ended: its own, unless it asked the model nothing and an
+ * outcome that did -- or one that could not be read -- is kept from before (PL-052).
+ */
+function outcomeAfter(ended: PassEnd, before: Outcome | null): Outcome {
+  if (before === null || askedTheModel(ended)) return ended;
+  return before.kind === "unreadable" || askedTheModel(before) ? before : ended;
+}
+
 /** Where the session store keeps the last pass. */
 const PASS_KEY = "configure/research-pass";
 
 function statusLineOf(
   phase: Phase,
-  end: PassEnd | null,
+  outcome: Outcome | null,
   stopAsked: boolean,
 ): ResearchPass["statusLine"] {
   if (phase.kind === "starting") return { text: STARTING, warning: false };
   if (phase.kind === "asking") {
     return { text: describeProgress(phase, stopAsked), warning: false };
   }
-  if (end === null) return null;
-  return { text: describeEnd(end), warning: endIsWarning(end) };
+  return outcome === null ? null : outcomeLine(outcome, "last");
+}
+
+/** What a stored outcome that cannot be trusted says instead of a figure (PL-052). */
+const UNREADABLE =
+  "An earlier pass's outcome could not be read. What research spent this month is counted in " +
+  "Acquire's “Spent this month”.";
+
+function outcomeLine(outcome: Outcome, which: "last" | "earlier"): ResearchPass["statusLine"] {
+  if (outcome.kind === "unreadable") return { text: UNREADABLE, warning: true };
+  return { text: describeEnd(outcome, which), warning: endIsWarning(outcome) };
 }
 
 /**

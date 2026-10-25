@@ -1217,7 +1217,11 @@ describe("a research pass after an earlier one", () => {
     expect(statusLine()).toHaveTextContent(NOT_KNOWN);
   });
 
-  it("shows no earlier pass's spend once a later pass is refused", async () => {
+  /** The earlier pass's outcome, said beside a later start that asked nothing (PL-052). */
+  const KEPT_ALL_ASKED =
+    "The pass before it at the Country level asked every gate: it asked 3 of 3 questions and spent €0.12 of at most €0.12.";
+
+  it("keeps the earlier pass's spend beside a later pass refused before it asked anything", async () => {
     await researchOnceThenAgain(() =>
       HttpResponse.json(
         {
@@ -1232,9 +1236,14 @@ describe("a research pass after an earlier one", () => {
       await screen.findByText(/no spend cap is set/i),
     ).toBeInTheDocument();
     await passSays(/refused at A visa route exists, which spent nothing/);
-    expect(screen.queryByText(ALL_ASKED)).toBeNull();
+    expect(theProposals().getByText(KEPT_ALL_ASKED)).toBeInTheDocument();
     // Refused before the model was asked anything, so nothing about its spend is in doubt.
     expect(statusLine()).not.toHaveTextContent(NOT_KNOWN);
+
+    await userEvent.click(screen.getByRole("link", { name: "Acquire" }));
+    await userEvent.click(await screen.findByRole("link", { name: "Configure" }));
+    await settled();
+    await passSays(ALL_ASKED);
   });
 
   /**
@@ -1259,7 +1268,7 @@ describe("a research pass after an earlier one", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("llm_not_configured")).toBeNull();
     await passSays(/refused at A visa route exists, which spent nothing/);
-    expect(screen.queryByText(ALL_ASKED)).toBeNull();
+    expect(theProposals().getByText(KEPT_ALL_ASKED)).toBeInTheDocument();
     expect(statusLine()).not.toHaveTextContent(NOT_KNOWN);
   });
 
@@ -2202,4 +2211,40 @@ describe("dismissing the outcome while the set is unread", () => {
       within(rulesStage()).getByRole("heading", { level: 2 }),
     );
   });
+});
+
+/**
+ * PL-052. **A refusal card read back after a reload hands focus on when it is dismissed.** It
+ * was drawn on the first render, with nothing pressed to give focus back to, so Dismiss took its
+ * own button away and left focus on the page.
+ */
+it("puts focus on Estimate when a reloaded pass's refusal is dismissed", async () => {
+  watchResearch({
+    answer: (_body, index) =>
+      index === 2
+        ? HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 })
+        : undefined,
+  });
+  const page = renderShell("/configure");
+  await settled();
+  await researched();
+  await passSays(/failed at Free movement applies/);
+  page.unmount();
+  renderShell("/configure");
+  await settled();
+  const card = await theProposals().findByText("The server failed while answering.");
+
+  const failureCard = card.closest<HTMLElement>(".failure-card");
+  if (failureCard === null) throw new Error("the refusal is not drawn as a card");
+  within(failureCard)
+    .getByRole("button", { name: "Dismiss" })
+    .focus();
+  await userEvent.keyboard("{Enter}");
+
+  await waitFor(() =>
+    expect(theProposals().queryByText("The server failed while answering.")).toBeNull(),
+  );
+  expect(
+    theProposals().getByRole("button", { name: "Estimate the research" }),
+  ).toHaveFocus();
 });
