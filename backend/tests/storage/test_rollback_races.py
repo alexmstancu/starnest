@@ -249,8 +249,10 @@ REFUSALS = (
         migration="0493-liechtensteins-quota-is-a-gate",
         before=("0494-the-liechtenstein-quota-gate-is-armed",),
         case="enforced",
-        write="INSERT INTO criteria_set_match_rule (criteria_set, match_rule, is_enforced) "
-        "VALUES ('remote_only', 'li_eea_quota', true)",
+        # An enforced gate names its outcome since 0516; a gate's default is to rule out.
+        write="INSERT INTO criteria_set_match_rule "
+        "(criteria_set, match_rule, is_enforced, outcome) "
+        "VALUES ('remote_only', 'li_eea_quota', true, 'not_matching')",
         undo="DELETE FROM criteria_set_match_rule "
         "WHERE criteria_set = 'remote_only' AND match_rule = 'li_eea_quota'",
         says="cannot roll back 0493: the li_eea_quota gate is still enforced by 1 criteria "
