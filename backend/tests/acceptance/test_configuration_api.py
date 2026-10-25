@@ -368,6 +368,23 @@ class TestAScoreRangeBelowAnAnchor:
         assert body["details"]["reason"] == "anchor_above_scale"
         assert body["details"]["score_scale_max"] == self.A_RANGE_BELOW_THE_SHIPPED_ANCHORS
 
+    async def test_ranking_names_no_request_field_for_an_anchor_it_never_sent(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        """PL-026: a refusal lists only fields its request has, and a ranking's has no anchors."""
+        await _store_past_the_check(database_url, self.A_RANGE_BELOW_THE_SHIPPED_ANCHORS)
+
+        response = await api.get(
+            "/v1/rankings", params={"criteria_set": "local_employment", "level": COUNTRY}
+        )
+
+        assert response.json()["details"] == {
+            "reason": "anchor_above_scale",
+            "attribute": response.json()["details"]["attribute"],
+            "anchor_score": response.json()["details"]["anchor_score"],
+            "score_scale_max": self.A_RANGE_BELOW_THE_SHIPPED_ANCHORS,
+        }
+
     async def test_an_anchor_above_the_range_is_refused_when_it_is_saved(
         self, api: httpx.AsyncClient, a_scratch_criteria_set: str
     ) -> None:

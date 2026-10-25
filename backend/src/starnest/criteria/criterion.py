@@ -425,8 +425,9 @@ class Criterion(BaseModel):
                 raise CriterionDeclarationError(
                     f"{self.attribute} anchors {anchor.input_value} to a score of "
                     f"{anchor.score}, and the score scale stops at {score_scale_max}",
-                    fields=("scale_anchors",),
-                    limit=score_scale_max,
+                    # No field: this is checked on reads too, where no request sent the
+                    # anchors. A write that did names them itself.
+                    fields=(),
                     details={
                         "reason": "anchor_above_scale",
                         "attribute": str(self.attribute),

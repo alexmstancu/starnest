@@ -38,6 +38,7 @@ from starnest.criteria import (
     CriteriaSetNameTakenError,
     CriteriaStore,
     Criterion,
+    CriterionDeclarationError,
     Goal,
     LabelThreshold,
     MatchingThreshold,
@@ -338,9 +339,21 @@ def _refuse_written_anchors_above(
     The rule form sends every anchor with each save, so anchors equal to the stored ones are not
     written -- as a range equal to the stored one is not refused. Compared as sets, because the
     store reads anchors in input order and an order is nothing a range could be above.
+
+    **The refusal names `scale_anchors` here and nowhere else** (PL-026): this request sent them,
+    while Rank, refusing the same anchors on a read, has no body field to point at.
     """
-    if set(after.scale_anchors) != set(before.scale_anchors):
+    if set(after.scale_anchors) == set(before.scale_anchors):
+        return
+    try:
         after.refuse_unless_its_anchors_fit(score_scale_max)
+    except CriterionDeclarationError as refused:
+        raise CriterionDeclarationError(
+            str(refused),
+            fields=("scale_anchors",),
+            limit=score_scale_max,
+            details=refused.details,
+        ) from refused
 
 
 def _applied(current: CriteriaSet, attribute: str, change: CriterionInput) -> CriteriaSet:

@@ -303,7 +303,10 @@ class TestARefusedRuleNamesItsFields:
 
         assert problems == _named("goal", problem=problems[0]["problem"])
 
-    async def test_an_anchor_above_the_scale_names_the_anchors_and_the_ceiling(self) -> None:
+    async def test_an_anchor_above_the_scale_names_no_field_where_no_request_sent_it(
+        self,
+    ) -> None:
+        """Checked on reads too, so the domain leaves the field to the write that sent it."""
         anchored = a_rent_set().with_criterion_scoring(
             RENT,
             {
@@ -316,9 +319,9 @@ class TestARefusedRuleNamesItsFields:
         with pytest.raises(CriterionDeclarationError) as refused:
             anchored.refuse_unless_its_anchors_fit(100)
 
-        problems = await self._problems(refused.value)
+        response = await domain_error_handler(A_REQUEST, refused.value)
 
-        assert problems == _named("scale_anchors", problem=problems[0]["problem"], limit=100)
+        assert "errors" not in json.loads(bytes(response.body))["details"]
 
     async def test_a_threshold_of_the_wrong_shape_names_the_threshold(self) -> None:
         problems = await self._refusing(
