@@ -1071,6 +1071,19 @@ describe("the period a proposal holds for", () => {
     expect(row).toHaveTextContent("1 Jan 2026 to 31 Dec 2026");
   });
 
+  /** PL-161. When the model read the pages, beside the period the answer holds for. */
+  it("says when the pages were read, beside the period", async () => {
+    servingProposal({ start: "2026-01-01", end: "2026-12-31" });
+    renderShell("/configure");
+    await settled();
+
+    const row = await theProposals().findByRole("row", { name: new RegExp(PROPOSED_FOR) });
+    const readOn = theProposals().getByRole("columnheader", { name: "Read on" });
+    const holdsFor = theProposals().getByRole("columnheader", { name: "Holds for" });
+    expect(holdsFor.nextElementSibling).toBe(readOn);
+    expect(within(row).getAllByRole("cell")[3]).toHaveTextContent("12 Sept 2026");
+  });
+
   it("says when a proposal records no period", async () => {
     servingProposal();
     renderShell("/configure");

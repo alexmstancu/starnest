@@ -5,6 +5,7 @@ import { useMatchRuleNames } from "../../../api/useMatchRuleNames";
 import {
   candidateName,
   formatMatchStatus,
+  formatDate,
   formatMoney,
   matchRuleName,
   safeHttpUrl,
@@ -237,6 +238,7 @@ export function ProposalsPanel({
                   <th scope="col">Candidate</th>
                   <th scope="col">Proposed</th>
                   <th scope="col">Holds for</th>
+                  <th scope="col">Read on</th>
                   <th scope="col">Reason and pages</th>
                   <th scope="col">
                     <span className="visually-hidden">Confirm</span>
@@ -298,6 +300,9 @@ function ProposalRow({
       <td>{candidate}</td>
       <td>{formatMatchStatus(proposal.match_result)}</td>
       <td>{describePeriod(proposal.reference_period)}</td>
+      {/* When the model read the pages (PL-161): a period says what the answer is about, and
+          this says how old the reading is. */}
+      <td>{formatDate(proposal.retrieval_date)}</td>
       <td>
         <p>{proposal.reason}</p>
         {/* The pages are the point of asking at all: a gate answered with no source is an
