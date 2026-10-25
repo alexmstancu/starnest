@@ -733,6 +733,8 @@ export const STARTED_RUN_DETAIL: RunDetail = {
     items_not_reached: 0,
   },
   not_reached: [],
+  // Every figure it fetched was new or changed: nothing was re-confirmed (PL-049).
+  reconfirmed: [],
   // Recorded when the run started (0512): eurostat planned 95 items and oecd 1, which sum to
   // the 96 above; nothing paid was planned, so the ceiling is nought, under the settings' cap.
   plan_recorded: true,

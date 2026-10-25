@@ -1,7 +1,7 @@
 -- A run's evidence is pinned to its items, its items to its scope, and its scope to its level
 -- (PL-048: ST-12, SV-N10).
 --
--- depends: 0516-a-set-holds-each-rule-as-a-gate-or-a-warning
+-- depends: 0519-an-accepted-figure-carries-its-payload
 --
 -- Each kind of evidence a run leaves -- a value carrying its id (0005), a failure (0004, 0461),
 -- a re-confirmation (0501) -- named the catalog through single-column keys, and nothing tied it to

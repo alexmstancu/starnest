@@ -698,10 +698,11 @@ export interface paths {
          * Run again over part of a run's scope
          * @description Creates a **new** run over part of the run named, which keeps its own record either way.
          *
-         *     `items: failed` (the default) asks only the sources that failed, only about the
-         *     attributes each failed on, across the candidates that failed. Its scope is the smallest
-         *     covering the failures -- every failed candidate against every failed attribute -- because
-         *     the scope is recorded as two lists, and every pair in it is asked of at least one source.
+         *     `items: failed` (the default) asks each source that failed only about the exact
+         *     (candidate, attribute) pairs it failed on. Its items are those pairs, never the rectangle
+         *     their candidate and attribute lists span; a failure of a source since switched off, or
+         *     that no longer declares the attribute, has nobody to ask and is left out. Declared
+         *     stand-ins borrow only for the retry's own pairs.
          *
          *     `items: unanswered` asks again about the items that produced neither a figure nor a
          *     failure -- the unanswered ones and the ones the run never reached. There is no source to
@@ -1424,16 +1425,17 @@ export interface components {
             scope_candidates?: number;
             /** @description How many attributes the pass was asked about. */
             scope_attributes?: number;
-            /** @description The planned cross product: every attribute in scope, for every candidate in scope. */
+            /** @description The run's items: the exact (candidate, attribute) pairs it asked about. For a sweep that is every attribute in scope for every candidate in scope; for a retry or an ask-again, only the pairs it went back to, never the rectangle their lists span. */
             items_total?: number;
-            /** @description Pairs that produced a value row. */
+            /** @description Items some source answered: a value row stored by the run (rejected ones included), or a figure already on record that it re-confirmed. */
             items_completed?: number;
             /** @description Pairs some source failed on and no source answered, so it never overlaps items_completed. The same arithmetic RunDetail.progress reports. */
             items_failed?: number;
         };
         RunDetail: components["schemas"]["Run"] & {
-            scope?: components["schemas"]["RunScope"];
-            progress?: {
+            /** @description What the run was asked to cover, as stored: both lists always expanded, never null. The run's items are the exact pairs within them it asked about (items_total). */
+            scope: components["schemas"]["RunScope"];
+            progress: {
                 items_total: number;
                 items_completed: number;
                 /** @description Items some source failed on and no source answered. An item OECD failed on and the estimate answered is complete; the failure is still listed. */
@@ -1444,25 +1446,25 @@ export interface components {
                 items_not_reached: number;
             };
             /** @description The items nobody answered, so they can be asked again. Derived rather than stored: an unanswered item is the absence of a value row and of a failure row once every planned source has been asked, and a second record of that absence could disagree with the first. */
-            unanswered?: {
+            unanswered: {
                 candidate: string;
                 attribute: string;
             }[];
             /** @description The items no figure or failure answered yet because a source planned to answer them was never asked about them -- a run still going, or one stopped, halted on its cap or failed first. Asking again (`items: unanswered`) asks about these too. */
-            not_reached?: {
+            not_reached: {
                 candidate: string;
                 attribute: string;
             }[];
             /** @description Whether the run recorded its plan, ceiling and cap when it started. False for a run started before they were recorded: its by_source has no planned or asked counts, its ceiling and cap are null, and its empty items are unanswered only if it completed. Never read as zero. */
-            plan_recorded?: boolean;
+            plan_recorded: boolean;
             /** @description What the run's plan was estimated to cost at most when it started, priced as planRun prices it. Null when the plan was not recorded. */
-            estimate_ceiling_eur?: number | null;
+            estimate_ceiling_eur: number | null;
             /** @description The cap the run was held to, as it stood when the run started. Null with plan_recorded true: no cap was set. */
-            spend_cap_eur?: number | null;
+            spend_cap_eur: number | null;
             /** @description Whether the request that started the run accepted spending with no cap. Null when the plan was not recorded. */
-            accepted_uncapped?: boolean | null;
+            accepted_uncapped: boolean | null;
             /** @description What each source contributed: the items it stored a figure for, and the items it failed on; and, once the plan was recorded, every source the run planned to ask, with how far it got. Derived from the value and failure rows rather than stored, for the reason Q217 settled for items_unanswered -- a second record of the same arithmetic can disagree with the first. The two counts are independent and do not sum to anything: a source may fail on an item another source then answers, and both are true of that run. */
-            by_source?: {
+            by_source: {
                 data_source: string;
                 items_stored: number;
                 items_failed: number;
@@ -1472,13 +1474,13 @@ export interface components {
                 items_asked: number | null;
             }[];
             /** @description Pairs a source answered with a figure already on record for the same observation, so no new row carries this run. `value` is the stored figure it restated; null where that is not known -- a pair that restated more than one stored row, in one batch or across several, or a re-confirmation recorded before runs named the figure, with more than one row it could have restated. A null is never evidence that a figure is unchanged. */
-            reconfirmed?: {
+            reconfirmed: {
                 data_source: string;
                 candidate: string;
                 attribute: string;
                 value: number | null;
             }[];
-            failures?: {
+            failures: {
                 /** @description Which source failed. Two may answer one attribute, and a retry asks only the one that failed. */
                 data_source: string;
                 candidate: string;
@@ -2725,7 +2727,11 @@ export interface operations {
                 };
             };
             /**
-             * @description Two refusals share this status and are told apart by `code`.
+             * @description Three refusals share this status and are told apart by `code`.
+             *
+             *     `nothing_to_fetch` — nothing in the scope can be asked: every source is switched off,
+             *     none answers what was named, or everything named is still fresh under the refetch
+             *     setting. The message names which.
              *
              *     `spend_cap_not_set` — the run would ask a source that charges and no spend cap is
              *     set. Set `run_spend_cap_eur`, or send `accept_uncapped_spend: true` to accept an
@@ -2856,7 +2862,23 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
-            /** @description The run has nothing of that kind, so the new run would be a no-op -- or the retry would reach a source that charges and no spend cap is set (`spend_cap_not_set`). */
+            /**
+             * @description Told apart by `code`.
+             *
+             *     `nothing_to_retry` — `items: failed`, and the run failed on nothing.
+             *
+             *     `nothing_to_ask_again` — `items: unanswered`, and the run has no unanswered or
+             *     not-reached item.
+             *
+             *     `nothing_to_fetch` — every failure belongs to a source now switched off or no longer
+             *     declaring the attribute, so the retry would ask nobody. The message names the remedy.
+             *
+             *     `run_already_in_flight` — a run is already going; poll it rather than starting
+             *     another.
+             *
+             *     `spend_cap_not_set` — the retry would reach a source that charges and no spend cap
+             *     is set.
+             */
             409: {
                 headers: {
                     [name: string]: unknown;
