@@ -18,8 +18,10 @@ import {
 } from "../../format/display";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import {
-  askedBy,
+  accountedFor,
+  askedOfSources,
   describeLeftOut,
+  describeNotReached,
   describeRecord,
   diffAcquisitions,
   levelHeading,
@@ -83,12 +85,16 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
           readRun(earlier, signal),
           readRun(later, signal),
         ]);
-        const asked = askedBy(after.produced, after.detail);
+        const asked = askedOfSources(after.produced, after.detail.failures ?? []);
         const diff = diffAcquisitions(before.produced, after.produced, asked);
         return {
           ...diff,
           leftOutNote: describeLeftOut(diff.leftOut),
-          record: describeRecord(asked.length, after.detail),
+          notReachedNote: describeNotReached(after.detail),
+          record: describeRecord(
+            accountedFor(after.produced, after.detail),
+            after.detail,
+          ),
           level: after.detail.scope?.level,
         };
       },
@@ -104,7 +110,7 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
       </h2>
       <p className="panel__hint">
         What each acquisition produced — the figures it stored and the ones it
-        re-confirmed — compared over the values the later one asked for.
+        re-confirmed — compared over what the later one asked each source for.
         &ldquo;Went missing&rdquo; means the later acquisition asked and produced
         no usable figure — the earlier figure is still stored and may still be
         the one being scored.
@@ -198,6 +204,9 @@ export function AcquisitionDiffPanel({ runs }: { runs: readonly Run[] }) {
                   note="The later acquisition produced none; the earlier figure is still stored"
                 />
               </dl>
+              {diff.notReachedNote !== null && (
+                <p className="screen__note">{diff.notReachedNote}</p>
+              )}
               {diff.leftOutNote !== null && (
                 <p className="screen__note">{diff.leftOutNote}</p>
               )}

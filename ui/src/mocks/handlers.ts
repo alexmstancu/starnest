@@ -32,6 +32,8 @@ import {
   RESEARCH_CALL_COST_EUR,
   RESEARCH_PLAN,
   RUNS,
+  RUN_DETAILS,
+  RUN_ITEMS,
   RUN_REUSES,
   RUN_PLAN,
   SETTINGS,
@@ -1413,20 +1415,16 @@ function againstHome(
 }
 
 /**
- * A run's detail. **What it re-confirmed is limited to its own items**, as `select_run` serves
- * it: a reuse recorded for a pair outside the run's scope is nothing the run produced.
+ * A run's detail. **What it re-confirmed is limited to its own items**, as `select_run` joins
+ * them: a reuse recorded for a pair the run never asked about is nothing it produced. A run over
+ * exact pairs has those pairs as its items (`RUN_ITEMS`), never the rectangle around them.
  */
 function runDetailOf(id: number): RunDetail {
-  const detail: RunDetail = { ...STARTED_RUN_DETAIL, id };
-  const inScope = (listed: string[] | null | undefined, item: string) =>
-    listed === null || listed === undefined || listed.includes(item);
+  const detail: RunDetail = RUN_DETAILS[id] ?? { ...STARTED_RUN_DETAIL, id };
   return {
     ...detail,
     reconfirmed: RUN_REUSES.filter(
-      (reuse) =>
-        reuse.data_acquisition_run === id &&
-        inScope(detail.scope?.candidates, reuse.candidate) &&
-        inScope(detail.scope?.attributes, reuse.attribute),
+      (reuse) => reuse.data_acquisition_run === id && isItemOf(id, detail.scope, reuse),
     ).map(({ data_source, candidate, attribute, value }) => ({
       data_source,
       candidate,
@@ -1434,6 +1432,22 @@ function runDetailOf(id: number): RunDetail {
       value,
     })),
   };
+}
+
+function isItemOf(
+  run: number,
+  scope: RunDetail["scope"],
+  pair: { candidate: string; attribute: string },
+): boolean {
+  const exact = RUN_ITEMS[run];
+  if (exact !== undefined) {
+    return exact.some(
+      (item) => item.candidate === pair.candidate && item.attribute === pair.attribute,
+    );
+  }
+  const listed = (names: string[] | null | undefined, name: string) =>
+    names === null || names === undefined || names.includes(name);
+  return listed(scope?.candidates, pair.candidate) && listed(scope?.attributes, pair.attribute);
 }
 
 function notFound(id: string) {

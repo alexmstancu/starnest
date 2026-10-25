@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  askedBy,
+  accountedFor,
+  askedOfSources,
   describeLeftOut,
+  describeNotReached,
   describeRecord,
   diffAcquisitions,
   levelHeading,
@@ -176,26 +178,75 @@ describe("what the later acquisition asked about", () => {
     ]);
   });
 
-  it("asks about what it produced, failed on and left unanswered", () => {
-    const asked = askedBy([value(PT, RENT), value(PT, RENT, "oecd")], {
-      failures: [{ candidate: PT, attribute: TAX }],
-      unanswered: [{ candidate: ES, attribute: RENT }],
-    });
-
-    expect(asked.map((pair) => `${pair.candidate}|${pair.attribute}`)).toEqual([
-      `${PT}|${RENT}`,
-      `${PT}|${TAX}`,
-      `${ES}|${RENT}`,
+  it("asks each source only what it produced or failed on", () => {
+    const asked = askedOfSources([value(PT, RENT), value(PT, RENT, "oecd")], [
+      { ...value(PT, TAX, "oecd") },
     ]);
+
+    expect(asked.map((each) => `${each.candidate}|${each.attribute}|${each.data_source}`)).toEqual([
+      `${PT}|${RENT}|eurostat`,
+      `${PT}|${RENT}|oecd`,
+      `${PT}|${TAX}|oecd`,
+    ]);
+  });
+
+  /**
+   * Review of PL-060. **The unit is the pair and its source, and so is what was asked.** OECD's
+   * earlier figure for a pair the estimate answered read "went missing" although nobody asked
+   * OECD about it.
+   */
+  it("does not call missing a source the later run did not ask about a pair another answered", () => {
+    const earlier = [{ ...value(PT, TAX, "oecd"), payload: { count: 40 } }];
+    const later = [{ ...value(PT, TAX, "eurostat_estimate"), payload: { count: 42 } }];
+
+    const diff = diffAcquisitions(earlier, later, askedOfSources(later, []));
+
+    expect(diff.rows.map((row) => [row.data_source, row.change])).toEqual([
+      ["eurostat_estimate", "newly acquired"],
+    ]);
+    expect(diff.leftOut).toBe(1);
+  });
+
+  it("does not call missing a source a selective retry left out", () => {
+    const earlier = [
+      { ...value(PT, TAX, "oecd"), payload: { count: 40 } },
+      { ...value(PT, TAX, "eurostat_estimate"), payload: { count: 42 } },
+    ];
+    // The retry asked OECD alone, and OECD failed again.
+    const failures = [value(PT, TAX, "oecd")];
+
+    const diff = diffAcquisitions(earlier, [], askedOfSources([], failures));
+
+    expect(diff.rows.map((row) => [row.data_source, row.change])).toEqual([
+      ["oecd", "went missing"],
+    ]);
+    expect(diff.leftOut).toBe(1);
+  });
+
+  it("does not call missing an unanswered pair's earlier figure, whose source no record names", () => {
+    const diff = diffAcquisitions([value(PT, RENT)], [], askedOfSources([], []));
+
+    expect(diff.rows).toEqual([]);
+    expect(diff.leftOut).toBe(1);
+  });
+
+  it("accounts for every item a run produced, failed on, left unanswered or never reached", () => {
+    expect(
+      accountedFor([value(PT, RENT), value(PT, RENT, "oecd")], {
+        failures: [value(PT, TAX, "oecd")],
+        unanswered: [{ candidate: ES, attribute: RENT }],
+        not_reached: [{ candidate: ES, attribute: TAX }],
+      }),
+    ).toBe(4);
   });
 
   it("says how many earlier figures were left out", () => {
     expect(describeLeftOut(0)).toBeNull();
     expect(describeLeftOut(1)).toBe(
-      "1 figure from the earlier acquisition is for a value the later one did not ask for, so it is not compared.",
+      "1 figure from the earlier acquisition is from a source the later one is not recorded as asking for that value, so it is not compared.",
     );
     expect(describeLeftOut(624)).toBe(
-      "624 figures from the earlier acquisition are for values the later one did not ask for, so they are not compared.",
+      "624 figures from the earlier acquisition are from sources the later one is not recorded as asking for those values, so they are not compared.",
     );
   });
 });
@@ -227,7 +278,7 @@ describe("a figure the later acquisition re-confirmed", () => {
       reconfirmedValues: [stored],
     });
 
-    const diff = diffAcquisitions([stored], later, askedBy(later, {}));
+    const diff = diffAcquisitions([stored], later, askedOfSources(later, []));
 
     expect(diff.rows).toMatchObject([
       { change: "unchanged", earlier: "7", later: "7" },
@@ -242,7 +293,7 @@ describe("a figure the later acquisition re-confirmed", () => {
       reconfirmedValues: [newer],
     });
 
-    const diff = diffAcquisitions([stored], later, askedBy(later, {}));
+    const diff = diffAcquisitions([stored], later, askedOfSources(later, []));
 
     expect(diff.rows).toMatchObject([
       { change: "refreshed", earlier: "7", later: "9" },
@@ -256,11 +307,35 @@ describe("a figure the later acquisition re-confirmed", () => {
       reconfirmedValues: [],
     });
 
-    const diff = diffAcquisitions([stored], later, askedBy(later, {}));
+    const diff = diffAcquisitions([stored], later, askedOfSources(later, []));
 
     expect(diff.rows).toMatchObject([
       { change: "refreshed", earlier: "7", later: "not recorded" },
     ]);
+  });
+
+  it("takes each re-confirmed figure from the row its id names, whatever order they arrive in", () => {
+    const spain = { ...stored, id: 43, candidate: ES, payload: { count: 3 } };
+    const later = producedBy({
+      stored: [],
+      reconfirmed: [reconfirmation, { ...reconfirmation, candidate: ES, value: 43 }],
+      reconfirmedValues: [spain, stored],
+    });
+
+    expect(later.map((each) => [each.candidate, each.payload])).toEqual([
+      [PT, { count: 7 }],
+      [ES, { count: 3 }],
+    ]);
+  });
+
+  it("never takes a figure the id does not name", () => {
+    const later = producedBy({
+      stored: [],
+      reconfirmed: [{ ...reconfirmation, value: 99 }],
+      reconfirmedValues: [stored],
+    });
+
+    expect(later[0]?.payload).toBeUndefined();
   });
 
   it("keeps what the run stored beside what it re-confirmed", () => {
@@ -330,11 +405,47 @@ describe("what is said about the later acquisition's record", () => {
     );
   });
 
+  it("does not call a halted run's record incomplete for the values it never reached", () => {
+    expect(
+      describeRecord(96, {
+        id: 7,
+        run_status: "halted_by_user",
+        progress: { items_total: 96 },
+      }),
+    ).toBeNull();
+  });
+
   it("says a run still going is compared on what it has settled", () => {
     expect(
       describeRecord(1, { id: 7, run_status: "running", progress: { items_total: 96 } }),
     ).toBe(
       "Acquisition 7 is still running, so this compares what it has settled so far.",
+    );
+  });
+});
+
+/** Review of PL-060. Values the later run never reached are not asked, and that is said. */
+describe("what the later acquisition never reached", () => {
+  const notReached = [
+    { candidate: PT, attribute: RENT },
+    { candidate: PT, attribute: TAX },
+  ];
+
+  it("says nothing when it reached everything", () => {
+    expect(describeNotReached({ id: 7, not_reached: [], plan_recorded: true })).toBeNull();
+  });
+
+  it("says how many values its plan named and it never reached", () => {
+    expect(
+      describeNotReached({ id: 7, not_reached: notReached, plan_recorded: true }),
+    ).toBe("2 values acquisition 7 planned were never reached, so they are not compared.");
+  });
+
+  it("does not claim a plan for a run that recorded none", () => {
+    expect(
+      describeNotReached({ id: 7, not_reached: notReached.slice(0, 1), plan_recorded: false }),
+    ).toBe(
+      "1 value acquisition 7 was to ask about has neither a figure nor a failure. It started before acquisitions recorded their plan, so whether it was asked is not known, and it is not compared.",
     );
   });
 });

@@ -66,7 +66,7 @@ export interface Diff {
   refreshed: number;
   unchanged: number;
   wentMissing: number;
-  /** Figures the earlier run produced for values the later one did not ask for. */
+  /** Earlier figures from a source the later run is not recorded as asking for that value. */
   leftOut: number;
 }
 
@@ -88,20 +88,43 @@ export function producedBy(run: RunRecord): ProducedValue[] {
 }
 
 /**
- * The values a run asked for, as far as its record shows: what it produced, failed on, or left
- * unanswered. Once its items are partitioned these are all of them (`describeRecord` says when
- * they are not).
+ * What the later run asked each source, as far as its record names a source: a figure it
+ * produced (stored, re-confirmed or rejected) and a failure. **A pair and source the record does
+ * not name is never called missing** -- another source may have answered the pair, a selective
+ * retry may have asked one source alone, and an unanswered or unreached item names no source.
  */
-export function askedBy(
-  produced: readonly Pair[],
-  run: { failures?: readonly Pair[]; unanswered?: readonly Pair[] },
-): Pair[] {
-  const asked = new Map<string, Pair>();
-  for (const pair of [...produced, ...(run.failures ?? []), ...(run.unanswered ?? [])]) {
-    const key = pairKey(pair);
-    if (!asked.has(key)) asked.set(key, { candidate: pair.candidate, attribute: pair.attribute });
+export function askedOfSources(
+  produced: readonly ProducedValue[],
+  failures: readonly ProducedValue[],
+): ProducedValue[] {
+  const asked = new Map<string, ProducedValue>();
+  for (const each of [...produced, ...failures]) {
+    const { candidate, attribute, data_source } = each;
+    if (!asked.has(keyOf(each))) asked.set(keyOf(each), { candidate, attribute, data_source });
   }
   return [...asked.values()];
+}
+
+/**
+ * How many of its items a run's record accounts for: produced, failed on, left unanswered or
+ * never reached. Once they partition its items, this is `items_total` (`describeRecord`).
+ */
+export function accountedFor(
+  produced: readonly Pair[],
+  run: {
+    failures?: readonly Pair[];
+    unanswered?: readonly Pair[];
+    not_reached?: readonly Pair[];
+  },
+): number {
+  return new Set(
+    [
+      ...produced,
+      ...(run.failures ?? []),
+      ...(run.unanswered ?? []),
+      ...(run.not_reached ?? []),
+    ].map(pairKey),
+  ).size;
 }
 
 function pairKey(pair: Pair): string {
@@ -145,9 +168,9 @@ const ORDER: Record<Change, number> = {
 export function diffAcquisitions(
   earlier: readonly ProducedValue[],
   later: readonly ProducedValue[],
-  asked: readonly Pair[],
+  askedOf: readonly ProducedValue[],
 ): Diff {
-  const askedFor = new Set(asked.map(pairKey));
+  const askedFor = new Set(askedOf.map(keyOf));
   const before = byKey(earlier);
   const after = byKey(later);
 
@@ -156,7 +179,7 @@ export function diffAcquisitions(
     const one = before.get(key);
     const other = after.get(key);
     const pair = other ?? one;
-    if (pair === undefined || !askedFor.has(pairKey(pair))) continue;
+    if (pair === undefined || !askedFor.has(key)) continue;
     const change = changeOf(one, other);
     if (change === null) continue;
     rows.push({
@@ -182,7 +205,7 @@ export function diffAcquisitions(
     unchanged: rows.filter((row) => row.change === "unchanged").length,
     wentMissing: rows.filter((row) => row.change === "went missing").length,
     leftOut: [...before.values()].filter(
-      (value) => usable(value) && !askedFor.has(pairKey(value)),
+      (value) => usable(value) && !askedFor.has(keyOf(value)),
     ).length,
   };
 }
@@ -212,24 +235,46 @@ function cellOf(value: ProducedValue | undefined): string | null {
 export function describeLeftOut(leftOut: number): string | null {
   if (leftOut === 0) return null;
   return leftOut === 1
-    ? "1 figure from the earlier acquisition is for a value the later one did not ask for, so it is not compared."
-    : `${String(leftOut)} figures from the earlier acquisition are for values the later one did not ask for, so they are not compared.`;
+    ? "1 figure from the earlier acquisition is from a source the later one is not recorded as asking for that value, so it is not compared."
+    : `${String(leftOut)} figures from the earlier acquisition are from sources the later one is not recorded as asking for those values, so they are not compared.`;
 }
 
 /**
- * What the later run's record does not account for: still running, or its asked values falling
- * short of the items it planned. Nothing where they agree.
+ * The values the later run never reached, which are not asked and so not compared. **A run that
+ * recorded no plan cannot say it planned them** (`plan_recorded`), only that they are empty.
+ */
+export function describeNotReached(run: {
+  id: number;
+  not_reached?: readonly Pair[];
+  plan_recorded?: boolean;
+}): string | null {
+  const count = run.not_reached?.length ?? 0;
+  if (count === 0) return null;
+  const one = count === 1;
+  const values = `${String(count)} ${one ? "value" : "values"} acquisition ${String(run.id)}`;
+  if (run.plan_recorded === true) {
+    return `${values} planned ${one ? "was" : "were"} never reached, so ${one ? "it is" : "they are"} not compared.`;
+  }
+  return (
+    `${values} was to ask about ${one ? "has" : "have"} neither a figure nor a failure. ` +
+    `It started before acquisitions recorded their plan, so whether ${one ? "it was" : "they were"} asked is not known, and ${one ? "it is" : "they are"} not compared.`
+  );
+}
+
+/**
+ * What the later run's record does not account for: still running, or what it accounts for
+ * (`accountedFor`) disagreeing with the items it planned. Nothing where they agree.
  */
 export function describeRecord(
-  asked: number,
+  accounted: number,
   run: { id: number; run_status: string; progress?: { items_total?: number } },
 ): string | null {
   if (run.run_status === "running") {
     return `Acquisition ${String(run.id)} is still running, so this compares what it has settled so far.`;
   }
   const total = run.progress?.items_total;
-  if (total === undefined || total === asked) return null;
-  return `Acquisition ${String(run.id)}'s record accounts for ${String(asked)} of the ${String(total)} values it asked for, so this comparison may be incomplete.`;
+  if (total === undefined || total === accounted) return null;
+  return `Acquisition ${String(run.id)}'s record accounts for ${String(accounted)} of the ${String(total)} values it asked for, so this comparison may be incomplete.`;
 }
 
 /** Whether the earlier pick started after the later one. Drawn all the same, with a warning. */

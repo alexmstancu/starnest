@@ -1252,6 +1252,70 @@ export const RUN_REUSES: {
   },
 ];
 
+/**
+ * The exact items of runs over chosen pairs. A run not listed asked its scope's cross product.
+ *
+ * **Runs 9 and 10 are the retries the mock starts from run 8** (`retry`): its failures and its
+ * unanswered items, which a retry asks about and nothing else -- so a rectangle drawn around
+ * them would claim pairs neither asked.
+ */
+/**
+ * Runs whose detail is their own rather than run 8's (`runDetailOf`).
+ *
+ * **Run 6 asked about one item, Portugal's air connectivity, and re-confirmed run 5's figure
+ * for it** (`RUN_REUSES`): nothing stored, nothing failed, nothing left, and the cost and calls
+ * its history row reports. Its scope is that one pair, so the server's join on the run's own
+ * items keeps the re-confirmation -- a reuse outside its items would be one it never made.
+ */
+export const RUN_DETAILS: Record<number, RunDetail> = {
+  6: {
+    ...RUNS[1]!,
+    scope_candidates: 1,
+    scope_attributes: 1,
+    items_total: 1,
+    items_completed: 1,
+    items_failed: 0,
+    scope: {
+      level: "country",
+      candidates: ["country.portugal"],
+      attributes: ["country.european_air_connectivity"],
+    },
+    progress: {
+      items_total: 1,
+      items_completed: 1,
+      items_failed: 0,
+      items_unanswered: 0,
+      items_not_reached: 0,
+    },
+    not_reached: [],
+    unanswered: [],
+    failures: [],
+    // Served from `RUN_REUSES`, limited to the run's items, as the server joins them.
+    reconfirmed: [],
+    plan_recorded: true,
+    estimate_ceiling_eur: 2.5,
+    spend_cap_eur: 10,
+    accepted_uncapped: false,
+    by_source: [
+      {
+        data_source: "eurostat",
+        items_stored: 0,
+        items_failed: 0,
+        items_planned: 1,
+        items_asked: 1,
+      },
+    ],
+  },
+};
+
+export const RUN_ITEMS: Record<number, { candidate: string; attribute: string }[]> = {
+  9: (STARTED_RUN_DETAIL.failures ?? []).map(({ candidate, attribute }) => ({
+    candidate,
+    attribute,
+  })),
+  10: [...(STARTED_RUN_DETAIL.unanswered ?? [])],
+};
+
 export const EXTERNAL_SCORES: ExternalScore[] = [
   {
     candidate: "country.portugal",

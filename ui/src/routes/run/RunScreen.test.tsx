@@ -1695,9 +1695,94 @@ describe("what changed between two acquisitions", () => {
     expect(panel.queryByRole("row", { name: /Cost of living index/i })).toBeNull();
     expect(
       panel.getByText(
-        "1 figure from the earlier acquisition is for a value the later one did not ask for, so it is not compared.",
+        "1 figure from the earlier acquisition is from a source the later one is not recorded as asking for that value, so it is not compared.",
       ),
     ).toBeInTheDocument();
+  });
+
+  /**
+   * Review of PL-060. Run 6 halted before it reached the cost of living: that value is not asked,
+   * the panel says so, and a record that accounts for every item is not called incomplete.
+   */
+  function runSixHaltedBeforeTheCostOfLiving(planRecorded: boolean): void {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) => {
+        if (params["runId"] !== "6") return;
+        return HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: 6,
+          run_status: "halted_by_user",
+          progress: {
+            items_total: 2,
+            items_completed: 1,
+            items_failed: 0,
+            items_unanswered: 0,
+            items_not_reached: 1,
+          },
+          failures: [],
+          unanswered: [],
+          not_reached: [{ candidate: PORTUGAL, attribute: COST_OF_LIVING }],
+          plan_recorded: planRecorded,
+          reconfirmed: [
+            {
+              data_source: "eurostat",
+              candidate: PORTUGAL,
+              attribute: "country.european_air_connectivity",
+              value: 499,
+            },
+          ],
+        });
+      }),
+    );
+  }
+
+  it("says what the later acquisition never reached, and does not call its record incomplete", async () => {
+    runSixHaltedBeforeTheCostOfLiving(true);
+    renderShell("/acquire");
+    const panel = await compare("5", "6");
+
+    expect(
+      await panel.findByText(
+        "1 value acquisition 6 planned was never reached, so it is not compared.",
+      ),
+    ).toBeInTheDocument();
+    expect(panel.queryByText(/may be incomplete/)).toBeNull();
+    expect(panel.queryByRole("row", { name: /Cost of living index/i })).toBeNull();
+  });
+
+  it("does not claim a plan for a later acquisition that recorded none", async () => {
+    runSixHaltedBeforeTheCostOfLiving(false);
+    renderShell("/acquire");
+    const panel = await compare("5", "6");
+
+    expect(
+      await panel.findByText(/started before acquisitions recorded their plan/),
+    ).toBeInTheDocument();
+    expect(panel.queryByText(/planned was never reached/)).toBeNull();
+  });
+
+  /** Any of a run's three reads failing is a failed comparison, never an empty list. */
+  it.each([
+    ["what it stored", `${BASE}/values`, "data_acquisition_run"],
+    ["what it re-confirmed", `${BASE}/values`, "reconfirmed_by_run"],
+    ["its detail", `${BASE}/data-acquisition-runs/:runId`, null],
+  ])("says the comparison could not be read when %s cannot be", async (_what, path, filter) => {
+    mockServer.use(
+      http.get(path, ({ request, params }) => {
+        const query = new URL(request.url).searchParams;
+        const run = filter === null ? params["runId"] : query.get(filter);
+        if (run !== "6") return;
+        return HttpResponse.json(
+          { code: "internal_error", message: "the run could not be read" },
+          { status: 500 },
+        );
+      }),
+    );
+    renderShell("/acquire");
+    const panel = await compare("5", "6");
+
+    expect(await panel.findByRole("button", { name: /try again/i })).toBeInTheDocument();
+    expect(panel.queryByRole("table", { name: "What changed" })).toBeNull();
   });
 
   /** PL-060. The same acquisition twice is not a comparison, and nothing is read for it. */

@@ -12,7 +12,14 @@ import {
   updateCriterionRule,
   type CriterionRule,
 } from "../api/endpoints";
-import { HOUSEHOLD, RESEARCH_CALL_COST_EUR, RUN_REUSES, SETTINGS, STORED_VALUES } from "./fixtures";
+import {
+  HOUSEHOLD,
+  RESEARCH_CALL_COST_EUR,
+  RUN_ITEMS,
+  RUN_REUSES,
+  SETTINGS,
+  STORED_VALUES,
+} from "./fixtures";
 
 /**
  * The mock is a stand-in for the backend, so it has to fail the way the backend will: with the
@@ -493,6 +500,34 @@ describe("the mock's re-confirmed figures", () => {
   it("names what a run re-confirmed, with the stored figure it restated", async () => {
     expect((await fetchRun(6)).reconfirmed).toEqual([{ ...PORTUGAL_AIR, value: 499 }]);
     expect((await fetchRun(7)).reconfirmed).toEqual([]);
+  });
+
+  /**
+   * Review of PL-060. **A run's items are exact pairs, not a rectangle**: a retry of Portugal's
+   * rent and Spain's tax never asked about Portugal's tax, so a reuse recorded for it is not the
+   * run's, as the server's join on the run's own items decides.
+   */
+  it("names only what a run over exact pairs re-confirmed among its own items", async () => {
+    const pt = "country.portugal";
+    const es = "country.spain";
+    const reuse = { data_acquisition_run: 11, data_source: "eurostat", value: null };
+    const reusesBefore = RUN_REUSES.length;
+    RUN_ITEMS[11] = [
+      { candidate: pt, attribute: "country.rent" },
+      { candidate: es, attribute: "country.tax" },
+    ];
+    RUN_REUSES.push(
+      { ...reuse, candidate: pt, attribute: "country.rent" },
+      { ...reuse, candidate: pt, attribute: "country.tax" },
+    );
+    try {
+      expect((await fetchRun(11)).reconfirmed).toEqual([
+        { data_source: "eurostat", candidate: pt, attribute: "country.rent", value: null },
+      ]);
+    } finally {
+      RUN_REUSES.splice(reusesBefore);
+      delete RUN_ITEMS[11];
+    }
   });
 
   it("restates a figure the fixtures hold, for the same pair and source", () => {
