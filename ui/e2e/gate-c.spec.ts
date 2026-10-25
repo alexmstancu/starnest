@@ -302,8 +302,8 @@ test.describe("a run", () => {
     const card = page.getByRole("region", {
       name: /An acquisition over every country candidate/,
     });
-    await expect(card.getByText("At most")).toBeVisible();
-    await expect(card.getByText("Paid calls")).toBeVisible();
+    await expect(card.getByText("At most", { exact: true })).toBeVisible();
+    await expect(card.getByText("Paid calls", { exact: true })).toBeVisible();
     // **Named, not filtered.** The last acquisition's report opens with the screen now, and
     // its per-source breakdown names each source.
     await expect(page.getByRole("table", { name: /per source/i })).toBeVisible();

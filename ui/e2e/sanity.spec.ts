@@ -341,8 +341,8 @@ test.describe("a run", () => {
     const card = page.getByRole("region", {
       name: /An acquisition over every country candidate/,
     });
-    await expect(card.getByText("At most")).toBeVisible();
-    await expect(card.getByText("Items")).toBeVisible();
+    await expect(card.getByText("At most", { exact: true })).toBeVisible();
+    await expect(card.getByText("Items", { exact: true })).toBeVisible();
     // Armed, not started (PL-121): the strip in the card is where it is agreed to.
     await expect(card.getByRole("button", { name: "Yes, start it" })).toBeEnabled();
   });
