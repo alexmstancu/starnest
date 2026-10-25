@@ -1,10 +1,13 @@
 import { useCallback, useId } from "react";
 import { describeRepeats, foldRepeats } from "./repeatedValues";
 import {
+  fetchAttributes,
   fetchCriteriaSet,
   fetchExternalScores,
   fetchRankedCandidateDetail,
   fetchValues,
+  type Attribute,
+  type Criterion,
   type ExternalScore,
   type StoredValue,
 } from "../../api/endpoints";
@@ -41,7 +44,9 @@ import {
   scoresByAttribute,
   type InUse,
   type ScoreReading,
+  type WeightUsedTone,
 } from "./attributeScores";
+import { howScored } from "./howScored";
 
 /**
  * One candidate's evidence: every stored value, and the outside indices beside them.
@@ -130,6 +135,19 @@ export function CandidateDetail({
     ),
     criteriaSetId !== null && levelId !== null,
   );
+  // What each attribute measures, for the "how was this scored" tooltip. A failure leaves the
+  // tooltip without its first line rather than without the rest.
+  const catalog = useResource(
+    useCallback(
+      (signal: AbortSignal) => fetchAttributes(levelId ?? undefined, { signal }),
+      [levelId],
+    ),
+  );
+  const measured = new Map<string, Attribute>(
+    catalog.resource.status === "ready"
+      ? catalog.resource.data.items.map((each) => [each.id, each])
+      : [],
+  );
   const contributions = scoresByAttribute(
     scored.resource.status === "ready"
       ? scored.resource.data.attribute_scores
@@ -146,6 +164,9 @@ export function CandidateDetail({
     criteria.resource.status === "ready" ? criteria.resource.data.criteria : null;
   const byAttribute = pillarsByAttribute(setCriteria);
   const judgements = judgementsByAttribute(setCriteria);
+  const rules = new Map<string, Criterion>(
+    (setCriteria ?? []).map((each) => [each.attribute, each]),
+  );
 
   // **Unique per open panel.** Several candidates' evidence can be open at once, and a
   // hardcoded id would repeat in the document -- so every panel would be announced with the
@@ -205,6 +226,8 @@ export function CandidateDetail({
           pillarNames={names}
           sourceNames={sourceNames}
           judgements={judgements}
+          rules={rules}
+          measured={measured}
           contributions={contributions}
           scaleMax={attributeScale}
           values={valuesInPillar(
@@ -283,6 +306,8 @@ function ValueTable({
   pillarNames,
   sourceNames,
   judgements,
+  rules,
+  measured,
   contributions,
   scaleMax,
 }: {
@@ -296,6 +321,10 @@ function ValueTable({
   sourceNames: SourceNames;
   /** What the active set decided about each attribute: its weight, and whether it blocks. */
   judgements: Map<string, Judgement>;
+  /** The active set's criteria, by attribute, for what the tooltip says about the rule. */
+  rules: ReadonlyMap<string, Criterion>;
+  /** The catalog's attributes, by id, for what the tooltip says each measures. */
+  measured: ReadonlyMap<string, Attribute>;
   /**
    * What the pass made of each attribute, from the ranking on screen, for the one figure it
    * scored (`figureInUse`). Empty until it arrives.
@@ -317,6 +346,9 @@ function ValueTable({
   return (
     <div className="table-card table-card--values">
       <table className="table table--values" aria-label="Every stored value">
+        <caption className="table__caption">
+          Weights are shares of the whole score.
+        </caption>
         <thead>
           <tr>
             <th scope="col">Attribute</th>
@@ -329,10 +361,18 @@ function ValueTable({
             <th scope="col" className="col--right">
               {range === "" ? "Score" : `Score ${range}`}
             </th>
-            <th scope="col" className="col--right">
+            <th
+              scope="col"
+              className="col--right"
+              title="Its share of the whole score, as configured"
+            >
               Weight
             </th>
-            <th scope="col" className="col--right">
+            <th
+              scope="col"
+              className="col--right"
+              title="Its share of the whole score after redistribution: the weight of every attribute with no figure is spread over the ones that have one"
+            >
               Weight used
             </th>
             <th scope="col" className="col--right">
@@ -350,6 +390,14 @@ function ValueTable({
               judged?.scored,
               contributions,
             );
+            const weightUsedClass =
+              WEIGHT_USED_TONE[reading?.weightUsedTone ?? "plain"];
+            const called = attributeName(names, value.attribute);
+            const how = howScored({
+              criterion: rules.get(value.attribute),
+              attribute: measured.get(value.attribute),
+              source: sourceName(sourceNames, value.data_source),
+            });
             return (
               <tr
                 key={value.id}
@@ -365,9 +413,17 @@ function ValueTable({
                     columns to compare across rows, so they read as a block. */}
                 <th scope="row" className="value-cell">
                   <span className="value-cell__head">
-                    <span className="value-cell__name">
-                      {attributeName(names, value.attribute)}
-                    </span>
+                    <span className="value-cell__name">{called}</span>
+                    {how !== null && (
+                      <span
+                        className="value-cell__how"
+                        role="img"
+                        aria-label={`How ${called} was scored`}
+                        title={how}
+                      >
+                        i
+                      </span>
+                    )}
                     {judged?.required === true && (
                       <span className="chip chip--accent">Required</span>
                     )}
@@ -416,16 +472,15 @@ function ValueTable({
                   {reading?.score ?? ABSENT}
                 </td>
 
-                {/* **The weight this set gives it, and nothing where it gives none.** An
-                    attribute the set does not score is not judged here at all, and a zero
-                    would read as "worth nothing" -- a different claim. */}
+                {/* **The weight the server declared, on the basis of the weight used** (PL-063):
+                    both shares of the whole score, so they differ only where a missing figure's
+                    weight was spread. Nothing where the pass scored nothing -- a zero would read
+                    as "worth nothing", a different claim. */}
                 <td className="col--right value-weight">
-                  {judged?.weight == null
-                    ? ABSENT
-                    : formatPercentage(judged.weight)}
+                  {reading?.weight ?? ABSENT}
                 </td>
 
-                <td className="col--right value-weight">
+                <td className={weightUsedClass}>
                   {reading?.weightUsed ?? ABSENT}
                 </td>
 
@@ -456,6 +511,13 @@ function ValueTable({
     </div>
   );
 }
+
+/** PL-073: teal where redistribution moved the weight, amber where nothing was in use. */
+const WEIGHT_USED_TONE: Record<WeightUsedTone, string> = {
+  plain: "col--right value-weight",
+  moved: "col--right value-weight value-weight--moved",
+  missing: "col--right value-weight value-weight--missing",
+};
 
 /**
  * How the "In use" column names each state.

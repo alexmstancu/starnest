@@ -3754,6 +3754,14 @@ select.field__control {
   display: block;
 }
 
+/* PL-063: one line above the values saying what basis their weights are on. */
+.table__caption {
+  padding: 8px 14px 0;
+  text-align: left;
+  font-size: 11px;
+  color: var(--colour-text-muted);
+}
+
 .table--values > thead > tr,
 .table--values > tbody > tr {
   display: grid;
@@ -3810,6 +3818,21 @@ select.field__control {
   font-weight: 500;
 }
 
+/* PL-073: the "how was this scored" mark beside an attribute's name; its title is the tooltip. */
+.value-cell__how {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--colour-border);
+  border-radius: 50%;
+  font-size: 9.5px;
+  font-style: italic;
+  font-weight: 600;
+  color: var(--colour-text-muted);
+  cursor: help;
+}
+
 /* Label and fact in two columns, so three facts read as a block rather than as a sentence
    somebody has to parse. */
 .value-cell__meta {
@@ -3855,6 +3878,17 @@ select.field__control {
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
   color: var(--colour-text-muted);
+}
+
+/* PL-073: a weight redistribution moved by more than 0.6 points, and one with nothing in use. */
+.value-weight--moved {
+  color: var(--colour-accent);
+  font-weight: 600;
+}
+
+.value-weight--missing {
+  color: var(--colour-warning);
+  font-weight: 600;
 }
 
 /* Which pillar's values are below, when one has been chosen. It names the filter rather than

@@ -70,10 +70,6 @@ describe("what the active set has decided about an attribute", () => {
     { attribute: "country.sun", weight: 60 },
   ];
 
-  it("carries the weight the set gives it", () => {
-    expect(judgementsByAttribute(criteria).get("country.rent")?.weight).toBe(40);
-  });
-
   it("says which attributes the candidate cannot be scored without", () => {
     const judged = judgementsByAttribute(criteria);
     expect(judged.get("country.rent")?.required).toBe(true);
@@ -88,29 +84,17 @@ describe("what the active set has decided about an attribute", () => {
     expect(judgementsByAttribute(criteria).get("country.noise")).toBeUndefined();
   });
 
-  it("carries no weight for a criterion the set left unweighed", () => {
-    expect(
-      judgementsByAttribute([{ attribute: "country.rent" }]).get("country.rent")
-        ?.weight,
-    ).toBeNull();
-  });
-
   it("says the set scores a criterion unless the criterion says otherwise", () => {
     expect(judgementsByAttribute(criteria).get("country.rent")?.scored).toBe(true);
   });
 
-  /**
-   * UI-15. **An excluded criterion judges and does not count** (`reqs.md` 5.3): it takes no
-   * weight and leaves no gap, so the weight the set would give it were it counted is not a
-   * weight it has -- printed beside its figure, it read as a share of the pillar.
-   */
-  it("gives no weight to a criterion the set does not score", () => {
+  /** UI-15. **An excluded criterion judges and does not count** (`reqs.md` 5.3). */
+  it("says a criterion the set does not score is not scored", () => {
     const judged = judgementsByAttribute([
-      { attribute: "country.climate_zone", weight: 10, is_scored: false },
+      { attribute: "country.climate_zone", is_scored: false },
     ]).get("country.climate_zone");
 
     expect(judged?.scored).toBe(false);
-    expect(judged?.weight).toBeNull();
   });
 
   it("is empty when there is no set yet", () => {

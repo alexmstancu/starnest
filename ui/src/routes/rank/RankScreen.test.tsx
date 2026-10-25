@@ -1619,15 +1619,67 @@ describe("what the pass made of each figure", () => {
     expect(cellOf(table, connectivity, "In use")).toHaveTextContent(/^Active$/);
   });
 
-  it("keeps the configured weight beside the one the pass used", async () => {
-    // Both, because they answer different questions: what this set says the attribute is
-    // worth, and what it was actually worth once the missing figures had been redistributed.
+  /**
+   * PL-063. **Weight and Weight used are one kind of number**: both shares of the whole score,
+   * the first as declared and the second after redistribution. The set's 50% is cost of
+   * living's share of its pillar, a different basis, and printing it beside 12.5% read as a
+   * weight that had lost three quarters of itself.
+   */
+  it("reads Weight and Weight used on one basis, the server's", async () => {
     const table = await theValues();
+    const active = await theActiveCostOfLiving(table);
 
-    expect(table.getByRole("columnheader", { name: "Weight" })).toBeInTheDocument();
+    expect(cellOf(table, active, "Weight")).toHaveTextContent(/^11\.3%$/);
+    expect(cellOf(table, active, "Weight used")).toHaveTextContent(/^12\.5%$/);
+    expect(
+      table.getByRole("columnheader", { name: "Weight" }),
+    ).toHaveAttribute("title", expect.stringMatching(/share of the whole score, as configured/i));
     expect(
       table.getByRole("columnheader", { name: "Weight used" }),
+    ).toHaveAttribute("title", expect.stringMatching(/after redistribution/i));
+    expect(
+      table.getByText("Weights are shares of the whole score."),
     ).toBeInTheDocument();
+  });
+
+  /** PL-073. 12.5 against 11.25 is more than 0.6 points: the share grew by redistribution. */
+  it("tints a weight used that redistribution moved", async () => {
+    const table = await theValues();
+    const active = await theActiveCostOfLiving(table);
+
+    expect(cellOf(table, active, "Weight used")).toHaveClass("value-weight--moved");
+  });
+
+  /** PL-073. The tooltip is built from the set's criterion, the catalog and the row's source. */
+  it("says how an attribute was scored, on its name", async () => {
+    const table = await theValues();
+    await theActiveCostOfLiving(table);
+
+    const [how] = await table.findAllByRole("img", {
+      name: /how cost of living index was scored/i,
+    });
+    const said = how!.getAttribute("title") ?? "";
+    expect(said).toMatch(/Measured in EU27 = 100\./);
+    expect(said).toMatch(/Goal: lower is better\./);
+    expect(said).toMatch(/Scored by percentile\./);
+    expect(said).toMatch(/Source: Eurostat\./);
+    expect(said).toMatch(/^Not required/m);
+  });
+
+  /** While the set cannot be read, there is no tooltip rather than a wrong one. */
+  it("offers no tooltip when the set cannot be read", async () => {
+    mockServer.use(
+      http.get("/v1/criteria-sets/default", () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "the set could not be read" },
+          { status: 500 },
+        ),
+      ),
+    );
+    const table = await theValues();
+    await theActiveCostOfLiving(table);
+
+    expect(table.queryByRole("img", { name: /was scored/i })).toBeNull();
   });
 
   it("says nothing where the ranking scored nothing", async () => {

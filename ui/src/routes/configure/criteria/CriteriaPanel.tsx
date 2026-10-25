@@ -23,13 +23,13 @@ import { LockIcon } from "../LockIcon";
 import {
   chipsFor,
   titleOf,
-  describeValueType,
   hasNoSource,
   weightBarWidth,
   type AttributeCatalog,
   type CatalogAttribute,
   type ChipTone,
 } from "./criterionReading";
+import { describeValueType } from "../../../format/criterionWords";
 import { CriterionRuleFields } from "./CriterionRuleFields";
 import { useCriterionRule } from "./useCriterionRule";
 

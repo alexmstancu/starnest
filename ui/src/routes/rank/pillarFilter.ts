@@ -44,8 +44,6 @@ export function valuesInPillar<T extends HasAttribute>(
 
 /** What the active set says about one attribute, beyond which pillar it is in. */
 export interface Judgement {
-  /** Its share of its pillar, as a percentage, or null where the set does not weigh it. */
-  weight: number | null;
   /** Whether the candidate cannot be scored at all without it (`blocks_if_missing`). */
   required: boolean;
   /**
@@ -57,7 +55,6 @@ export interface Judgement {
 
 export interface Weighed {
   attribute: string;
-  weight?: number;
   blocks_if_missing?: boolean;
   is_scored?: boolean;
 }
@@ -66,11 +63,10 @@ export interface Weighed {
  * What the active set has decided about each attribute.
  *
  * **The set's opinion, not the catalog's.** An attribute this set does not score appears in no
- * entry, so the table says nothing about its weight rather than showing a zero -- which would
- * read as "worth nothing" when the truth is "not judged here at all" (`reqs.md` 3.0).
+ * entry (`reqs.md` 3.0).
  *
- * **An excluded criterion has no weight either** (UI-15): it takes none and leaves no gap, so
- * the weight it would carry were it counted is not one it has.
+ * **No weight here** (PL-063): the set's weight is a share of the pillar, and the drill-down
+ * prints the server's share of the whole score instead, on the basis of the weight used.
  */
 export function judgementsByAttribute(
   criteria: readonly Weighed[] | null | undefined,
@@ -81,7 +77,6 @@ export function judgementsByAttribute(
       return [
         each.attribute,
         {
-          weight: scored ? (each.weight ?? null) : null,
           required: each.blocks_if_missing === true,
           scored,
         },

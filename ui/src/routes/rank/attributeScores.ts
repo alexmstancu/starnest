@@ -16,6 +16,8 @@ import { ABSENT, formatPercentage, formatSigned } from "../../format/display";
 export interface AttributeScore {
   attribute: string;
   normalised_score?: number | null;
+  /** The declared share of the whole level, before redistribution (D21). */
+  weight?: number;
   effective_weight?: number;
   contribution?: number;
 }
@@ -23,8 +25,15 @@ export interface AttributeScore {
 export interface ScoreReading {
   /** "73", or the absent mark where nothing was scored. */
   score: string;
+  /**
+   * The weight the set declared, as the server serves it: a share of the whole level, the
+   * basis `weightUsed` is on (PL-063). Never the set's share of the pillar, which is another
+   * number on another basis.
+   */
+  weight: string;
   /** The weight the pass used, after redistribution. */
   weightUsed: string;
+  weightUsedTone: WeightUsedTone;
   /** What it added to the total, signed, because a contribution can be nothing. */
   pointsAdded: string;
 }
@@ -41,10 +50,13 @@ export function scoresByAttribute(
         typeof row.normalised_score === "number"
           ? String(row.normalised_score)
           : ABSENT,
+      weight:
+        typeof row.weight === "number" ? formatPercentage(row.weight) : ABSENT,
       weightUsed:
         typeof row.effective_weight === "number"
           ? formatPercentage(row.effective_weight)
           : ABSENT,
+      weightUsedTone: weightUsedTone(row),
       pointsAdded:
         typeof row.contribution === "number"
           ? formatSigned(row.contribution, 1)
@@ -52,6 +64,25 @@ export function scoresByAttribute(
     });
   }
   return readings;
+}
+
+/**
+ * How the weight used is tinted (PL-073): `moved` (teal) where redistribution moved it more than
+ * {@link SAME_WEIGHT} points from the weight, `missing` (amber) where the attribute had no
+ * figure in use and so took nothing, `plain` otherwise -- including where either weight is
+ * absent, because a tint on nothing would be a claim about nothing.
+ */
+export type WeightUsedTone = "plain" | "moved" | "missing";
+
+/** Within this many points the two weights are the same number, rounded. */
+const SAME_WEIGHT = 0.6;
+
+export function weightUsedTone(row: AttributeScore): WeightUsedTone {
+  if (typeof row.weight !== "number" || typeof row.effective_weight !== "number") {
+    return "plain";
+  }
+  if (row.normalised_score === null && row.effective_weight === 0) return "missing";
+  return Math.abs(row.effective_weight - row.weight) > SAME_WEIGHT ? "moved" : "plain";
 }
 
 /**

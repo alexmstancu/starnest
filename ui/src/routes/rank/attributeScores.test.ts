@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { figureInUse, scoresByAttribute } from "./attributeScores";
+import { figureInUse, scoresByAttribute, weightUsedTone } from "./attributeScores";
 
 describe("what each attribute put into the total", () => {
   it("reads all three figures off one row", () => {
@@ -7,6 +7,7 @@ describe("what each attribute put into the total", () => {
       {
         attribute: "country.rent",
         normalised_score: 73,
+        weight: 11.25,
         effective_weight: 12.5,
         contribution: 9.125,
       },
@@ -14,7 +15,9 @@ describe("what each attribute put into the total", () => {
 
     expect(readings.get("country.rent")).toEqual({
       score: "73",
+      weight: "11.3%",
       weightUsed: "12.5%",
+      weightUsedTone: "moved",
       pointsAdded: "+9.1",
     });
   });
@@ -47,9 +50,25 @@ describe("what each attribute put into the total", () => {
 
     expect(readings.get("country.rent")).toEqual({
       score: "—",
+      weight: "—",
       weightUsed: "—",
+      weightUsedTone: "plain",
       pointsAdded: "—",
     });
+  });
+
+  /**
+   * PL-063. **Weight is the server's declared share of the level, never the set's share of the
+   * pillar**, so it sits on the basis Weight used sits on, and the two differ only where a
+   * missing figure's weight was spread.
+   */
+  it("reads the weight the server declared, on the basis of the weight used", () => {
+    const readings = scoresByAttribute([
+      { attribute: "country.rent", weight: 12.5, effective_weight: 12.5 },
+    ]);
+
+    expect(readings.get("country.rent")?.weight).toBe("12.5%");
+    expect(readings.get("country.rent")?.weightUsed).toBe("12.5%");
   });
 
   it("has nothing for a candidate whose detail has not arrived", () => {
@@ -80,6 +99,7 @@ describe("what the In use column says about one figure", () => {
     {
       attribute: "country.rent",
       normalised_score: 73,
+      weight: 12.5,
       effective_weight: 12.5,
       contribution: 9.125,
     },
@@ -89,7 +109,13 @@ describe("what the In use column says about one figure", () => {
   it("gives the pass's reading to the active figure of an attribute the set scores", () => {
     expect(figureInUse(active, true, readings)).toEqual({
       inUse: "scored",
-      reading: { score: "73", weightUsed: "12.5%", pointsAdded: "+9.1" },
+      reading: {
+        score: "73",
+        weight: "12.5%",
+        weightUsed: "12.5%",
+        weightUsedTone: "plain",
+        pointsAdded: "+9.1",
+      },
     });
   });
 
@@ -145,7 +171,13 @@ describe("what the In use column says about one figure", () => {
   it("calls a figure scored, with the pass's reading, when only the pass has said so", () => {
     expect(figureInUse(active, undefined, readings)).toEqual({
       inUse: "scored",
-      reading: { score: "73", weightUsed: "12.5%", pointsAdded: "+9.1" },
+      reading: {
+        score: "73",
+        weight: "12.5%",
+        weightUsed: "12.5%",
+        weightUsedTone: "plain",
+        pointsAdded: "+9.1",
+      },
     });
   });
 
@@ -164,5 +196,32 @@ describe("what the In use column says about one figure", () => {
         readings,
       ),
     ).toEqual({ inUse: "superseded", reading: null });
+  });
+});
+
+/**
+ * PL-073. **Teal says a share grew or shrank by redistribution; amber says the attribute had no
+ * figure in use and took nothing.** Within 0.6 points the two are the same number rounded.
+ */
+describe("the tint of the weight used", () => {
+  it("is plain where the weight used is the weight, or within 0.6 points of it", () => {
+    expect(weightUsedTone({ attribute: "a", normalised_score: 50, weight: 10, effective_weight: 10 })).toBe("plain");
+    expect(weightUsedTone({ attribute: "a", normalised_score: 50, weight: 10, effective_weight: 10.6 })).toBe("plain");
+    expect(weightUsedTone({ attribute: "a", normalised_score: 50, weight: 10, effective_weight: 9.4 })).toBe("plain");
+  });
+
+  it("is teal beyond 0.6 points, either way", () => {
+    expect(weightUsedTone({ attribute: "a", normalised_score: 50, weight: 10, effective_weight: 10.61 })).toBe("moved");
+    expect(weightUsedTone({ attribute: "a", normalised_score: 50, weight: 10, effective_weight: 9.39 })).toBe("moved");
+  });
+
+  it("is amber where nothing was in use and the weight used is nought", () => {
+    expect(weightUsedTone({ attribute: "a", normalised_score: null, weight: 10, effective_weight: 0 })).toBe("missing");
+  });
+
+  /** A row the server sent without its weights says nothing, rather than a tint on nothing. */
+  it("is plain where either weight is absent", () => {
+    expect(weightUsedTone({ attribute: "a", normalised_score: 50, effective_weight: 12 })).toBe("plain");
+    expect(weightUsedTone({ attribute: "a", weight: 12 })).toBe("plain");
   });
 });
