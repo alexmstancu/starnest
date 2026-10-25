@@ -1,7 +1,7 @@
 -- A saved ranking cites only its own candidate's evidence, and sits at its own level (PL-147:
 -- ST-13, SV-N6; PL-148: ST-14, SV-N7).
 --
--- depends: 0513-a-runs-evidence-is-pinned-to-its-items
+-- depends: 0522-an-outside-opinion-names-its-series
 --
 -- `0108` pinned a result to its evaluation's level and a reason to its evaluation's frozen
 -- criterion, and stopped there. So a contribution could cite another candidate's figure, or a
