@@ -532,6 +532,12 @@ export function useRunScreen(
         // have just changed, and a stale ceiling in a confirmation is worse than none.
         const settings = await fetchSettings();
         if (!stillAsked()) return;
+        // Nothing to confirm for nought items (PL-120): the estimate is shown, never armed.
+        if (planned.items_total === 0) {
+          setPlan(planned);
+          setPlanOrigin(origin);
+          return;
+        }
         setArmed({
           scope,
           plan: planned,

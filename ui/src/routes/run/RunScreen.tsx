@@ -23,6 +23,7 @@ import { describeFailures, failuresIn } from "./failureGroups";
 import { HeldButton } from "../../shell/HeldButton";
 import { ItemGroups } from "./ItemGroups";
 import { OpenToHandEntry } from "./OpenToHandEntry";
+import { RemedyLink } from "./RemedyLink";
 import { UnsourcedAttributes } from "./UnsourcedAttributes";
 import { type Progress, progressBar } from "./runProgress";
 import { scopeFor } from "./runScope";
@@ -126,7 +127,11 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
         </p>
       </header>
 
-      {run.refusal !== null && <RefusalNotice {...run.refusal} onDismiss={run.dismissFailure} />}
+      {run.refusal !== null && (
+        <RefusalNotice {...run.refusal} onDismiss={run.dismissFailure}>
+          <RemedyLink error={run.refusal.error} />
+        </RefusalNotice>
+      )}
 
       {/* **The card leads whenever there is a run, and the design settles why.** It was a
           full-size report with a table of every failure in it, which is what made leading with
@@ -522,8 +527,10 @@ function GapEstimate({
         />
       </dl>
 
+      {/* No confirmation is ever offered for nothing (PL-120): the server refuses such an
+          estimate, and a plan of nought items is not one to start either way. */}
       {armed === null
-        ? onStart !== undefined && (
+        ? onStart !== undefined && plan.items_total > 0 && (
             // The one filled button in the application. The design reserves the primary for
             // the action a screen exists to take, and this screen exists to start a run.
             <HeldButton

@@ -12,6 +12,7 @@ import {
   fetchCriteriaSets,
   fetchRanking,
   fetchRun,
+  planRun,
   renameCriteriaSet,
   replaceHousehold,
   replaceSettings,
@@ -20,6 +21,7 @@ import {
   setCompoundRuleApplication,
   setMatchRuleEnforcement,
   restoreCriteriaSet,
+  startRun,
   updateCriterionRule,
   updateDataSource,
   type CriterionRule,
@@ -897,6 +899,49 @@ describe("the mock criteria sets", () => {
           },
         ],
       },
+    ]);
+  });
+});
+
+/** PL-120. The plan and the start refuse a scope with nothing to ask, by the server's reasons. */
+describe("the mock's estimate with nothing to ask", () => {
+  async function refused(act: () => Promise<unknown>): Promise<[number | null, string, unknown]> {
+    const error = (await act().catch((thrown: unknown) => thrown)) as ApiError;
+    return [error.status, error.code, error.details?.["reason"]];
+  }
+
+  it("refuses an empty selection as an empty scope, at the plan and at the start", async () => {
+    const empty = { level: "country", pairs: [] };
+
+    expect(await refused(() => planRun(empty))).toEqual([409, "nothing_to_fetch", "empty_scope"]);
+    expect(await refused(() => startRun(empty))).toEqual([409, "nothing_to_fetch", "empty_scope"]);
+  });
+
+  it("refuses a sweep with every fetching source switched off", async () => {
+    await updateDataSource("eurostat", { is_enabled: false });
+
+    expect(await refused(() => planRun({ level: "country" }))).toEqual([
+      409,
+      "nothing_to_fetch",
+      "no_source_switched_on",
+    ]);
+  });
+
+  it("asks a paid source only when the scope names attributes", async () => {
+    await updateDataSource("eurostat", { is_enabled: false });
+    await updateDataSource("llm", { is_enabled: true });
+    const pair = { candidate: "country.malta", attribute: "country.homicide_rate" };
+
+    expect(await refused(() => planRun({ level: "country" }))).toEqual([
+      409,
+      "nothing_to_fetch",
+      "no_source_switched_on",
+    ]);
+    const plan = await planRun({ level: "country", pairs: [pair, pair] });
+    expect([plan.items_total, plan.llm_call_count, plan.by_source]).toEqual([
+      1,
+      1,
+      [{ data_source: "llm", items: 1 }],
     ]);
   });
 });

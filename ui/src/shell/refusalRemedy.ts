@@ -40,14 +40,28 @@ const REMEDIES: Record<string, Remedy> = {
 /** An invalid rule is a setting to blame only when its anchor stands above the score range. */
 const ANCHOR_ABOVE_THE_RANGE: Remedy = { label: "Set it in Configure", path: "/configure" };
 
+/**
+ * An estimate with nothing to ask is lifted in Configure only for some of its reasons (PL-120):
+ * a source switched off, at Source priority, and the refetch age. An empty selection or a scope
+ * no source answers is not a setting to blame.
+ */
+const NOTHING_TO_FETCH: Readonly<Record<string, Remedy>> = {
+  no_source_switched_on: { label: "Open Source priority in Configure", path: "/configure" },
+  sources_switched_off: { label: "Open Source priority in Configure", path: "/configure" },
+  still_fresh: { label: "Change it in Configure", path: "/configure" },
+};
+
 export function remedyFor(
   code: string,
   details: Readonly<Record<string, unknown>> = {},
 ): Remedy | null {
+  const reason = typeof details["reason"] === "string" ? details["reason"] : "";
   const remedy =
-    code === "invalid_criterion" && details["reason"] === "anchor_above_scale"
+    code === "invalid_criterion" && reason === "anchor_above_scale"
       ? ANCHOR_ABOVE_THE_RANGE
-      : REMEDIES[code];
+      : code === "nothing_to_fetch"
+        ? NOTHING_TO_FETCH[reason]
+        : REMEDIES[code];
   // A remedy pointing at a route the shell does not have would render a dead link.
   if (!remedy || !findRouteByPath(remedy.path)) return null;
   return remedy;

@@ -21,6 +21,22 @@ describe("the way out of a refusal", () => {
     });
   });
 
+  /** PL-120. A switched-off source is lifted at Source priority, a fresh scope at the refetch age. */
+  it.each([
+    ["no_source_switched_on", "Open Source priority in Configure"],
+    ["sources_switched_off", "Open Source priority in Configure"],
+    ["still_fresh", "Change it in Configure"],
+  ])("sends nothing to fetch for %s to Configure", (reason, label) => {
+    expect(remedyFor("nothing_to_fetch", { reason })).toEqual({ label, path: "/configure" });
+  });
+
+  it.each(["empty_scope", "nothing_answerable", undefined])(
+    "offers nothing for nothing to fetch for %s, which no setting lifts",
+    (reason) => {
+      expect(remedyFor("nothing_to_fetch", reason === undefined ? {} : { reason })).toBeNull();
+    },
+  );
+
   it("offers nothing for a comparison refused for any other reason (PL-007)", () => {
     expect(remedyFor("invalid_comparison")).toBeNull();
   });

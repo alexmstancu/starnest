@@ -35,6 +35,7 @@ import {
   RUN_ITEMS,
   RUN_REUSES,
   RUN_PLAN,
+  PAID_RUN_PLAN,
   SETTINGS,
   STARTED_RUN,
   STARTED_RUN_DETAIL,
@@ -102,6 +103,71 @@ let nextEvaluationId = 1;
 let researchSpend: { researched_at: string; cost_eur: number }[] = [];
 /** When a stopped run records that somebody asked. Fixed, so a test can assert on it. */
 const STOPPED_AT = "2026-09-12T09:00:06Z";
+
+/** A plan's or a start's scope, as a request sends it. */
+interface ScopeAsked {
+  level?: string;
+  candidates?: string[] | null;
+  attributes?: string[] | null;
+  pairs?: { candidate: string; attribute: string }[] | null;
+}
+
+/**
+ * The sources a run over `scope` would ask, as the server settles them: those switched on that
+ * fetch (manual entry is no adapter), and one that charges only when the scope names attributes.
+ */
+function sourcesAsked(scope: ScopeAsked): DataSource[] {
+  const namesAttributes = scope.attributes != null || scope.pairs != null;
+  return dataSources.filter(
+    (source) =>
+      source.is_enabled &&
+      (source.source_kind === "structured" || (source.source_kind === "llm" && namesAttributes)),
+  );
+}
+
+function nothingToFetch(reason: string, more: Record<string, unknown> = {}): Response {
+  return HttpResponse.json(
+    { code: "nothing_to_fetch", message: `nothing to ask: ${reason}`, details: { reason, ...more } },
+    { status: 409 },
+  );
+}
+
+/**
+ * The refusal a scope with nothing to ask meets, in the server's order: an empty scope first,
+ * then no source to ask. **Still fresh is not modelled**: the mock keeps no retrieval dates to
+ * judge freshness by, so a test that needs that refusal serves it.
+ */
+function nothingToFetchIn(scope: ScopeAsked): Response | null {
+  if (scope.pairs?.length === 0 || scope.candidates?.length === 0 || scope.attributes?.length === 0) {
+    return nothingToFetch("empty_scope");
+  }
+  if (sourcesAsked(scope).length === 0) return nothingToFetch("no_source_switched_on");
+  return null;
+}
+
+/** What the paid fixture prices one call at, so a mock plan's ceiling derives from it. */
+const EUR_PER_PAID_CALL = PAID_RUN_PLAN.estimated_cost_eur / PAID_RUN_PLAN.llm_call_count;
+
+/**
+ * The estimate of a scope. **Exact pairs are counted**, one item each, asked of every source the
+ * run would ask; a rectangle or the whole level is the shipped plan.
+ */
+function planOf(scope: ScopeAsked): components["schemas"]["RunPlan"] {
+  if (scope.pairs == null) return RUN_PLAN;
+  const items = new Set(scope.pairs.map((pair) => `${pair.candidate}|${pair.attribute}`)).size;
+  return planOver(items, sourcesAsked(scope));
+}
+
+function planOver(items: number, sources: readonly DataSource[]): components["schemas"]["RunPlan"] {
+  const paidCalls = sources.some((source) => source.source_kind === "llm") ? items : 0;
+  return {
+    items_total: items,
+    llm_call_count: paidCalls,
+    estimated_cost_eur: paidCalls * EUR_PER_PAID_CALL,
+    by_source: sources.map((source) => ({ data_source: source.id, items })),
+    ...(paidCalls > 0 ? { estimate_basis: PAID_RUN_PLAN.estimate_basis } : {}),
+  };
+}
 
 export function resetMockData(): void {
   criteriaSetDetails = makeCriteriaSetDetails();
@@ -945,13 +1011,17 @@ export const handlers = [
     });
   }),
 
-  http.post(`${BASE}/data-acquisition-runs/plan`, () =>
-    HttpResponse.json(RUN_PLAN),
-  ),
+  // **Refused at the estimate when nothing would be asked** (PL-120), with the reason the server
+  // gives, and the start refuses the same scope the same way.
+  http.post(`${BASE}/data-acquisition-runs/plan`, async ({ request }) => {
+    const scope = (await request.json().catch(() => ({}))) as ScopeAsked;
+    return nothingToFetchIn(scope) ?? HttpResponse.json(planOf(scope));
+  }),
 
-  http.post(`${BASE}/data-acquisition-runs`, () =>
-    HttpResponse.json(STARTED_RUN, { status: 202 }),
-  ),
+  http.post(`${BASE}/data-acquisition-runs`, async ({ request }) => {
+    const scope = (await request.json().catch(() => ({}))) as ScopeAsked;
+    return nothingToFetchIn(scope) ?? HttpResponse.json(STARTED_RUN, { status: 202 });
+  }),
 
   http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
     HttpResponse.json(runDetailOf(Number(params["runId"]))),

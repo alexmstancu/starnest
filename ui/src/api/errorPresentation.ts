@@ -109,7 +109,7 @@ export const WORDS = {
   spend_cap_not_set: unset(
     "This acquisition could spend money, and no spend cap is set. Set one in Configure, or accept an uncapped run.",
   ),
-  nothing_to_fetch: refusal("Nothing in that scope can be fetched from a switched-on source."),
+  nothing_to_fetch: refusal(nothingToFetch),
   selection_not_in_run: refusal((details) => {
     const outside = Array.isArray(details["pairs"]) ? details["pairs"].length : 0;
     if (outside === 0) return "The selection names items this acquisition cannot retry, so nothing was retried.";
@@ -223,6 +223,27 @@ function cannotBeRanked(details: Details): string {
       return "A pillar in this criteria set carries weight with nothing in it to score.";
     default:
       return "This criteria set cannot rank anything at this level as it stands.";
+  }
+}
+
+/** Why an estimate, a start or a retry would ask nothing, from `details.reason` (PL-120). */
+function nothingToFetch(details: Details): string {
+  switch (details["reason"]) {
+    case "empty_scope":
+      return "Nothing is selected, so there is nothing to ask.";
+    case "still_fresh": {
+      const days = whole(details["refetch_older_than_days"]);
+      const within = days === null ? "recently" : `within the last ${days} ${days === 1 ? "day" : "days"}`;
+      return `Every value in it was fetched ${within}, so there is nothing to ask again. Lower “Refetch data older than” in Configure to ask anyway.`;
+    }
+    case "no_source_switched_on":
+      return "Every data source it may ask is switched off, so there is nothing to ask.";
+    case "nothing_answerable":
+      return "No switched-on source can answer anything in it, so there is nothing to ask.";
+    case "sources_switched_off":
+      return "Every source that failed on these items is now switched off or no longer answers them, so a retry would ask nobody.";
+    default:
+      return "Nothing in that scope can be fetched from a switched-on source.";
   }
 }
 

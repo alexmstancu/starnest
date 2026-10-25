@@ -21,7 +21,7 @@ import {
   STARTED_RUN_DETAIL,
   STORED_VALUES,
 } from "../../mocks/fixtures";
-import type { Holdings, Run, RunDetail } from "../../api/endpoints";
+import { type Holdings, type Run, type RunDetail, updateDataSource } from "../../api/endpoints";
 import { formatMoney } from "../../format/display";
 import { mockServer } from "../../mocks/server";
 import {
@@ -171,6 +171,120 @@ describe("estimating a run", () => {
     await estimate();
 
     expect(await screen.findByRole("alert")).toHaveTextContent("The server refused this.");
+  });
+});
+
+/**
+ * PL-120, UF-081. **An estimate with nothing to ask is refused at once**, with its reason in
+ * words and, where a setting lifts it, the way there -- never "Items 0" beside a live Start.
+ */
+describe("an estimate with nothing to ask", () => {
+  async function everySourceOff(): Promise<void> {
+    for (const source of ["eurostat", "llm"]) await updateDataSource(source, { is_enabled: false });
+  }
+
+  it("is refused with every source switched off, pointing at Source priority", async () => {
+    await everySourceOff();
+    renderShell("/acquire");
+
+    await estimate();
+
+    const refusal = await screen.findByRole("alert");
+    expect(refusal).toHaveTextContent("The estimate did not go through");
+    expect(refusal).toHaveTextContent(
+      "Every data source it may ask is switched off, so there is nothing to ask.",
+    );
+    expect(
+      within(refusal).getByRole("link", { name: "Open Source priority in Configure" }),
+    ).toHaveAttribute("href", "/configure");
+    expect(screen.queryByRole("button", { name: /start this acquisition/i })).toBeNull();
+    expect(screen.queryByText("Items")).toBeNull();
+  });
+
+  it("offers no confirmation for a remedy card with every source switched off", async () => {
+    await everySourceOff();
+    serveGaps({
+      not_reached: [
+        { candidate: "country.spain", attribute: "country.total_tax_rate_effective", data_acquisition_run: null },
+      ],
+    });
+    renderShell("/acquire");
+
+    await userEvent.click(await screen.findByRole("button", { name: "Ask 1 not reached" }));
+
+    expect(await screen.findByText(/every data source it may ask is switched off/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();
+  });
+
+  it("says the scope is still fresh, and points at the refetch setting", async () => {
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/plan`, () =>
+        HttpResponse.json(
+          {
+            code: "nothing_to_fetch",
+            message: "SENTINEL_MESSAGE",
+            details: { reason: "still_fresh", refetch_older_than_days: 30 },
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderShell("/acquire");
+
+    await estimate();
+
+    const refusal = await screen.findByRole("alert");
+    expect(refusal).toHaveTextContent(/fetched within the last 30 days/);
+    expect(refusal).not.toHaveTextContent("SENTINEL_MESSAGE");
+    expect(within(refusal).getByRole("link", { name: "Change it in Configure" })).toBeInTheDocument();
+  });
+
+  it("offers no way out where no setting lifts it", async () => {
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/plan`, () =>
+        HttpResponse.json(
+          { code: "nothing_to_fetch", message: "SENTINEL_MESSAGE", details: { reason: "nothing_answerable", candidates: 32 } },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderShell("/acquire");
+
+    await estimate();
+
+    const refusal = await screen.findByRole("alert");
+    expect(refusal).toHaveTextContent(/no switched-on source can answer anything in it/i);
+    expect(within(refusal).queryByRole("link")).toBeNull();
+  });
+
+  it("never arms a confirmation over nought items", async () => {
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/plan`, () =>
+        HttpResponse.json({ ...RUN_PLAN, items_total: 0, by_source: [] }),
+      ),
+    );
+    const { result } = renderHook(() => useRunScreen("country"));
+    await waitFor(() => expect(result.current.current?.id).toBe(7));
+
+    act(() => result.current.propose({ level: "country" }, "not_reached"));
+    await waitFor(() => expect(result.current.plan?.items_total).toBe(0));
+
+    expect(result.current.armed).toBeNull();
+  });
+
+  it("offers no Start for a plan of nought items", async () => {
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/plan`, () =>
+        HttpResponse.json({ ...RUN_PLAN, items_total: 0, by_source: [] }),
+      ),
+    );
+    renderShell("/acquire");
+
+    await estimate();
+
+    const card = within(screen.getByRole("region", { name: /an acquisition over every country/i }));
+    expect(await card.findByText("Items")).toBeInTheDocument();
+    expect(card.queryByRole("button", { name: /start this acquisition/i })).toBeNull();
   });
 });
 

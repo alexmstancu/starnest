@@ -160,6 +160,52 @@ describe("the wording table", () => {
     expect(presentError(over).message).toMatch(/4 comparators.*limit is 3/i);
   });
 
+  /** PL-120. Each reason an estimate has nothing to ask is worded from the reason alone. */
+  it.each([
+    ["empty_scope", {}, "Nothing is selected, so there is nothing to ask."],
+    [
+      "still_fresh",
+      { refetch_older_than_days: 30 },
+      "Every value in it was fetched within the last 30 days, so there is nothing to ask again. Lower “Refetch data older than” in Configure to ask anyway.",
+    ],
+    [
+      "no_source_switched_on",
+      {},
+      "Every data source it may ask is switched off, so there is nothing to ask.",
+    ],
+    [
+      "nothing_answerable",
+      { candidates: 32 },
+      "No switched-on source can answer anything in it, so there is nothing to ask.",
+    ],
+    [
+      "sources_switched_off",
+      {},
+      "Every source that failed on these items is now switched off or no longer answers them, so a retry would ask nobody.",
+    ],
+    [undefined, {}, "Nothing in that scope can be fetched from a switched-on source."],
+  ])("words nothing to fetch for the reason %s", (reason, more, sentence) => {
+    const refused = new ApiError({
+      code: "nothing_to_fetch",
+      message: "SENTINEL_MESSAGE",
+      status: 409,
+      details: { ...(reason === undefined ? {} : { reason }), ...more },
+    });
+
+    expect(presentError(refused).message).toBe(sentence);
+  });
+
+  it("words a still-fresh refusal with no age without inventing one", () => {
+    const refused = new ApiError({
+      code: "nothing_to_fetch",
+      message: "SENTINEL_MESSAGE",
+      status: 409,
+      details: { reason: "still_fresh" },
+    });
+
+    expect(presentError(refused).message).toMatch(/^Every value in it was fetched recently,/);
+  });
+
   it("counts the selected items a retry cannot reach, and names none of them", () => {
     const outside = new ApiError({
       code: "selection_not_in_run",
