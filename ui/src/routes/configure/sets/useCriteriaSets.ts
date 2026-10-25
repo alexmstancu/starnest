@@ -85,6 +85,13 @@ export function useCriteriaSets(options: {
   const [newName, setNewName] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  // **A rename ends with its set** (PL-033): an undo or another tab can take the set away with
+  // the field open, and a field kept open in state would reopen if the set came back. Adjusted
+  // while rendering, as React advises for state that follows a prop.
+  if (renaming !== null && !selection.criteriaSets.some((set) => set.id === renaming)) {
+    setRenaming(null);
+    setRenameDraft("");
+  }
   const [failure, setFailure] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [createRefused, setCreateRefused] = useState(false);

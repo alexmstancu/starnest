@@ -1,8 +1,12 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { getResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createCriteriaSet, deleteCriteriaSet } from "../../../api/endpoints";
+import {
+  createCriteriaSet,
+  deleteCriteriaSet,
+  restoreCriteriaSet,
+} from "../../../api/endpoints";
 import { handlers } from "../../../mocks/handlers";
 import { mockServer } from "../../../mocks/server";
 import {
@@ -501,6 +505,34 @@ describe("renaming a set from the keyboard", () => {
       expect(document.activeElement).toBe(kept.getByRole("button", { name: "Rename" })),
     );
     expect(requests.sent).toHaveLength(0);
+  });
+
+  it("closes a rename whose set an undo removes, and puts focus on the next row's Rename", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await create("Partner");
+    const history = await historyPanel();
+    await history.findByText("Created Partner");
+    await user.click((await row("Partner")).getByRole("button", { name: "Rename" }));
+    const field = screen.getByRole("textbox", { name: "New name for Partner" });
+    expect(document.activeElement).toBe(field);
+
+    // A click that leaves focus where it is, in the field, as a set deleted elsewhere would.
+    fireEvent.click(history.getByRole("button", { name: "Undo this" }));
+
+    await waitFor(() => expect(field.isConnected).toBe(false));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(screen.getByRole("listitem", { name: "Remote only" })).getByRole("button", {
+          name: "Rename",
+        }),
+      ),
+    );
+    // Closed for good: the set coming back does not reopen a field nobody is using.
+    await restoreCriteriaSet("partner");
+    await user.click((await row("Default")).getByRole("button", { name: "Duplicate" }));
+    await row("Partner");
+    expect(screen.queryByRole("textbox", { name: "New name for Partner" })).toBeNull();
   });
 });
 

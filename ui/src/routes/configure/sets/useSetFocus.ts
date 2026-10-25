@@ -39,6 +39,25 @@ export function useSetFocus(
     renameField.current?.select();
   }, [renaming]);
 
+  // **A rename whose set went away** -- undone, or deleted elsewhere -- took its field with it,
+  // so focus goes where a deletion would send it, on the Rename slot.
+  const renamed = useRef<{ criteriaSetId: string; index: number } | null>(null);
+  useEffect(() => {
+    const was = renamed.current;
+    renamed.current =
+      renaming === null
+        ? null
+        : { criteriaSetId: renaming, index: criteriaSets.findIndex((set) => set.id === renaming) };
+    if (was === null || criteriaSets.some((set) => set.id === was.criteriaSetId)) return;
+    const successor = criteriaSets[was.index] ?? criteriaSets[was.index - 1];
+    refocusIfLost(
+      successor && document.getElementById(buttonId(successor.id, "rename")),
+      newName.current,
+    );
+    // `buttonId` is derived from `prefix`, which never changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renaming, criteriaSets]);
+
   useEffect(() => {
     const awaited = pending.current;
     if (awaited === null) return;
