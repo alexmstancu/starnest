@@ -6,20 +6,22 @@ LOCK TABLE attribute, criterion IN SHARE ROW EXCLUSIVE MODE;
 
 UPDATE attribute SET lifecycle_status = 'active' WHERE id = 'country.crime_safety_index';
 
+-- **Every set that judges the homicide rate gets the crime index back** (TL-N5), not only the
+-- shipped one: a duplicated set kept its homicide criterion, and the attribute's delete below
+-- then failed on it.
 INSERT INTO criterion (
     criteria_set, attribute, pillar, value_type, is_scored, weight, weight_locked, goal,
     normalisation_method, blocks_if_missing)
-SELECT 'local_employment', a.id, a.pillar, a.value_type, old.is_scored, old.weight,
+SELECT old.criteria_set, a.id, a.pillar, a.value_type, old.is_scored, old.weight,
        old.weight_locked, 'maximise',
        old.normalisation_method, old.blocks_if_missing
 FROM   attribute AS a
 JOIN   criterion AS old
-       ON old.criteria_set = 'local_employment' AND old.attribute = 'country.homicide_rate'
+       ON old.attribute = 'country.homicide_rate'
 WHERE  a.id = 'country.crime_safety_index'
 ON CONFLICT (criteria_set, attribute) DO NOTHING;
 
-DELETE FROM criterion
-WHERE criteria_set = 'local_employment' AND attribute = 'country.homicide_rate';
+DELETE FROM criterion WHERE attribute = 'country.homicide_rate';
 DELETE FROM attribute_source_priority WHERE attribute = 'country.homicide_rate';
 DELETE FROM attribute_quantity_parameter WHERE attribute = 'country.homicide_rate';
 DELETE FROM attribute WHERE id = 'country.homicide_rate';

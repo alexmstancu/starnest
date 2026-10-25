@@ -16,6 +16,7 @@ from urllib.parse import urlparse, urlunparse
 
 import psycopg
 from yoyo import get_backend, read_migrations
+from yoyo.migrations import topological_sort
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = BACKEND_ROOT.parent / "storage" / "migrations"
@@ -50,17 +51,26 @@ def yoyo(*arguments: str, database: str) -> None:
 
 
 def apply_through(revision: str, *, database: str) -> None:
-    """Every migration numbered up to and including `revision`, as the head reached it.
+    """Every migration yoyo applies up to and including `revision`, in the order it applies them.
 
     Not `yoyo apply --revision`, which applies only what `revision` depends on: a `depends:`
     line names one predecessor, often far back, so that would leave out tables the migrations
-    numbered between them had built by the time this one ran.
+    before it had built by the time this one ran. Nor every migration numbered below it: yoyo
+    orders by `depends:`, and `0412` and `0413` come after `0441`, so a numbered prefix holds
+    a state no database was ever in.
     """
     backend = get_backend(database.replace("postgresql://", "postgresql+psycopg://", 1))
     try:
-        wanted = read_migrations(str(MIGRATIONS)).filter(lambda migration: migration.id <= revision)
+        ordered = [migration.id for migration in topological_sort(read_migrations(str(MIGRATIONS)))]
+        wanted = set(ordered[: ordered.index(revision) + 1])
         with backend.lock():
-            backend.apply_migrations(backend.to_apply(wanted))
+            backend.apply_migrations(
+                backend.to_apply(
+                    read_migrations(str(MIGRATIONS)).filter(
+                        lambda migration: migration.id in wanted
+                    )
+                )
+            )
     finally:
         backend.connection.close()
 
