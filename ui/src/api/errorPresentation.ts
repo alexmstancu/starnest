@@ -110,6 +110,12 @@ export const WORDS = {
     "This acquisition could spend money, and no spend cap is set. Set one in Configure, or accept an uncapped run.",
   ),
   nothing_to_fetch: refusal("Nothing in that scope can be fetched from a switched-on source."),
+  selection_not_in_run: refusal((details) => {
+    const outside = Array.isArray(details["pairs"]) ? details["pairs"].length : 0;
+    if (outside === 0) return "The selection names items this acquisition cannot retry, so nothing was retried.";
+    const items = outside === 1 ? "One selected item is" : `${outside} selected items are`;
+    return `${items} not among what this acquisition can retry, so nothing was retried.`;
+  }),
   run_already_in_flight: refusal((details) => {
     const run = whole(details["run"]);
     return run === null

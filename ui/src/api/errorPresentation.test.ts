@@ -160,6 +160,24 @@ describe("the wording table", () => {
     expect(presentError(over).message).toMatch(/4 comparators.*limit is 3/i);
   });
 
+  it("counts the selected items a retry cannot reach, and names none of them", () => {
+    const outside = new ApiError({
+      code: "selection_not_in_run",
+      message: "SENTINEL_MESSAGE",
+      status: 409,
+      details: {
+        items: "failures",
+        pairs: [
+          { candidate: "country.portugal", attribute: "country.homicide_rate" },
+          { candidate: "country.spain", attribute: "country.homicide_rate" },
+        ],
+      },
+    });
+
+    expect(presentError(outside).message).toMatch(/2 selected items are not among/);
+    expect(presentError(outside).message).not.toMatch(/portugal|homicide/i);
+  });
+
   it("says an identifier in the request is malformed when the server says so", () => {
     const malformed = new ApiError({
       code: "invalid_request",

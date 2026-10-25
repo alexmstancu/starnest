@@ -1,6 +1,6 @@
 -- A run records what it was for: a sweep, a retry, an ask-again or a scoped run (PL-127, D34).
 --
--- depends: 0513-a-runs-evidence-is-pinned-to-its-items
+-- depends: 0523-a-saved-ranking-cites-only-its-own-and-sits-at-its-level
 --
 -- The history worded every run as the rectangle its two scope lists span, so a retry of two
 -- failed items over two candidates read like a four-item pass, and nothing said whether a run

@@ -733,6 +733,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/data-acquisition-runs/{runId}/retry/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Estimate a retry without executing it
+         * @description The dry run of `retryRun` for the same body (`reqs.md` 6.3, 6.4): the items it would ask
+         *     about, what each source would be asked -- only the sources that failed, only about the
+         *     selected pairs each failed on -- and what it may cost. Narrowed and refused exactly as
+         *     the retry is, so the estimate confirmed is of the retry that happens. Has no side effects.
+         */
+        post: operations["planRetry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/holdings": {
         parameters: {
             query?: never;
@@ -998,7 +1021,7 @@ export interface components {
          * @description Every refusal this API makes, by code. A client words each one and branches on it; `message` is for a person reading the API directly and may change.
          * @enum {string}
          */
-        ErrorCode: "not_found" | "candidate_not_found" | "household_not_configured" | "weights_all_locked" | "criteria_set_exists" | "criteria_set_name_taken" | "no_default_criteria_set" | "nothing_to_retry" | "nothing_to_ask_again" | "spend_cap_not_set" | "nothing_to_fetch" | "run_already_in_flight" | "llm_not_configured" | "manual_entry_not_permitted" | "manual_entry_switched_off" | "invalid_value" | "conflicting_observation" | "answer_recorded_by_a_person" | "score_scale_not_set" | "score_scale_below_anchors" | "comparator_limit_not_set" | "comparator_limit_exceeded" | "invalid_comparison" | "invalid_criteria_set" | "invalid_criterion" | "unknown_place" | "invalid_reference_period" | "invalid_request" | "cannot_be_scored" | "cannot_be_ranked" | "invalid_match_rule_result" | "unknown_data_source" | "unknown_scope" | "invalid_source_order";
+        ErrorCode: "not_found" | "candidate_not_found" | "household_not_configured" | "weights_all_locked" | "criteria_set_exists" | "criteria_set_name_taken" | "no_default_criteria_set" | "nothing_to_retry" | "nothing_to_ask_again" | "spend_cap_not_set" | "nothing_to_fetch" | "run_already_in_flight" | "selection_not_in_run" | "llm_not_configured" | "manual_entry_not_permitted" | "manual_entry_switched_off" | "invalid_value" | "conflicting_observation" | "answer_recorded_by_a_person" | "score_scale_not_set" | "score_scale_below_anchors" | "comparator_limit_not_set" | "comparator_limit_exceeded" | "invalid_comparison" | "invalid_criteria_set" | "invalid_criterion" | "unknown_place" | "invalid_reference_period" | "invalid_request" | "cannot_be_scored" | "cannot_be_ranked" | "invalid_match_rule_result" | "unknown_data_source" | "unknown_scope" | "invalid_source_order";
         /** @description The span the data describes. Start equals end for a single day. */
         ReferencePeriod: {
             /** Format: date */
@@ -1436,6 +1459,27 @@ export interface components {
             candidates?: string[] | null;
             /** @description Null means every attribute at the level. */
             attributes?: string[] | null;
+            /** @description In a request only: the exact items to plan or start, instead of the rectangle the two lists span. Sent with `candidates` or `attributes` it is refused as malformed (422); a pair naming an id that exists at no row is `unknown_scope`. Names its attributes, so a source that charges may be asked. A run read back states its items through `items_total`, and leaves this out. */
+            pairs?: components["schemas"]["RunPair"][] | null;
+        };
+        /** @description One item, a candidate and an attribute, as a selection names it. */
+        RunPair: {
+            candidate: string;
+            attribute: string;
+        };
+        /** @description Why a plan, a start or a retry would ask nothing. */
+        NothingToFetchDetails: {
+            /**
+             * @description empty_scope: the scope names no candidate, no attribute or no pair (or the level has no candidate). still_fresh: every attribute named was fetched within the refetch age. no_source_switched_on: no source the run may ask is on -- every source is off, or the only ones on charge and a run that names no attribute does not ask them. nothing_answerable: the sources on answer nothing in the scope. sources_switched_off: a retry whose every failure belongs to a source now off or no longer declaring it.
+             * @enum {string}
+             */
+            reason: "empty_scope" | "still_fresh" | "no_source_switched_on" | "nothing_answerable" | "sources_switched_off";
+            /** @description The refetch age, with still_fresh. */
+            refetch_older_than_days?: number;
+            /** @description Candidates in scope, with nothing_answerable. */
+            candidates?: number;
+            /** @description Attributes in scope, with nothing_answerable. */
+            attributes?: number;
         };
         RunPlan: {
             items_total: number;
@@ -1469,6 +1513,11 @@ export interface components {
              */
             stop_requested_at?: string | null;
             triggered_by?: string;
+            /**
+             * @description What the request that opened the run was for: `sweep` (the whole level), `retry` (another run's failures), `ask_again` (another run's unanswered or not-reached items) or `scoped` (named candidates, attributes or pairs). With `items_total` and `scope_candidates` a history words a pair-scoped run as "N items over C candidates" rather than as the rectangle its lists span. Null for a run opened before purposes were recorded: not recorded, never a guess.
+             * @enum {string|null}
+             */
+            purpose?: "sweep" | "retry" | "ask_again" | "scoped" | null;
             /** Format: date-time */
             started_at: string;
             /** Format: date-time */
@@ -2789,18 +2838,19 @@ export interface operations {
             /**
              * @description Three refusals share this status and are told apart by `code`.
              *
-             *     `nothing_to_fetch` — nothing in the scope can be asked: every source is switched off,
-             *     none answers what was named, or everything named is still fresh under the refetch
-             *     setting. The message names which.
+             *     `nothing_to_fetch` — nothing in the scope can be asked, refused exactly as `planRun`
+             *     refuses it; `details` is a `NothingToFetchDetails` saying why.
              *
              *     `spend_cap_not_set` — the run would ask a source that charges and no spend cap is
              *     set. Set `run_spend_cap_eur`, or send `accept_uncapped_spend: true` to accept an
              *     uncapped run; nothing invents a ceiling on the household's behalf (`reqs.md` 6.3).
              *
              *     `run_already_in_flight` — a run is already going, and one household runs one pass
-             *     at a time (`reqs.md` 10). `details.run` names the run, where the database said which
-             *     one: poll it rather than starting another. This is what stops a client timeout, which
-             *     is indistinguishable from a failure, from being retried into a second concurrent run.
+             *     at a time (`reqs.md` 10). `details.run` is that run's id, so a screen can open it
+             *     ("Open acquisition N") and poll it rather than starting another; it is left out only
+             *     if the run ended between the refusal and the read that names it. This is what stops a
+             *     client timeout, which is indistinguishable from a failure, from being retried into a
+             *     second concurrent run.
              */
             409: {
                 headers: {
@@ -2833,6 +2883,23 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunPlan"];
+                };
+            };
+            /**
+             * @description `nothing_to_fetch` — the plan has no items, so there is nothing to confirm. Refused
+             *     here rather than estimated at zero, and `startRun` refuses the same scope the same
+             *     way, so no confirmation is ever offered for a run that cannot open. `details` is a
+             *     `NothingToFetchDetails`: its `reason` lets a screen word the remedy (source priority
+             *     for `no_source_switched_on`, the refetch setting for `still_fresh`).
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        details: components["schemas"]["NothingToFetchDetails"];
+                    };
                 };
             };
             422: components["responses"]["InvalidRequest"];
@@ -2903,6 +2970,8 @@ export interface operations {
                      * @enum {string}
                      */
                     items?: "failed" | "unanswered";
+                    /** @description The items selected, exactly. Each must be one the run holds as the kind `items` names -- a failure for `failed`, an unanswered or not-reached item for `unanswered` -- and the retry asks only about these, and only the sources that failed on each. Absent means every item of that kind. Estimate the same body with `planRetry` first. */
+                    pairs?: components["schemas"]["RunPair"][];
                     /**
                      * @description Agreement to a retry that can spend with no ceiling, for this request only. A retry asks the sources that failed, which is where a paid source is most likely to be, so it takes the same acceptance a first run takes rather than inheriting the one already given.
                      * @default false
@@ -2933,11 +3002,66 @@ export interface operations {
              *     `nothing_to_fetch` — every failure belongs to a source now switched off or no longer
              *     declaring the attribute, so the retry would ask nobody. The message names the remedy.
              *
-             *     `run_already_in_flight` — a run is already going; poll it rather than starting
-             *     another.
+             *     `run_already_in_flight` — a run is already going; `details.run` is its id, as for
+             *     `startRun`. Poll it rather than starting another.
+             *
+             *     `selection_not_in_run` — `pairs` names an item the run does not hold as that kind
+             *     (a pair it never failed on, say). Refused whole rather than narrowed, so nothing
+             *     runs that was not confirmed; `details.items` is the kind and `details.pairs` the
+             *     items outside it.
              *
              *     `spend_cap_not_set` — the retry would reach a source that charges and no spend cap
              *     is set.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["InvalidRequest"];
+        };
+    };
+    planRetry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /**
+                     * @default failed
+                     * @enum {string}
+                     */
+                    items?: "failed" | "unanswered";
+                    /** @description As for `retryRun`. */
+                    pairs?: components["schemas"]["RunPair"][];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunPlan"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /**
+             * @description The refusals `retryRun` would make, by the same `code` and `details`:
+             *     `nothing_to_retry`, `nothing_to_ask_again`, `nothing_to_fetch`,
+             *     `selection_not_in_run`, and `run_already_in_flight` -- an estimate is not offered for
+             *     a retry that would be refused, and a run still going has failures that are not final.
              */
             409: {
                 headers: {
