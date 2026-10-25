@@ -405,6 +405,21 @@ class TestAFieldNobodyDeclaredIsRefused:
         _assert_refused_naming("putMatchRuleResult", response, ["body", "reference_period", "ends"])
         assert await _gate_answers_recorded(api) == before, "nothing was recorded"
 
+    @pytest.mark.parametrize("page", ["javascript:alert(1)", "/route", "gov.uk", "https://"])
+    async def test_a_gate_answer_s_page_that_is_not_a_web_address_is_refused_naming_it(
+        self, api: httpx.AsyncClient, page: str
+    ) -> None:
+        """PL-152: the rule hand-typed citations follow, at the index the page was typed at."""
+        before = await _gate_answers_recorded(api)
+
+        response = await api.put(
+            A_GATE_ANSWER_PATH,
+            json={"match_result": "matching", "citations": ["https://europa.eu", page]},
+        )
+
+        _assert_refused_naming("putMatchRuleResult", response, ["body", "citations", "1"])
+        assert await _gate_answers_recorded(api) == before, "nothing was recorded"
+
     async def test_a_misspelled_manual_value_field_is_refused_and_nothing_is_stored(
         self, api: httpx.AsyncClient
     ) -> None:

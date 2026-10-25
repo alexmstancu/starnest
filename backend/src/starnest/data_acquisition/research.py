@@ -16,13 +16,20 @@ The port is declared here and implemented in `data_sources/llm/`, like every oth
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Collection, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Protocol
 
 from starnest.candidates import Candidate, CandidateId
-from starnest.data import DataSourceId, MatchResult, MatchRule, MatchRuleId, MatchRuleResult
+from starnest.data import (
+    DataSourceId,
+    MatchResult,
+    MatchRule,
+    MatchRuleId,
+    MatchRuleResult,
+    is_web_address,
+)
 from starnest.data_acquisition.estimate import NOTHING, Estimate
 from starnest.data_acquisition.spend import CostMeter, refuse_unless_capped
 
@@ -213,6 +220,11 @@ async def research_gates(
         found = await researcher.research(rule=rule, candidate=candidate, citizenships=citizenships)
         meter.spent(cost_eur=found.cost_eur, calls=found.calls)
         await _ledger_what_it_billed(ledger, rule, candidate, found)
+        found, dropped = _without_pages_that_are_not_web_addresses(found)
+        if dropped:
+            _log.warning(
+                "%s for %s: dropped %s", rule.id, candidate.id, _pages_not_web_addresses(dropped)
+            )
 
         if not found.citations:
             # The whole point of asking is the pages. An answer with none is an opinion, and an
@@ -221,9 +233,12 @@ async def research_gates(
             # **The researcher's own reason goes with it** (NEW-16). A model that could not be
             # reached, or billed for an empty answer, cited nothing as well, and a refusal saying
             # only that hid the one thing a person could act on.
+            why = found.reason or "no reason given"
+            if dropped:
+                why += f"; {_pages_not_web_addresses(dropped)} {_was_or_were(dropped)} dropped"
             refusals.append(
                 f"{rule.name} for {candidate.name}: the model cited nothing, so there is "
-                f"nothing to confirm ({found.reason or 'no reason given'})"
+                f"nothing to confirm ({why})"
             )
             continue
 
@@ -286,6 +301,28 @@ async def _ledger_what_it_billed(
             cost_eur=found.cost_eur,
         )
     )
+
+
+def _without_pages_that_are_not_web_addresses(found: Researched) -> tuple[Researched, int]:
+    """What the researcher found, citing only real pages, and how many it cited that were not.
+
+    **Dropped, never failed** (PL-152). The record cites pages, and a person typing one that is
+    not a web address is refused at the body; a model cannot be asked again for free, so its
+    other pages are kept and the answer goes on. Should nothing be left, the answer cited
+    nothing, and is refused as such with the count.
+    """
+    pages = tuple(page for page in found.citations if is_web_address(page))
+    return replace(found, citations=pages), len(found.citations) - len(pages)
+
+
+def _pages_not_web_addresses(count: int) -> str:
+    if count == 1:
+        return "1 page that is not a web address"
+    return f"{count} pages that are not web addresses"
+
+
+def _was_or_were(count: int) -> str:
+    return "was" if count == 1 else "were"
 
 
 def _proposal_from(rule: MatchRule, candidate: Candidate, found: Researched) -> MatchRuleResult:

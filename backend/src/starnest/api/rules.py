@@ -38,6 +38,7 @@ from starnest.data import (
     ReferencePeriod,
     UnknownDataSourceError,
     UnknownMatchRuleError,
+    WebAddress,
 )
 from starnest.data_acquisition import (
     NoResearcherConfiguredError,
@@ -87,7 +88,7 @@ class MatchRuleResultInputBody(NullRefusingBody):
     retrieval_date: datetime | None = None
     # An override is a reason and a date together, and an empty reason is neither (BE-21).
     override_reason: str | None = Field(default=None, min_length=1)
-    citations: tuple[str, ...] = ()
+    citations: tuple[WebAddress, ...] = ()
 
 
 class PendingProposalBody(BaseModel):

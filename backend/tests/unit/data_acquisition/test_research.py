@@ -258,6 +258,37 @@ class TestWhatItStores:
         assert store.recorded == []
         assert "cited nothing" in outcome.refusals[0]
 
+    async def test_a_page_that_is_not_a_web_address_is_dropped_and_the_rest_kept(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """PL-152. The record cites pages, and "see the ministry" is not one; one bad page must
+        not cost the answer the good pages beside it."""
+        found = Researched(
+            match_result=MatchResult.NOT_MATCHING,
+            reason="the official page says so",
+            citations=("javascript:alert(1)", A_PAGE, "gov.uk", "https://example.gov/b c"),
+        )
+
+        outcome, store = await researching(StubResearcher(found))
+
+        (proposal,) = store.recorded
+        assert proposal.citations == (A_PAGE,)
+        assert outcome.refusals == ()
+        assert "dropped 3 pages that are not web addresses" in caplog.text
+
+    async def test_an_answer_whose_pages_are_all_dropped_is_stored_nowhere(self) -> None:
+        """Nothing left to show is nothing cited, and the refusal says why."""
+        found = Researched(
+            match_result=MatchResult.NOT_MATCHING, reason="I read it", citations=("/route",)
+        )
+
+        outcome, store = await researching(StubResearcher(found))
+
+        assert store.recorded == []
+        (refusal,) = outcome.refusals
+        assert "cited nothing" in refusal
+        assert "1 page that is not a web address was dropped" in refusal
+
     async def test_a_refusal_carries_the_researchers_own_reason(self) -> None:
         """NEW-16. A model that could not be reached cited nothing too, and a refusal saying
         only that hid the reason a person would act on -- here, to try again later."""

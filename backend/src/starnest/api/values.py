@@ -11,11 +11,11 @@ from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Any
 
 from fastapi import APIRouter, Query
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict
 
 from starnest.api.dependencies import Candidates, Catalog, Rates, Values
 from starnest.api.errors import built_from_the_request
@@ -33,6 +33,7 @@ from starnest.data import (
     ReferencePeriod,
     Value,
     ValueListing,
+    WebAddress,
     a_manual_value,
     confirm_published,
     editions_of,
@@ -73,17 +74,6 @@ class ValueBody(BaseModel):
 class ValuesBody(BaseModel):
     items: tuple[ValueBody, ...]
     total: int
-
-
-WEB_ADDRESS = r"^[Hh][Tt][Tt][Pp][Ss]?://[^\s/?#]+[^\s]*$"
-"""A full web address: http or https, a host, no whitespace (PL-086).
-
-A pattern rather than Pydantic's `HttpUrl`, which rewrites what it accepts -- "https://a.eu"
-comes back as "https://a.eu/" -- and a citation is stored exactly as typed. Declared on the body
-so the generated contract carries it, and equal to the design's by test.
-"""
-
-WebAddress = Annotated[str, StringConstraints(pattern=WEB_ADDRESS)]
 
 
 class ManualValueBody(BaseModel):

@@ -30,7 +30,8 @@ from starnest.api.errors import ErrorBody
 from starnest.api.evaluations import SaveEvaluationBody
 from starnest.api.household import HouseholdBody, HouseholdInputBody
 from starnest.api.rules import MatchRuleResultInputBody
-from starnest.api.values import WEB_ADDRESS, ManualValueBody
+from starnest.api.values import ManualValueBody
+from starnest.data import WEB_ADDRESS
 
 DESIGN = Path(__file__).resolve().parents[4] / "docs" / "openapi.yaml"
 
@@ -302,3 +303,33 @@ class TestAHandTypedCitation:
         sent = A_TYPED_VALUE | {"citations": ["https://example.com", citation]}
 
         assert _refusal(ManualValueBody, sent) == [("string_pattern_mismatch", ("citations", 1))]
+
+
+class TestAGateAnswersPage:
+    """PL-152. A gate answer cites pages as a typed figure does, so the same rule holds: a full
+    web address or nothing, refused at the index it was typed at."""
+
+    def test_the_page_rule_is_the_contracts(self) -> None:
+        design = yaml.safe_load(DESIGN.read_text())["components"]["schemas"]
+        items = design["MatchRuleResultInput"]["properties"]["citations"]["items"]
+
+        assert items["pattern"] == WEB_ADDRESS
+
+    @pytest.mark.parametrize("page", ["https://www.gov.uk/skilled-worker-visa", "HTTP://a.eu/x"])
+    def test_a_web_address_is_taken_exactly_as_typed(self, page: str) -> None:
+        body = MatchRuleResultInputBody.model_validate(
+            {"match_result": "matching", "citations": [page]}
+        )
+
+        assert body.citations == (page,)
+
+    @pytest.mark.parametrize(
+        "page",
+        ["javascript:alert(1)", "/skilled-worker-visa", "gov.uk", "https://", "https://gov.uk/a b"],
+    )
+    def test_anything_else_is_refused_where_it_was_typed(self, page: str) -> None:
+        sent = {"match_result": "matching", "citations": ["https://gov.uk", page]}
+
+        assert _refusal(MatchRuleResultInputBody, sent) == [
+            ("string_pattern_mismatch", ("citations", 1))
+        ]

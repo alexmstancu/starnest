@@ -1770,6 +1770,7 @@ components:
         citations:
           default: []
           items:
+            pattern: ^[Hh][Tt][Tt][Pp][Ss]?://[^\s/?#]+[^\s]*$
             type: string
           title: Citations
           type: array

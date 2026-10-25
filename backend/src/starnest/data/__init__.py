@@ -152,6 +152,7 @@ from starnest.data.value import (
     ValueListing,
     restates,
 )
+from starnest.data.web_address import WEB_ADDRESS, WebAddress, is_web_address
 
 __all__ = [
     "EURO",
@@ -160,6 +161,7 @@ __all__ = [
     "MANUAL_ENTRY_DEFAULT_CONFIDENCE",
     "PAYLOAD_CLASSES",
     "SHARE_SUM_TOLERANCE",
+    "WEB_ADDRESS",
     "ActiveValue",
     "ActiveValueKey",
     "AllowedRange",
@@ -249,10 +251,12 @@ __all__ = [
     "ValueStore",
     "ValueType",
     "ValueTypeMismatchError",
+    "WebAddress",
     "a_manual_value",
     "confirm_published",
     "derive_confidence",
     "editions_of",
+    "is_web_address",
     "payload_class_for",
     "reorder_keeping_tiers",
     "restates",
