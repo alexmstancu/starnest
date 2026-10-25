@@ -818,7 +818,7 @@ describe("the run history", () => {
     // Read as words, not as an identifier. The sidebar's last-run panel has always done this;
     // the history table printed the raw enum, which was the inconsistency rather than the rule.
     expect(
-      within(history).getByText("halted on spend cap"),
+      within(history).getByText("halted at the spend cap"),
     ).toBeInTheDocument();
   });
 
@@ -3061,12 +3061,41 @@ describe("the acquisition card the design asks for", () => {
     ).toBeInTheDocument();
   });
 
-  it("says a run was stopped early rather than that it finished", async () => {
-    await aRunWith("halted_on_spend_cap");
+  /**
+   * UF-083 (PL-122): **a stop the reader asked for is not a halt at the cap**, in the heading, the
+   * pill, the outcome and the history's chip alike -- words and tone from one map, never the
+   * wire's status.
+   */
+  it.each([
+    ["halted_on_spend_cap", "Halted at the spend cap", "halted at the spend cap", "warn"],
+    ["halted_by_user", "Stopped by you", "halted by you", "plain"],
+  ])("says how a %s run stopped, in words and in its own tone", async (status, heading, word, tone) => {
+    const card = within(await aRunWith(status));
 
-    expect(
-      screen.getByRole("heading", { name: "Stopped early" }),
-    ).toBeInTheDocument();
+    expect(card.getByRole("heading", { name: heading })).toBeInTheDocument();
+    const pill = card.getByText(word, { selector: ".pill" });
+    expect(pill).toHaveClass(`pill--${tone}`);
+    expect(card.queryByText(/_/)).toBeNull();
+  });
+
+  it("words a run's status in the history as the card does", async () => {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, () =>
+        HttpResponse.json({
+          items: [
+            { ...RUNS[0]!, run_status: "halted_by_user" },
+            { ...RUNS[1]!, run_status: "halted_on_spend_cap" },
+          ],
+          total: 2,
+        }),
+      ),
+    );
+    renderShell("/acquire");
+    const history = within(await screen.findByRole("table"));
+
+    expect(history.getByText("halted by you")).toHaveClass("chip--run-plain");
+    expect(history.getByText("halted at the spend cap")).toHaveClass("chip--run-warn");
+    expect(history.queryByText(/halted.by.user|_/)).toBeNull();
   });
 
   /**
@@ -3141,13 +3170,14 @@ describe("the acquisition card the design asks for", () => {
     renderShell("/acquire");
 
     await screen.findByText(/no acquisition has been started yet/i);
-    // Scoped to the card's four possible headings: the screen's own "Acquire" heading and the
+    // Scoped to the card's possible headings: the screen's own "Acquire" heading and the
     // history's "Every acquisition so far" both match a bare /acquisition/.
     expect(screen.queryByRole("heading", { name: "Acquiring now" })).toBeNull();
     expect(
       screen.queryByRole("heading", { name: "Acquisition finished" }),
     ).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Stopped early" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Stopped by you" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Halted at the spend cap" })).toBeNull();
     expect(
       screen.queryByRole("heading", { name: "Acquisition did not finish" }),
     ).toBeNull();

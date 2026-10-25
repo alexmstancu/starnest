@@ -33,6 +33,7 @@ import { ROUTES } from "../navigation/routes";
 import { LoadedRegion } from "./LoadedRegion";
 import { SavedRankingRow } from "./SavedRankingRow";
 import { useSelection } from "./SelectionContext";
+import { RunStatusChip } from "./RunStatusChip";
 import { Skeleton } from "./Skeleton";
 import { levelsWithCandidates, noRankingBecause } from "./candidateCounts";
 import { useScreenChanges } from "./useScreenChanges";
@@ -461,7 +462,12 @@ function LastAcquisitionCard({ summary }: { summary: ShellSummary }) {
             <p className="panel__hint">No acquisition yet.</p>
           ) : (
             <dl className="stat-list">
-              <Stat label="Status" value={run.run_status.replace(/_/g, " ")} />
+              <div className="stat">
+                <dt className="stat__label">Status</dt>
+                <dd className="stat__value">
+                  <RunStatusChip status={run.run_status} />
+                </dd>
+              </div>
               <Stat label="Started" value={formatDateTime(run.started_at)} />
               <Stat label="Cost" value={formatMoney(run.cost_eur, "EUR")} />
             </dl>

@@ -3564,34 +3564,6 @@ select.field__control {
   color: var(--colour-warning);
 }
 
-/* A run's four states. `running` takes the accent because it is the one that is still
-   happening; `completed` reads as the success it is. */
-.chip--completed {
-  background: var(--colour-success-surface);
-  border-color: var(--colour-success-border);
-  color: var(--colour-success);
-}
-
-.chip--running,
-.chip--planned {
-  background: var(--colour-accent-surface);
-  border-color: var(--colour-accent-border);
-  color: var(--colour-accent);
-}
-
-/* Halted is not failed: the run stopped at the cap and kept everything it had fetched. */
-.chip--halted_on_spend_cap {
-  background: var(--colour-warning-surface);
-  border-color: var(--colour-warning-border);
-  color: var(--colour-warning);
-}
-
-.chip--failed {
-  background: var(--colour-danger-surface);
-  border-color: var(--colour-danger-border);
-  color: var(--colour-danger);
-}
-
 .chip--neutral {
   background: var(--colour-surface-hair);
   border-color: var(--colour-border-strong);
@@ -4337,9 +4309,10 @@ select.field__control {
 }
 
 /* ── A status as a pill ───────────────────────────────────────────────────────
-   Four run statuses, three tones. `halted_on_spend_cap` is neither success nor failure -- it
-   stopped on purpose and kept everything it had written -- so it warns rather than borrowing
-   one of the other two. `running` is the accent, because it is the only one still moving. */
+   A run's tone, from `shell/runStatus.ts`. `halted_on_spend_cap` is neither success nor
+   failure -- it stopped on purpose and kept everything it had written -- so it warns rather than
+   borrowing one of the other two. `running` is the accent, because it is the only one still
+   moving. `plain`, a stop the reader asked for, is with the run chips at the end. */
 .pill {
   padding: 2px 9px;
   border-radius: 10px;
@@ -5123,4 +5096,39 @@ select.field__control {
 .answer-row--pending {
   background: var(--colour-accent-surface);
   font-size: var(--font-size-small);
+}
+
+/* ── A run's status, one vocabulary (PL-122) ──────────────────────────────────
+   The tones of `shell/runStatus.ts`, for the history's chip and the sidebar's, matching the
+   card's pill. `plain` is a stop the reader asked for: neutral, as the design has it, so it
+   never reads as the amber halt at the spend cap. */
+.chip--run-live {
+  background: var(--colour-accent-surface);
+  border-color: var(--colour-accent-border);
+  color: var(--colour-accent);
+}
+
+.chip--run-good {
+  background: var(--colour-success-surface);
+  border-color: var(--colour-success-border);
+  color: var(--colour-success);
+}
+
+.chip--run-warn {
+  background: var(--colour-warning-surface);
+  border-color: var(--colour-warning-border);
+  color: var(--colour-warning);
+}
+
+.chip--run-bad {
+  background: var(--colour-danger-surface);
+  border-color: var(--colour-danger-border);
+  color: var(--colour-danger);
+}
+
+.chip--run-plain,
+.pill--plain {
+  background: var(--colour-surface-sunken);
+  border-color: var(--colour-border);
+  color: var(--colour-text-strong);
 }

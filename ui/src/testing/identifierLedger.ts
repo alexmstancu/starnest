@@ -30,13 +30,7 @@ export const IDENTIFIER_LEDGER = {
   "Configure, the server unreachable": [],
 
   "Acquire, a run card with its gaps open, a diff chosen and hand entry open": [],
-  "Acquire, a run stopped by hand": [
-    {
-      identifier: "halted_by_user",
-      where: "the run card's status pill and its outcome sentence",
-      removedBy: "PL-122 (C09)",
-    },
-  ],
+  "Acquire, a run stopped by hand": [],
   "Acquire, no spend cap set": [],
   "Acquire, nothing acquired yet": [],
   "Acquire, the server unreachable": [],

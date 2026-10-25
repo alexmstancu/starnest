@@ -15,6 +15,8 @@ import {
 import type { RouteDefinition } from "../../navigation/routes";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { RefusalNotice } from "../../shell/RefusalNotice";
+import { describeRunStatus } from "../../shell/runStatus";
+import { RunStatusChip } from "../../shell/RunStatusChip";
 import { useSelection } from "../../shell/SelectionContext";
 import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
 import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
@@ -712,7 +714,7 @@ function RunProgress({ progress }: { progress?: Progress | null }) {
  * item lists at all**. The items belong to the cards below that can act on them, and a reader
  * who wants to know which country failed is a reader who wants to retry it.
  *
- * **The heading is the state**: "Acquiring now", "Acquisition finished", "Stopped early". The
+ * **The heading is the state** (`shell/runStatus.ts`): "Acquiring now", "Stopped by you". The
  * acquisition's number goes in the line under it rather than in the heading, because the state
  * is what a reader arriving mid-run is checking and the number is what they already clicked.
  *
@@ -784,9 +786,9 @@ function RunReport({
     >
       <header className="acquisition__head">
         <h2 ref={heading} tabIndex={-1} className="acquisition__heading">
-          {headingFor(state)}
+          {describeRunStatus(state).heading}
         </h2>
-        <RunStatusPill status={state} />
+        <RunStatusPill state={state} />
       </header>
 
       {/* **Which acquisition, and what it was asked to cover.** The scope is stored expanded,
@@ -860,29 +862,6 @@ function focusIsHereOrLost(element: HTMLElement | null): boolean {
 }
 
 /**
- * What to call the card, which is the run's state and not its number.
- *
- * **Four states where the design has three.** The prototype knows `running`, `cancelled` and
- * finished; a real run can also have died, and "Acquisition finished" over a run whose process
- * was killed would be the screen's worst habit -- a plausible sentence that is not true.
- */
-function headingFor(state: string): string {
-  switch (state) {
-    case "running":
-    case "stopping":
-    case "planned":
-      return "Acquiring now";
-    case "halted_by_user":
-    case "halted_on_spend_cap":
-      return "Stopped early";
-    case "failed":
-      return "Acquisition did not finish";
-    default:
-      return "Acquisition finished";
-  }
-}
-
-/**
  * **Held while a start is in flight** (UIR-G1). Opening a past run claims the card, and a start
  * that succeeded meanwhile would then never reach it -- the next Start refused as in flight.
  */
@@ -938,9 +917,7 @@ function RunHistory({
                   two counts rather than a list of what it covered. */}
               <td className="run-scope">{describeScope(run)}</td>
               <td>
-                <span className={`chip chip--${run.run_status}`}>
-                  {run.run_status.replace(/_/g, " ")}
-                </span>
+                <RunStatusChip status={run.run_status} />
               </td>
               <td className="col--right">
                 {formatCount(run.items_completed)}
@@ -966,29 +943,12 @@ function RunHistory({
 }
 
 /**
- * The run's status as a word, coloured by what it means.
- *
- * **Four statuses, three tones.** A run halted on the spend cap is neither a success nor a
- * failure -- it stopped on purpose and kept everything it had written -- so it reads as a
- * warning rather than borrowing either of the other two.
+ * The run's state as a word, coloured by what it means (`shell/runStatus.ts`, PL-122): the same
+ * words and tone as the history's chip and the sidebar.
  */
-function RunStatusPill({ status }: { status: string }) {
-  return <span className={`pill pill--${statusTone(status)}`}>{status}</span>;
-}
-
-function statusTone(status: string): string {
-  switch (status) {
-    case "completed":
-      return "good";
-    case "failed":
-      return "bad";
-    case "halted_on_spend_cap":
-    case "halted_by_user":
-    case "stopping":
-      return "warn";
-    default:
-      return "live";
-  }
+function RunStatusPill({ state }: { state: string }) {
+  const { word, tone } = describeRunStatus(state);
+  return <span className={`pill pill--${tone}`}>{word}</span>;
 }
 
 /**

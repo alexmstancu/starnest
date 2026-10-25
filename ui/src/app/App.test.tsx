@@ -387,7 +387,7 @@ describe("what the sidebar reads again", () => {
     await user.click(screen.getByRole("link", { name: "Compare" }));
 
     await waitFor(() =>
-      expect(figure("Last acquisition", "Status")).toHaveTextContent("halted by user"),
+      expect(figure("Last acquisition", "Status")).toHaveTextContent("halted by you"),
     );
     expect(figure("Last acquisition", "Started")).toHaveTextContent(
       formatDateTime(newer.started_at),
