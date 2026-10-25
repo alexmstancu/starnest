@@ -4,7 +4,6 @@ import type { Idle, Read } from "../../../api/read";
 import {
   type Clearing,
   describeClearance,
-  describeGateEffect,
   type RuleResult,
   describeCompoundEffect,
   describeGateEffect,
