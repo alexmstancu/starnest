@@ -46,14 +46,18 @@ def statements_of(migration: str) -> list[str]:
 
 
 async def roll_back_and_undo(
-    url: str, migration: str, started: asyncio.Future[int], probe: Probe | None
+    url: str,
+    migrations: tuple[str, ...],
+    started: asyncio.Future[int],
+    probe: Probe | None,
 ) -> list[tuple[Any, ...]]:
-    """Runs a rollback as yoyo does, reads `probe` before it ends, and always rolls it back."""
+    """Runs rollbacks in order as yoyo does, reads `probe` before they end, and always rolls
+    them back."""
     async with await psycopg.AsyncConnection.connect(url, autocommit=True) as connection:
         await connection.execute("SET lock_timeout = '10s'")
         started.set_result(connection.info.backend_pid)
         async with connection.transaction(force_rollback=True):
-            for statement in statements_of(migration):
+            for statement in (s for migration in migrations for s in statements_of(migration)):
                 async with connection.transaction():
                     await connection.execute(statement)
             if probe is None:
@@ -79,13 +83,19 @@ async def waits_for_a_lock(url: str, pid: int) -> bool:
 
 
 async def race(
-    url: str, migration: str, writer: psycopg.AsyncConnection, probe: Probe | None = None
+    url: str,
+    migration: str,
+    writer: psycopg.AsyncConnection,
+    probe: Probe | None = None,
+    *,
+    before: tuple[str, ...] = (),
 ) -> list[tuple[Any, ...]] | psycopg.Error:
-    """Starts the rollback while `writer` holds a write open, commits that write once the
-    rollback is waiting for it, and returns what the rollback came to: the rows `probe` read
-    inside it, or the error it ended on."""
+    """Starts the rollback -- after the rollbacks `before` it, in the same transaction, as a
+    descending `make rollback` reaches it -- while `writer` holds a write open, commits that
+    write once the rollback is waiting for it, and returns what the rollback came to: the rows
+    `probe` read inside it, or the error it ended on."""
     started: asyncio.Future[int] = asyncio.get_running_loop().create_future()
-    rollback = asyncio.create_task(roll_back_and_undo(url, migration, started, probe))
+    rollback = asyncio.create_task(roll_back_and_undo(url, (*before, migration), started, probe))
     try:
         waited = await waits_for_a_lock(url, await asyncio.wait_for(started, PATIENCE_SECONDS))
         await writer.commit()
@@ -108,6 +118,10 @@ class Refusal:
     write: str
     undo: str
     says: str
+    #: Rollbacks that run first, where the head holds what one of them undoes.
+    before: tuple[str, ...] = ()
+    #: Tells apart two refusals of one rollback.
+    case: str = ""
 
 
 def a_figure_for(attribute: str) -> str:
@@ -170,6 +184,49 @@ REFUSALS = (
         write=a_figure_for("country.school_system_quality"),
         undo="DELETE FROM value WHERE attribute = 'country.school_system_quality'",
         says="cannot roll back 0478: 1 figures are stored",
+    ),
+    # A gate another set still enforces: `0494`'s rollback disarms only `local_employment`'s, so
+    # it runs first, as it does on the way down (P95).
+    Refusal(
+        migration="0493-liechtensteins-quota-is-a-gate",
+        before=("0494-the-liechtenstein-quota-gate-is-armed",),
+        case="enforced",
+        write="INSERT INTO criteria_set_match_rule (criteria_set, match_rule, is_enforced) "
+        "VALUES ('remote_only', 'li_eea_quota', true)",
+        undo="DELETE FROM criteria_set_match_rule "
+        "WHERE criteria_set = 'remote_only' AND match_rule = 'li_eea_quota'",
+        says="cannot roll back 0493: the li_eea_quota gate is still enforced by 1 criteria "
+        "set(s) (remote_only)",
+    ),
+    # A person's anchor or matching threshold hangs off the criterion these lift (P95).
+    Refusal(
+        migration="0478-school-quality-is-a-quantity",
+        case="anchored",
+        write="INSERT INTO criterion_scale_anchor (criterion, input_value, score) "
+        "SELECT id, 500, 100 FROM criterion WHERE criteria_set = 'remote_only' "
+        "AND attribute = 'country.school_system_quality'",
+        undo="DELETE FROM criterion_scale_anchor WHERE criterion IN (SELECT id FROM criterion "
+        "WHERE attribute = 'country.school_system_quality')",
+        says="cannot roll back 0478: 1 criteria on country.school_system_quality carry scale "
+        "anchors or a matching threshold (sets: remote_only)",
+    ),
+    Refusal(
+        migration="0492-child-benefit-is-a-share-of-the-wage",
+        case="thresholded",
+        write="INSERT INTO criterion_threshold_range (criterion, value_type, min_value) "
+        "SELECT id, value_type, 5 FROM criterion WHERE criteria_set = 'local_employment' "
+        "AND attribute = 'country.child_benefit_policy'",
+        undo="DELETE FROM criterion_threshold_range WHERE criterion IN (SELECT id FROM criterion "
+        "WHERE attribute = 'country.child_benefit_policy')",
+        says="cannot roll back 0492: 1 criteria on country.child_benefit_policy carry scale "
+        "anchors or a matching threshold (sets: local_employment)",
+    ),
+    # A figure for the retired house price ratio, which `0444`'s rollback retypes (P95).
+    Refusal(
+        migration="0444-house-price-ratio-stops-blocking",
+        write=a_figure_for("country.house_price_to_income_ratio"),
+        undo="DELETE FROM value WHERE attribute = 'country.house_price_to_income_ratio'",
+        says="cannot roll back 0444: 1 figures are stored",
     ),
     # A saved ranking's frozen rule list is recorded history 0507's rollback would drop (FU-A5).
     # Built in a `DO` block so the evaluation parent exists before its `evaluation_match_rule`
@@ -245,7 +302,11 @@ REFUSALS = (
 )
 
 
-@pytest.mark.parametrize("refusal", REFUSALS, ids=lambda refusal: refusal.migration[:4])
+@pytest.mark.parametrize(
+    "refusal",
+    REFUSALS,
+    ids=lambda refusal: "-".join(filter(None, (refusal.migration[:4], refusal.case))),
+)
 async def test_a_row_committed_while_a_rollback_waits_meets_its_refusal(
     refusal: Refusal, database_url: str
 ) -> None:
@@ -256,7 +317,7 @@ async def test_a_row_committed_while_a_rollback_waits_meets_its_refusal(
     async with await psycopg.AsyncConnection.connect(database_url) as writer:
         try:
             await writer.execute(refusal.write)
-            outcome = await race(database_url, refusal.migration, writer)
+            outcome = await race(database_url, refusal.migration, writer, before=refusal.before)
         finally:
             await writer.rollback()
             await writer.execute(refusal.undo)

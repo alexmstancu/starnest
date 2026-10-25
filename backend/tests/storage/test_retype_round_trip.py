@@ -58,6 +58,51 @@ def rules_on_the_house_price(url: str) -> list[tuple[object, ...]]:
         ).fetchall()
 
 
+def anchors_and_thresholds_on_the_house_price(url: str) -> list[tuple[object, ...]]:
+    with psycopg.connect(url) as connection:
+        return connection.execute(
+            "SELECT c.criteria_set, 'anchor', a.input_value, a.score::numeric, a.label "
+            "FROM criterion_scale_anchor a JOIN criterion c ON c.id = a.criterion "
+            "WHERE c.attribute = %(attribute)s "
+            "UNION ALL SELECT c.criteria_set, 'threshold', t.min_value, t.max_value, t.value_type "
+            "FROM criterion_threshold_range t JOIN criterion c ON c.id = t.criterion "
+            "WHERE c.attribute = %(attribute)s ORDER BY 1, 2, 3",
+            {"attribute": HOUSE_PRICE},
+        ).fetchall()
+
+
+def test_the_retype_keeps_the_anchors_and_the_threshold_both_ways(
+    database_before_the_retype: str,
+) -> None:
+    """Carried across rather than left in the way of the delete (P95, D69), and retyped with
+    the criterion they hang off."""
+    url = database_before_the_retype
+    with psycopg.connect(url) as connection:
+        connection.execute(
+            "INSERT INTO criterion_scale_anchor (criterion, input_value, score, label) "
+            "SELECT id, v.input, v.score, v.label FROM criterion, "
+            "(VALUES (4, 100, 'cheap'), (12, 0, NULL)) AS v (input, score, label) "
+            "WHERE attribute = %(attribute)s",
+            {"attribute": HOUSE_PRICE},
+        )
+        connection.execute(
+            "INSERT INTO criterion_threshold_range (criterion, value_type, max_value) "
+            "SELECT id, value_type, 10 FROM criterion WHERE attribute = %(attribute)s",
+            {"attribute": HOUSE_PRICE},
+        )
+    set_by_a_person = anchors_and_thresholds_on_the_house_price(url)
+    assert {row[4] for row in set_by_a_person if row[1] == "threshold"} == {"Ratio"}
+
+    yoyo("apply", "--revision", RETYPE, database=url)
+    retyped = anchors_and_thresholds_on_the_house_price(url)
+    assert retyped == [
+        (*row[:4], "Quantity") if row[1] == "threshold" else row for row in set_by_a_person
+    ]
+
+    yoyo("rollback", "--revision", RETYPE, database=url)
+    assert anchors_and_thresholds_on_the_house_price(url) == set_by_a_person
+
+
 def test_the_retype_keeps_every_rule_on_the_criterion_both_ways(
     database_before_the_retype: str,
 ) -> None:

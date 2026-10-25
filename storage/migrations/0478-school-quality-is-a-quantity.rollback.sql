@@ -28,7 +28,8 @@
 -- the retype met a raw foreign-key error rather than this refusal, and a set edit committed
 -- between the copy below and its delete was replaced by the older copy. SHARE ROW EXCLUSIVE
 -- waits for writes in flight and holds off new ones until this commits, while reads go on.
-LOCK TABLE value, candidate_attribute_score, criterion IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE value, candidate_attribute_score, criterion, criterion_scale_anchor,
+    criterion_threshold_range IN SHARE ROW EXCLUSIVE MODE;
 
 DO $$
 DECLARE
@@ -47,6 +48,31 @@ BEGIN
             'and the Index type this restores declares no bounds, so it can hold none of them. '
             '% saved-evaluation rows also read them. Restore from the backup make migrate took '
             'instead of forcing this.', stored, frozen;
+    END IF;
+END $$;
+
+-- **Refuses while a person's anchors or matching threshold hang off the criterion** (P95).
+-- They reference the criterion's id, which the lift below ends, and an Index criterion is
+-- normalised by rules of its own, so they cannot simply be carried across. They met a raw
+-- foreign-key error here before; now the refusal names the sets.
+DO $$
+DECLARE
+    ruled integer;
+    sets  text;
+BEGIN
+    SELECT count(DISTINCT judged.id), string_agg(DISTINCT judged.criteria_set, ', ')
+    INTO   ruled, sets
+    FROM   criterion AS judged
+    LEFT JOIN criterion_scale_anchor AS anchor ON anchor.criterion = judged.id
+    LEFT JOIN criterion_threshold_range AS threshold ON threshold.criterion = judged.id
+    WHERE  judged.attribute = 'country.school_system_quality'
+      AND  (anchor.criterion IS NOT NULL OR threshold.criterion IS NOT NULL);
+    IF ruled > 0 THEN
+        RAISE EXCEPTION
+            'cannot roll back 0478: % criteria on country.school_system_quality carry '
+            'scale anchors or a matching threshold (sets: %), which this rollback cannot '
+            'carry across the type change. Remove them in Configure (Criteria) and roll back '
+            'again, or restore from the backup make migrate took.', ruled, sets;
     END IF;
 END $$;
 

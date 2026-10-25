@@ -14,7 +14,8 @@
 -- the retype met a raw foreign-key error rather than this refusal, and a set edit committed
 -- between the copy below and its delete was replaced by the older copy. SHARE ROW EXCLUSIVE
 -- waits for writes in flight and holds off new ones until this commits, while reads go on.
-LOCK TABLE value, criterion IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE value, criterion, criterion_scale_anchor, criterion_threshold_range
+    IN SHARE ROW EXCLUSIVE MODE;
 
 DO $$
 DECLARE
@@ -27,6 +28,31 @@ BEGIN
             'cannot roll back 0492: % figures are stored for country.child_benefit_policy, '
             'and the Monetary type this restores cannot hold a percentage. Restore from the '
             'backup make migrate took instead of forcing this.', stored;
+    END IF;
+END $$;
+
+-- **Refuses while a person's anchors or matching threshold hang off the criterion** (P95).
+-- They reference the criterion's id, which the lift below ends, and a Monetary criterion is
+-- normalised by rules of its own, so they cannot simply be carried across. They met a raw
+-- foreign-key error here before; now the refusal names the sets.
+DO $$
+DECLARE
+    ruled integer;
+    sets  text;
+BEGIN
+    SELECT count(DISTINCT judged.id), string_agg(DISTINCT judged.criteria_set, ', ')
+    INTO   ruled, sets
+    FROM   criterion AS judged
+    LEFT JOIN criterion_scale_anchor AS anchor ON anchor.criterion = judged.id
+    LEFT JOIN criterion_threshold_range AS threshold ON threshold.criterion = judged.id
+    WHERE  judged.attribute = 'country.child_benefit_policy'
+      AND  (anchor.criterion IS NOT NULL OR threshold.criterion IS NOT NULL);
+    IF ruled > 0 THEN
+        RAISE EXCEPTION
+            'cannot roll back 0492: % criteria on country.child_benefit_policy carry '
+            'scale anchors or a matching threshold (sets: %), which this rollback cannot '
+            'carry across the type change. Remove them in Configure (Criteria) and roll back '
+            'again, or restore from the backup make migrate took.', ruled, sets;
     END IF;
 END $$;
 

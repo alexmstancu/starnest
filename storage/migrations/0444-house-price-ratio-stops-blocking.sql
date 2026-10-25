@@ -26,13 +26,35 @@
 -- **Locked first** (BE-A1): a set edit committed between the copy below and its delete was
 -- replaced by the older copy. SHARE ROW EXCLUSIVE waits for an edit in flight and holds off
 -- new ones until this commits, while reads go on.
-LOCK TABLE criterion IN SHARE ROW EXCLUSIVE MODE;
+LOCK TABLE criterion, criterion_scale_anchor, criterion_threshold_range
+    IN SHARE ROW EXCLUSIVE MODE;
 
 INSERT INTO unit (id, name) VALUES ('years_of_income', 'Years of income')
 ON CONFLICT (id) DO NOTHING;
 
 CREATE TEMPORARY TABLE held_criterion ON COMMIT DROP AS
 SELECT * FROM criterion WHERE attribute = 'country.house_price_to_income_ratio';
+
+-- **The anchors and the matching threshold come across too** (D69), as every other rule does
+-- (RE-3): they hang off the criterion's id, which the delete below ends, so they are held by
+-- set and put back on the criterion that replaces it. Left behind, they stopped the delete on
+-- their foreign keys; deleted, they would be a person's rules lost.
+CREATE TEMPORARY TABLE held_anchor ON COMMIT DROP AS
+SELECT judged.criteria_set, anchor.input_value, anchor.score, anchor.label
+FROM   criterion_scale_anchor AS anchor
+JOIN   criterion AS judged ON judged.id = anchor.criterion
+WHERE  judged.attribute = 'country.house_price_to_income_ratio';
+
+CREATE TEMPORARY TABLE held_threshold ON COMMIT DROP AS
+SELECT judged.criteria_set, threshold.min_value, threshold.max_value
+FROM   criterion_threshold_range AS threshold
+JOIN   criterion AS judged ON judged.id = threshold.criterion
+WHERE  judged.attribute = 'country.house_price_to_income_ratio';
+
+DELETE FROM criterion_scale_anchor
+WHERE  criterion IN (SELECT id FROM criterion WHERE attribute = 'country.house_price_to_income_ratio');
+DELETE FROM criterion_threshold_range
+WHERE  criterion IN (SELECT id FROM criterion WHERE attribute = 'country.house_price_to_income_ratio');
 
 DELETE FROM criterion WHERE attribute = 'country.house_price_to_income_ratio';
 DELETE FROM attribute_ratio_parameter WHERE attribute = 'country.house_price_to_income_ratio';
@@ -57,3 +79,15 @@ SELECT criteria_set, attribute, pillar, 'Quantity', breakdown_option, is_scored,
        weight_locked, goal, target_range_min, target_range_max, zero_score_below,
        zero_score_above, normalisation_method, reducer_mode, false
 FROM   held_criterion;
+
+INSERT INTO criterion_scale_anchor (criterion, input_value, score, label)
+SELECT judged.id, held.input_value, held.score, held.label
+FROM   held_anchor AS held
+JOIN   criterion AS judged
+       ON judged.criteria_set = held.criteria_set AND judged.attribute = 'country.house_price_to_income_ratio';
+
+INSERT INTO criterion_threshold_range (criterion, value_type, min_value, max_value)
+SELECT judged.id, judged.value_type, held.min_value, held.max_value
+FROM   held_threshold AS held
+JOIN   criterion AS judged
+       ON judged.criteria_set = held.criteria_set AND judged.attribute = 'country.house_price_to_income_ratio';

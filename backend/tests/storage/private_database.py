@@ -71,10 +71,16 @@ def private_name(database_url: str, purpose: str) -> str:
 
 @contextmanager
 def private_database(
-    database_url: str, purpose: str, *, revision: str | None = None, template: str | None = None
+    database_url: str,
+    purpose: str,
+    *,
+    revision: str | None = None,
+    template: str | None = None,
+    empty: bool = False,
 ) -> Iterator[str]:
     """A database of its own, copied from `template` if one is named, then migrated through
-    `revision`, or to the head when `revision` is None and there is no template."""
+    `revision`, or to the head when `revision` is None and there is no template -- or left
+    `empty`, for a test that brings migrations of its own."""
     name = private_name(database_url, purpose)
     copied_from = f' TEMPLATE "{urlparse(template).path.lstrip("/")}"' if template else ""
     with psycopg.connect(on(database_url, "postgres"), autocommit=True) as admin:
@@ -82,7 +88,9 @@ def private_database(
         admin.execute(f'CREATE DATABASE "{name}"{copied_from}')
     try:
         url = on(database_url, name)
-        if revision is not None:
+        if empty:
+            pass
+        elif revision is not None:
             apply_through(revision, database=url)
         elif template is None:
             yoyo("apply", database=url)
