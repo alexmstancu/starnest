@@ -11,6 +11,7 @@ A check is judged by evaluating its own expression over a row holding only the c
 test, which is exactly how a CHECK decides: refused means the expression is false.
 """
 
+import re
 from pathlib import Path
 
 import psycopg
@@ -220,14 +221,26 @@ def test_a_stored_non_finite_figure_stops_the_migration_and_is_named(
 def test_the_rollback_leaves_the_three_old_checks_refusing_nan_alone(
     connection: psycopg.Connection,
 ) -> None:
+    """**Only its own checks**: a later migration's finite check is not this rollback's to drop
+    (`0512` gives the run's ceiling and cap theirs)."""
+    old_checks = {
+        "value_monetary_amount_is_finite",
+        "value_monetary_eur_is_finite",
+        "value_quantity_magnitude_is_finite",
+    }
+    its_own = (
+        set(
+            re.findall(
+                r"ADD CONSTRAINT (\w+_is_finite)", (MIGRATIONS / f"{MIGRATION}.sql").read_text()
+            )
+        )
+        - old_checks
+    )
     with connection.transaction(force_rollback=True):
         run(connection, f"{MIGRATION}.rollback.sql")
 
-        assert set(finite_checks(connection)) == {
-            "value_monetary_amount_is_finite",
-            "value_monetary_eur_is_finite",
-            "value_quantity_magnitude_is_finite",
-        }
+        assert old_checks <= set(finite_checks(connection))
+        assert its_own.isdisjoint(finite_checks(connection))
         assert refuses(connection, "value_quantity_magnitude_is_finite", "magnitude", "NaN")
         assert not refuses(
             connection, "value_quantity_magnitude_is_finite", "magnitude", "Infinity"

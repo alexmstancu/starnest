@@ -19,7 +19,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from starnest.candidates import Candidate
-from starnest.data import Attribute, Value, ValueStore, restates
+from starnest.data import Attribute, AttributeId, Value, ValueStore, restates
 from starnest.data_acquisition.adapter import Acquired, AcquisitionFailure, SourceAdapter
 from starnest.data_acquisition.spend import CostMeter
 
@@ -51,6 +51,7 @@ async def acquire(
     collecting: list[AcquisitionFailure] | None = None,
     record_spend: Callable[[int, Decimal], Awaitable[None]] | None = None,
     record_failures: Callable[[Sequence[AcquisitionFailure]], Awaitable[None]] | None = None,
+    mark_finished: Callable[[AttributeId], Awaitable[None]] | None = None,
 ) -> RunOutcome:
     """Fetch every attribute this source can answer, and append what it found.
 
@@ -68,6 +69,10 @@ async def acquire(
     32 countries spent close to five times a 1 EUR cap and *then* reported the run halted -- a
     receipt rather than a ceiling. `None` is every source shipped today: all of them are free,
     and a meter would have nothing to measure.
+
+    **`mark_finished` is told each attribute this source was asked about to its last batch**
+    (C04-N6), and only those: never one a crash or the cap cut short, so what it never reached
+    reads "not reached" rather than "nobody had a row".
     """
     answerable = [attribute for attribute in attributes if attribute.id in adapter.attributes]
 
@@ -279,6 +284,12 @@ async def acquire(
                 - contradicted,
                 on_record,
             )
+
+        # **Marked only after the last batch, and only with the cap not reached** (C04-N6): a paid
+        # source stops asking once the meter is exhausted, so an attribute it ended at the cap may
+        # have candidates nobody asked about.
+        if mark_finished is not None and not (meter is not None and meter.has_spent_to_its_cap):
+            await mark_finished(attribute.id)
 
         # After this attribute is stored, never before it: the cap stops the *next* call, and
         # what has already been paid for is kept. The run one level up sees the exhausted meter

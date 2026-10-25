@@ -30,6 +30,7 @@ from starnest.data_acquisition import (
     ResearchSpend,
     Run,
     RunAlreadyInFlightError,
+    RunPlan,
     RunScope,
     RunStatus,
     RunStore,
@@ -48,8 +49,10 @@ class PostgresRunStore(RunStore):
         self._pool = pool
         self._queries = load_queries()
 
-    async def start_run(self, scope: RunScope, *, triggered_by: str) -> int:
-        """Open the run and write its scope, in one transaction.
+    async def start_run(
+        self, scope: RunScope, *, triggered_by: str, plan: RunPlan | None = None
+    ) -> int:
+        """Open the run and write its scope and its plan, in one transaction.
 
         Opened before anything is fetched: a run that dies mid-flight must still be visible as
         one that started and never finished, which is what the abandoned-run sweep looks for
@@ -60,14 +63,19 @@ class PostgresRunStore(RunStore):
                 "a run's scope is stored expanded, so the candidates and attributes must "
                 "already have been resolved from the level"
             )
+        started_at = datetime.now(tz=UTC)
         async with acquire(self._pool) as connection:
             try:
                 row = await self._queries.insert_run(
                     connection,
-                    started_at=datetime.now(tz=UTC),
+                    started_at=started_at,
                     triggered_by=triggered_by,
                     run_status=str(RunStatus.RUNNING),
                     level=scope.level,
+                    plan_recorded_at=None if plan is None else started_at,
+                    estimate_ceiling_eur=None if plan is None else plan.estimate_ceiling_eur,
+                    spend_cap_eur=None if plan is None else plan.spend_cap_eur,
+                    accepted_uncapped=None if plan is None else plan.accepted_uncapped,
                 )
             except UniqueViolation as clash:
                 # Another run won the race to the one `running` slot the `0498` partial unique
@@ -98,7 +106,29 @@ class PostgresRunStore(RunStore):
                     data_acquisition_run=row.id,
                     pairs=json.dumps([{"candidate": c, "attribute": a} for c, a in scope.pairs]),
                 )
+            # After the scope's attributes, which each plan row's key names (0512).
+            if plan is not None and plan.items_planned:
+                await self._queries.insert_run_plan(
+                    connection,
+                    data_acquisition_run=row.id,
+                    planned=json.dumps(
+                        [
+                            {"data_source": source, "attribute": attribute, "items_planned": n}
+                            for (source, attribute), n in plan.items_planned.items()
+                        ]
+                    ),
+                )
         return int(row.id)
+
+    async def mark_asked(self, run: int, data_source: DataSourceId, attribute: str) -> None:
+        async with acquire(self._pool) as connection:
+            await self._queries.mark_run_plan_asked(
+                connection,
+                data_acquisition_run=run,
+                data_source=str(data_source),
+                attribute=str(attribute),
+                finished_at=datetime.now(tz=UTC),
+            )
 
     async def finish_run(self, run: int, *, status: RunStatus, finished_at: datetime) -> None:
         async with acquire(self._pool) as connection:

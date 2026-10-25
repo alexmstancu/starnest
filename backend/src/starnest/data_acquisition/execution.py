@@ -15,7 +15,7 @@ screen say which pass produced it, and what makes "re-run just this" answerable 
 """
 
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -35,12 +35,12 @@ from starnest.data_acquisition.adapter import (
     RunningSpend,
     SourceAdapter,
 )
-from starnest.data_acquisition.estimate import Estimate
+from starnest.data_acquisition.estimate import NOTHING, Estimate
 from starnest.data_acquisition.freshness import still_fresh_everywhere
 from starnest.data_acquisition.run import acquire
 from starnest.data_acquisition.spend import CostMeter, refuse_unless_capped
-from starnest.data_acquisition.stand_in import STAND_IN, stand_in
-from starnest.data_acquisition.store import Run, RunScope, RunStatus, RunStore
+from starnest.data_acquisition.stand_in import STAND_IN, declarations_in_scope, stand_in
+from starnest.data_acquisition.store import Run, RunPlan, RunScope, RunStatus, RunStore
 
 _log = logging.getLogger("starnest.acquisition")
 """The narrative behind a run record (`arch.md` 9.4): started, what each source produced, what
@@ -73,6 +73,87 @@ class OpenedRun:
     pairs: tuple[tuple[str, str], ...] | None = None
     """The exact (candidate, attribute) pairs the run asks about -- its items -- when it named
     them; `None` for the rectangle. The borrow step is held to them too (FU-A1)."""
+
+
+@dataclass(frozen=True)
+class SourcePlan:
+    """What one adapter will be asked: how many candidates, attribute by attribute."""
+
+    adapter: SourceAdapter
+    items_by_attribute: Mapping[str, int]
+
+    @property
+    def items(self) -> int:
+        return sum(self.items_by_attribute.values())
+
+
+def plan_sources(
+    adapters: Sequence[SourceAdapter],
+    attributes: Sequence[Attribute],
+    candidates: Sequence[Candidate],
+    *,
+    pairs: tuple[tuple[str, str], ...] | None = None,
+) -> tuple[SourcePlan, ...]:
+    """What each adapter will be asked, counted the way `acquire` asks it.
+
+    **One count for the plan endpoint, for the run's recorded plan and for its ceiling** (BE-25,
+    D17). `acquire` asks a source about each attribute it declares, for the candidates it says it
+    is asked about (`candidates_asked_about`: all of them, or a retry's narrowed few), so this
+    counts exactly that -- held to the run's exact `pairs` when it names them. An adapter asked
+    about nothing is left out, as an attribute it is asked about for nobody is.
+    """
+    wanted = None if pairs is None else set(pairs)
+    planned: list[SourcePlan] = []
+    for adapter in adapters:
+        items_by_attribute: dict[str, int] = {}
+        for attribute in attributes:
+            if attribute.id not in adapter.attributes:
+                continue
+            asked = [
+                candidate
+                for candidate in adapter.candidates_asked_about(attribute, candidates)
+                if wanted is None or (str(candidate.id), str(attribute.id)) in wanted
+            ]
+            if asked:
+                items_by_attribute[str(attribute.id)] = len(asked)
+        if items_by_attribute:
+            planned.append(SourcePlan(adapter=adapter, items_by_attribute=items_by_attribute))
+    return tuple(planned)
+
+
+def priced(planned: Sequence[SourcePlan]) -> Estimate:
+    """What a plan may cost: each adapter prices its own share, and a free one prices nothing."""
+    estimate = NOTHING
+    for source in planned:
+        estimate = estimate + source.adapter.estimate_for(source.items)
+    return estimate
+
+
+def _run_plan(
+    planned: Sequence[SourcePlan],
+    borrowed: Sequence[StandIn],
+    *,
+    spend_cap_eur: Decimal | None,
+    uncapped_is_accepted: bool,
+) -> RunPlan:
+    """The plan a run records as it opens: the sources' share and the borrows', and its money.
+
+    Two adapters of one source sum into one row, as `POST /plan` sums them into one entry.
+    """
+    items: dict[tuple[str, str], int] = {}
+    for source in planned:
+        for attribute, count in source.items_by_attribute.items():
+            key = (str(source.adapter.data_source), attribute)
+            items[key] = items.get(key, 0) + count
+    for declared in borrowed:
+        key = (str(STAND_IN), str(declared.attribute))
+        items[key] = items.get(key, 0) + 1
+    return RunPlan(
+        items_planned=items,
+        estimate_ceiling_eur=priced(planned).cost_eur,
+        spend_cap_eur=spend_cap_eur,
+        accepted_uncapped=uncapped_is_accepted,
+    )
 
 
 async def open_run(
@@ -225,7 +306,16 @@ async def open_run(
         uncapped_is_accepted=uncapped_is_accepted,
     )
 
-    run = await runs.start_run(scope, triggered_by=triggered_by)
+    # **The plan is what `continue_run` will ask, recorded before it asks anything** (D17): the
+    # sources over the answerable attributes, then the borrows over the whole scope, each held to
+    # the run's exact pairs -- the same arguments `acquire` and `stand_in` are given below.
+    plan = _run_plan(
+        plan_sources(adapters, answerable, candidates, pairs=scope_pairs),
+        declarations_in_scope(stand_ins, in_scope, candidates, pairs=scope_pairs),
+        spend_cap_eur=spend_cap_eur,
+        uncapped_is_accepted=uncapped_is_accepted,
+    )
+    run = await runs.start_run(scope, triggered_by=triggered_by, plan=plan)
     _log.info(
         "run %d started by %s over %d candidates and %d attributes, from %d source(s)",
         run,
@@ -362,6 +452,11 @@ async def continue_run(opened: OpenedRun) -> Run:
                 record_failures=lambda batch: runs.record_failures(
                     run, _item_by_item(batch, candidates)
                 ),
+                # **How far this source got, attribute by attribute** (C04-N6): what tells an
+                # item nobody had a row for from one this source was never asked about.
+                mark_finished=lambda attribute, source=adapter.data_source: runs.mark_asked(
+                    run, source, attribute
+                ),
             )
             _log.info(
                 "run %d: %s answered %d figure(s) and failed on %d",
@@ -418,6 +513,7 @@ async def continue_run(opened: OpenedRun) -> Run:
             record_failures=lambda batch: runs.record_failures(
                 run, _item_by_item(batch, candidates)
             ),
+            mark_finished=lambda attribute: runs.mark_asked(run, STAND_IN, attribute),
         )
         failures.extend(borrowed.failures)
     except Exception:

@@ -63,6 +63,28 @@ class RunScope:
 
 
 @dataclass(frozen=True)
+class RunPlan:
+    """What a run means to ask each source, and what it may spend, recorded as it opens.
+
+    **Recorded once, in the run's opening transaction** (D17, C04-N6). Without it "asked, and
+    nobody had a row" and "never asked" left the same trace: a run stopped after its first source
+    called everything the others never reached "unanswered". Each (source, attribute) is marked
+    once that source has been asked about it to the end (`RunStore.mark_asked`), and an empty
+    item is unanswered only when every source planned for its attribute has been.
+    """
+
+    items_planned: Mapping[tuple[str, str], int]
+    """How many candidates each (data source, attribute) will be asked about. Never zero: a
+    source asked about nobody is not planned."""
+    estimate_ceiling_eur: Decimal
+    """What the plan is estimated to cost at most, priced as `POST /plan` prices it (BE-25)."""
+    spend_cap_eur: Decimal | None
+    """The cap the run's meter is held to, or `None` for none."""
+    accepted_uncapped: bool
+    """Whether the request accepted spending with no cap. Per request, never a setting."""
+
+
+@dataclass(frozen=True)
 class UnansweredItem:
     """One candidate and one attribute a run asked about and nobody answered.
 
@@ -149,12 +171,23 @@ class RunStore(ABC):
     """Record a run, and read back what it did."""
 
     @abstractmethod
-    async def start_run(self, scope: RunScope, *, triggered_by: str) -> int:
-        """Open a run over an expanded scope, and return its id.
+    async def start_run(
+        self, scope: RunScope, *, triggered_by: str, plan: RunPlan | None = None
+    ) -> int:
+        """Open a run over an expanded scope, with its plan, and return its id.
 
         Opened before anything is fetched, so a run that dies mid-flight is still visible as one
         that started and never finished -- which is what `arch.md` 9.2's abandoned-run sweep
-        looks for.
+        looks for. **`plan` is `None` only for a run recorded the way runs were before `0512`**,
+        which reads its empty items by its status alone; `open_run` always passes one.
+        """
+
+    @abstractmethod
+    async def mark_asked(self, run: int, data_source: DataSourceId, attribute: str) -> None:
+        """Record that `data_source` has been asked about `attribute` to its last batch.
+
+        Called only once the source got through the attribute with the cap not reached, so a run
+        killed before the mark reads its unasked items "not reached": the safe direction.
         """
 
     @abstractmethod

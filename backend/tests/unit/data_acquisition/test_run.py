@@ -1004,6 +1004,88 @@ class TestASourceThatCrashesMidAttribute:
         assert [f.candidate for f in collected] == [str(SPAIN.id)]
 
 
+class TestHowFarASourceGot:
+    """C04-N6. An attribute is marked finished for its source only once the source got through
+    it, so an item it never reached reads "not reached" and never "nobody had a row"."""
+
+    @staticmethod
+    async def marking(adapter: SourceAdapter, **asked: object) -> list[str]:
+        marked: list[str] = []
+
+        async def mark(attribute: str) -> None:
+            marked.append(str(attribute))
+
+        await acquire(
+            adapter=adapter,
+            candidates=[PORTUGAL, SPAIN],
+            values=RecordingValueStore(),
+            mark_finished=mark,
+            **asked,  # type: ignore[arg-type]
+        )
+        return marked
+
+    async def test_an_attribute_is_marked_finished_only_after_its_last_batch(self) -> None:
+        """Mutation: marking before the batches are read marks the attribute the crash below
+        cut short."""
+        marked: list[str] = []
+
+        async def mark(attribute: str) -> None:
+            marked.append(str(attribute))
+
+        with pytest.raises(SecretBearingCrashError):
+            await acquire(
+                adapter=AnswersPortugalThenCrashes(),
+                attributes=[an_attribute()],
+                candidates=[PORTUGAL, SPAIN],
+                values=RecordingValueStore(),
+                mark_finished=mark,
+            )
+
+        assert marked == []
+
+    async def test_every_attribute_a_source_got_through_is_marked(self) -> None:
+        adapter = StubAdapter(
+            {OVERBURDEN: Acquired(values=(a_value(),))}, declares=(OVERBURDEN, PRESS_FREEDOM)
+        )
+
+        marked = await self.marking(
+            adapter, attributes=[an_attribute(OVERBURDEN), an_attribute(PRESS_FREEDOM)]
+        )
+
+        assert marked == [OVERBURDEN, PRESS_FREEDOM]
+
+    async def test_an_attribute_the_meter_cut_short_is_not_finished(self) -> None:
+        """The second attribute reaches the 1 EUR cap: a source billing per candidate stops
+        asking there, so it may have left candidates nobody asked about."""
+        half = Acquired(values=(), cost_eur=Decimal("0.50"), calls=1)
+        adapter = StubAdapter(
+            {OVERBURDEN: half, PRESS_FREEDOM: half, ENGLISH: half},
+            declares=(OVERBURDEN, PRESS_FREEDOM, ENGLISH),
+        )
+
+        marked = await self.marking(
+            adapter,
+            attributes=[
+                an_attribute(OVERBURDEN),
+                an_attribute(PRESS_FREEDOM),
+                an_attribute(ENGLISH),
+            ],
+            meter=CostMeter(cap_eur=Decimal(1)),
+        )
+
+        assert marked == [OVERBURDEN]
+
+    async def test_a_zero_cap_does_not_leave_a_free_sweep_unfinished(self) -> None:
+        """BE-16's case: nothing was spent, so the cap stopped nothing."""
+        adapter = StubAdapter({}, declares=(OVERBURDEN,))
+
+        marked = await self.marking(
+            adapter, attributes=[an_attribute(OVERBURDEN)], meter=CostMeter(cap_eur=Decimal(0))
+        )
+
+        assert marked == [OVERBURDEN]
+
+
 CONTRADICTION = "a different figure is already on record for this observation"
 
 

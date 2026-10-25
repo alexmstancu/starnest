@@ -17,12 +17,16 @@
 -- explicit. A run whose scope rows were never written reports no planned work, which is honest
 -- and visibly wrong rather than quietly approximate.
 
--- name: insert_run(started_at, triggered_by, run_status, level)<!
+-- name: insert_run(started_at, triggered_by, run_status, level, plan_recorded_at, estimate_ceiling_eur, spend_cap_eur, accepted_uncapped)<!
 -- Open a run. It starts `running` and with zero spend; both are advanced by the statements
 -- below as the work proceeds, so a run being watched shows real progress rather than a status
--- that jumps at the end.
-INSERT INTO data_acquisition_run (started_at, triggered_by, run_status, level)
-VALUES (:started_at, :triggered_by, :run_status, :level)
+-- that jumps at the end. Its ceiling, cap and uncapped acceptance are recorded as they stand now
+-- (0512, D17): all null, with plan_recorded_at, only for a run recorded the old way.
+INSERT INTO data_acquisition_run (started_at, triggered_by, run_status, level,
+                                  plan_recorded_at, estimate_ceiling_eur, spend_cap_eur,
+                                  accepted_uncapped)
+VALUES (:started_at, :triggered_by, :run_status, :level,
+        :plan_recorded_at, :estimate_ceiling_eur, :spend_cap_eur, :accepted_uncapped)
 RETURNING id;
 
 -- name: insert_run_candidates(data_acquisition_run, candidates)!
@@ -60,6 +64,23 @@ INSERT INTO data_acquisition_run_item (data_acquisition_run, candidate, attribut
 SELECT :data_acquisition_run, pair.candidate, pair.attribute
 FROM   jsonb_to_recordset(:pairs::jsonb) AS pair(candidate text, attribute text)
 ON CONFLICT DO NOTHING;
+
+-- name: insert_run_plan(data_acquisition_run, planned)!
+-- What each source will be asked, per attribute, written with the scope in the run's opening
+-- transaction (0512, C04-N6). Each row starts unfinished; mark_run_plan_asked finishes it.
+INSERT INTO data_acquisition_run_plan (data_acquisition_run, data_source, attribute, items_planned)
+SELECT :data_acquisition_run, planned.data_source, planned.attribute, planned.items_planned
+FROM   jsonb_to_recordset(:planned::jsonb)
+           AS planned(data_source text, attribute text, items_planned integer);
+
+-- name: mark_run_plan_asked(data_acquisition_run, data_source, attribute, finished_at)!
+-- A source has been asked about an attribute to its last batch. The first mark stands: a second
+-- adapter of the same source finishing later does not move it.
+UPDATE data_acquisition_run_plan
+SET    finished_at = COALESCE(finished_at, :finished_at)
+WHERE  data_acquisition_run = :data_acquisition_run
+  AND  data_source = :data_source
+  AND  attribute = :attribute;
 
 -- name: update_run_status(data_acquisition_run, run_status, finished_at)!
 -- Close a run, or move it to halted_on_spend_cap. finished_at is the caller's clock rather than

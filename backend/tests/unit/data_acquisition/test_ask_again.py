@@ -31,6 +31,7 @@ from starnest.data_acquisition import (
     Holdings,
     NothingToAskAgainError,
     Run,
+    RunPlan,
     RunScope,
     RunStatus,
     RunStore,
@@ -130,11 +131,19 @@ class RecordingRunStore(RunStore):
     def __init__(self, answers_with: Run) -> None:
         self._answers_with = answers_with
         self.opened: list[RunScope] = []
+        self.plans: list[RunPlan | None] = []
+        self.marked: list[tuple[str, str]] = []
         self.finished: list[int] = []
 
-    async def start_run(self, scope: RunScope, *, triggered_by: str) -> int:
+    async def start_run(
+        self, scope: RunScope, *, triggered_by: str, plan: RunPlan | None = None
+    ) -> int:
         self.opened.append(scope)
+        self.plans.append(plan)
         return 900 + len(self.opened)
+
+    async def mark_asked(self, run: int, data_source: DataSourceId, attribute: str) -> None:
+        self.marked.append((str(data_source), str(attribute)))
 
     async def finish_run(self, run: int, *, status: RunStatus, finished_at: datetime) -> None:
         self.finished.append(run)

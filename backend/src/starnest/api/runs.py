@@ -30,7 +30,6 @@ from starnest.api.dependencies import (
 from starnest.api.errors import absent, unknown_scope_refusal
 from starnest.candidates import LevelHierarchy
 from starnest.data_acquisition import (
-    NOTHING,
     Run,
     RunAlreadyInFlightError,
     RunStatus,
@@ -39,6 +38,8 @@ from starnest.data_acquisition import (
     attributes_still_fresh,
     continue_run,
     open_run,
+    plan_sources,
+    priced,
     retry_run,
     stand_ins_if_enabled,
     switched_on,
@@ -225,16 +226,15 @@ async def plan_run(
     )
     answerable = [a for a in answerable if str(a.id) not in fresh]
 
+    # **Counted and priced as a started run records its plan and ceiling** (BE-25, D17): each
+    # adapter prices its own share, because each is the only thing that knows what it charges --
+    # and a free one prices nothing, which is every structured source.
+    sources = plan_sources(planned, answerable, roster)
     items_by_source: dict[str, int] = {}
-    # Each adapter prices its own share, because each is the only thing that knows what it
-    # charges -- and a free one prices nothing, which is every structured source.
-    estimate = NOTHING
-    for adapter in planned:
-        items = len([a for a in answerable if a.id in adapter.attributes]) * len(roster)
-        if items:
-            source = str(adapter.data_source)
-            items_by_source[source] = items_by_source.get(source, 0) + items
-            estimate = estimate + adapter.estimate_for(items)
+    for source in sources:
+        name = str(source.adapter.data_source)
+        items_by_source[name] = items_by_source.get(name, 0) + source.items
+    estimate = priced(sources)
 
     return RunPlanBody(
         items_total=len(answerable) * len(roster),

@@ -22,6 +22,7 @@ from datetime import UTC, datetime
 from starnest.candidates import Candidate
 from starnest.data import (
     Attribute,
+    AttributeId,
     ConfidenceLevel,
     DataSourceId,
     StandIn,
@@ -45,6 +46,7 @@ async def stand_in(
     retrieved_at: datetime | None = None,
     pairs: Collection[tuple[str, str]] | None = None,
     record_failures: Callable[[Sequence[AcquisitionFailure]], Awaitable[None]] | None = None,
+    mark_finished: Callable[[AttributeId], Awaitable[None]] | None = None,
 ) -> RunOutcome:
     """Borrow every declared figure within the run's scope, and append the copies.
 
@@ -62,6 +64,9 @@ async def stand_in(
     pair with nothing to borrow read as unanswered rather than failed. First rather than after
     the copies, unlike a source's failures (`run.py`), because a copy costs nothing: one lost to
     a failure that could not be written is borrowed again by the next run covering the pair.
+
+    **Each attribute borrowed for is marked finished once its copies are written** (C04-N6), so a
+    run killed mid-borrow reads what it did not lend as "not reached".
     """
     in_scope = declarations_in_scope(stand_ins, attributes, candidates, pairs=pairs)
     if not in_scope:
@@ -80,6 +85,9 @@ async def stand_in(
         value.model_copy(update={"data_acquisition_run": run}) for value in borrowed.values
     )
     stored = await values.append(stamped) if stamped else ()
+    if mark_finished is not None:
+        for attribute in dict.fromkeys(declared.attribute for declared in in_scope):
+            await mark_finished(attribute)
     return RunOutcome(stored=tuple(stored), failures=borrowed.failures)
 
 
