@@ -146,7 +146,7 @@ export interface RunScreenState {
    * `POST /{runId}/retry` takes only `failed | unanswered` over a whole run -- anything
    * narrower has to go through `/plan` and then `POST /data-acquisition-runs`.
    */
-  propose: (scope: RunScope, act: string, origin: GapKind) => void;
+  propose: (scope: RunScope, origin: GapKind) => void;
   /**
    * The run whose card the reader should be taken to, and how many times that has been asked,
    * so asking again for the same run moves them again (PL-126). Null until an act asks.
@@ -519,7 +519,7 @@ export function useRunScreen(
         }),
       );
     },
-    propose: (scope, what, origin) => {
+    propose: (scope, origin) => {
       const version = selectionVersion.current;
       const stillAsked = () => version === selectionVersion.current;
       const armedOn = current?.id ?? null;
@@ -538,7 +538,6 @@ export function useRunScreen(
           origin,
           armedOn,
           commitment: describeCommitment({
-            act: what,
             fromRun: armedOn,
             itemsTotal: planned.items_total,
             llmCallCount: planned.llm_call_count,

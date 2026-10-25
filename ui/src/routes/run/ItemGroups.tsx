@@ -44,10 +44,7 @@ export function ItemGroups({
   busy: boolean;
   /** Any change to what is picked, so a start armed for the old selection is put away (PL-116). */
   onSelectionChange: () => void;
-  onPropose: (
-    scope: ReturnType<typeof scopeFor>,
-    describedAs: string,
-  ) => void;
+  onPropose: (scope: ReturnType<typeof scopeFor>) => void;
 }) {
   const headingId = useId();
   // **Nothing picked to begin with, as the design has it** (`selFail:{}` in its own state).
@@ -223,9 +220,7 @@ export function ItemGroups({
         className="button"
         held={busy}
         disabled={chosen.length === 0}
-        onClick={() =>
-          onPropose(scope, `${act} ${formatCount(chosen.length)} selected`)
-        }
+        onClick={() => onPropose(scope)}
       >
         {act} {formatCount(chosen.length)} selected
       </HeldButton>

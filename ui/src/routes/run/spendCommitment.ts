@@ -24,9 +24,12 @@ export interface Commitment {
   uncapped: boolean;
 }
 
+/**
+ * **Every confirmation opens "This starts a new acquisition"** (PL-057), whichever button armed
+ * it: a retry and an ask-again are new acquisitions as much as a sweep is, and a strip that took
+ * the button's label as its subject never said so. The label stays on the button.
+ */
 export interface CommitmentFacts {
-  /** What the act is called, e.g. "Start this run". */
-  act: string;
   /** The run whose items the act starts again, named so the strip says which run it is about. */
   fromRun?: number | null;
   itemsTotal?: number | null;
@@ -40,24 +43,25 @@ export function describeCommitment(facts: CommitmentFacts): Commitment {
   const paidCalls = facts.llmCallCount ?? 0;
   const spends = paidCalls > 0;
   const items = formatCount(facts.itemsTotal ?? 0);
-  const act =
+  const from =
     facts.fromRun === null || facts.fromRun === undefined
-      ? facts.act
-      : `${facts.act} from acquisition ${String(facts.fromRun)}`;
+      ? ""
+      : ` from acquisition ${String(facts.fromRun)}`;
+  const starts = `This starts a new acquisition over ${items} values${from}`;
 
   if (!spends) {
     // **Free by construction, and worth saying so.** A paid source is asked only when a run
     // names its attributes, so a sweep over a level costs nothing -- and a confirmation that
     // implied otherwise would train the reader to click past the ones that matter.
     return {
-      sentence: `${act} over ${items} values. No paid source is in scope, so this costs nothing.`,
+      sentence: `${starts}. No paid source is in scope, so this costs nothing.`,
       spends: false,
       uncapped: false,
     };
   }
 
   const ceiling = formatMoney(facts.estimatedCostEur ?? 0, "EUR");
-  const opening = `${act} over ${items} values, and can spend up to ${ceiling} across ${formatCount(paidCalls)} paid calls.`;
+  const opening = `${starts} and can spend up to ${ceiling} across ${formatCount(paidCalls)} paid calls.`;
 
   if (facts.capEur === null || facts.capEur === undefined) {
     return {

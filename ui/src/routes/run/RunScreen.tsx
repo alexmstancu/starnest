@@ -64,9 +64,9 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
   // **Where Not yet hands focus back** (PL-128): the control that opened the strip, which
   // stays on screen when the strip goes.
   const opener = useRef<Element | null>(null);
-  const propose: typeof run.propose = (scope, describedAs, origin) => {
+  const propose: typeof run.propose = (scope, origin) => {
     opener.current = document.activeElement;
-    run.propose(scope, describedAs, origin);
+    run.propose(scope, origin);
   };
   const cancel = () => {
     run.cancel();
@@ -312,7 +312,7 @@ function GapRemedies({
               act="Retry"
               busy={run.busy === "planning"}
               onSelectionChange={run.disarm}
-              onPropose={(scope, describedAs) => propose(scope, describedAs, "failed")}
+              onPropose={(scope) => propose(scope, "failed")}
             />
           </>
         )}
@@ -327,7 +327,7 @@ function GapRemedies({
           empty="Nothing is failing"
           held={run.busy !== null}
           onClick={() =>
-            propose(scopeFor(levelId, gaps.failed), "Retry everything that failed", "failed")
+            propose(scopeFor(levelId, gaps.failed), "failed")
           }
         />
         <GapEstimate kind="failed" run={run} onCancel={onCancel} />
@@ -356,7 +356,7 @@ function GapRemedies({
             act="Retry"
             busy={run.busy === "planning" || stillRunning !== null}
             onSelectionChange={run.disarm}
-            onPropose={(scope, describedAs) => propose(scope, describedAs, "unanswered")}
+            onPropose={(scope) => propose(scope, "unanswered")}
           />
         )}
         {/* "Retry 62 unanswered": the design uses one verb for both buckets and puts the
@@ -367,11 +367,7 @@ function GapRemedies({
           empty="Nothing went unanswered"
           held={run.busy !== null || stillRunning !== null}
           onClick={() =>
-            propose(
-              scopeFor(levelId, gaps.unanswered),
-              "Ask again about everything unanswered",
-              "unanswered",
-            )
+            propose(scopeFor(levelId, gaps.unanswered), "unanswered")
           }
         />
         <GapEstimate kind="unanswered" run={run} onCancel={onCancel} />
@@ -393,7 +389,7 @@ function GapRemedies({
             act="Ask"
             busy={run.busy === "planning"}
             onSelectionChange={run.disarm}
-            onPropose={(scope, describedAs) => propose(scope, describedAs, "not_reached")}
+            onPropose={(scope) => propose(scope, "not_reached")}
           />
           <RemedyButton
             count={gaps.not_reached.length}
@@ -401,11 +397,7 @@ function GapRemedies({
             empty=""
             held={run.busy !== null}
             onClick={() =>
-              propose(
-                scopeFor(levelId, gaps.not_reached),
-                "Ask about everything not reached",
-                "not_reached",
-              )
+              propose(scopeFor(levelId, gaps.not_reached), "not_reached")
             }
           />
           <GapEstimate kind="not_reached" run={run} onCancel={onCancel} />

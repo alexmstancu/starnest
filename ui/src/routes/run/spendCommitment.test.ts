@@ -9,7 +9,6 @@ describe("what a run commits you to", () => {
    */
   it("says plainly when nothing can be spent", () => {
     const commitment = describeCommitment({
-      act: "Start this run",
       itemsTotal: 1312,
       llmCallCount: 0,
       estimatedCostEur: 0,
@@ -23,7 +22,6 @@ describe("what a run commits you to", () => {
 
   it("names the ceiling, the paid calls and the cap when it can spend", () => {
     const commitment = describeCommitment({
-      act: "Retry 12 failed",
       itemsTotal: 12,
       llmCallCount: 12,
       estimatedCostEur: 0.61,
@@ -45,7 +43,6 @@ describe("what a run commits you to", () => {
    */
   it("says when there is no cap at all", () => {
     const commitment = describeCommitment({
-      act: "Start this run",
       itemsTotal: 40,
       llmCallCount: 40,
       estimatedCostEur: 2,
@@ -59,22 +56,38 @@ describe("what a run commits you to", () => {
   it("treats a missing cap the same as an explicit null", () => {
     expect(
       describeCommitment({
-        act: "Start this run",
-        itemsTotal: 1,
+          itemsTotal: 1,
         llmCallCount: 1,
         estimatedCostEur: 1,
       }).uncapped,
     ).toBe(true);
   });
 
-  it("carries the name of the act it is confirming", () => {
+  /**
+   * PL-057. A retry is a new acquisition as much as a sweep is, and the design's sentence says
+   * so whichever button armed it; the act's label stays on the button.
+   */
+  it("says every confirmation starts a new acquisition, in the design's sentence", () => {
     expect(
-      describeCommitment({ act: "Retry 62 unanswered", itemsTotal: 62 }).sentence,
-    ).toMatch(/^Retry 62 unanswered over 62 values/);
+      describeCommitment({
+        itemsTotal: 12,
+        llmCallCount: 12,
+        estimatedCostEur: 0.42,
+        capEur: 5,
+      }).sentence,
+    ).toBe(
+      "This starts a new acquisition over 12 values and can spend up to €0.42 across 12 paid calls. It halts at the €5.00 cap and keeps whatever completed.",
+    );
+  });
+
+  it("names the acquisition whose items it starts again", () => {
+    expect(describeCommitment({ fromRun: 7, itemsTotal: 62 }).sentence).toBe(
+      "This starts a new acquisition over 62 values from acquisition 7. No paid source is in scope, so this costs nothing.",
+    );
   });
 
   it("counts nothing as nothing rather than as unknown", () => {
-    const commitment = describeCommitment({ act: "Start this run" });
+    const commitment = describeCommitment({});
     expect(commitment.sentence).toContain("0 values");
     expect(commitment.spends).toBe(false);
   });

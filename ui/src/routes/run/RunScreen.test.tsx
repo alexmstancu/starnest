@@ -1133,7 +1133,7 @@ describe("re-asking about part of a run", () => {
     );
 
     const strip = await screen.findByRole("alert");
-    expect(strip).toHaveTextContent(/Retry 1 selected from acquisition 8 over 96 values/);
+    expect(strip).toHaveTextContent(/This starts a new acquisition over 96 values from acquisition 8\./);
     // The shipped plan asks no paid source, and saying so plainly is what stops a reader
     // learning to click past the confirmations that do cost something.
     expect(strip).toHaveTextContent(/costs nothing/i);
@@ -4828,7 +4828,7 @@ describe("an armed start whose scope changes", () => {
     await armTheSelection();
 
     expect(screen.getByRole("alert")).toHaveTextContent(
-      /^Retry 1 selected from acquisition 7 over 96 values\./,
+      /^This starts a new acquisition over 96 values from acquisition 7\./,
     );
   });
 
@@ -4864,7 +4864,7 @@ describe("an armed start whose scope changes", () => {
     );
     await waitFor(() => expect(result.current.current?.id).toBe(7));
 
-    act(() => result.current.propose({ level: "country" }, "Retry", "failed"));
+    act(() => result.current.propose({ level: "country" }, "failed"));
     await waitFor(() => expect(result.current.armed).not.toBeNull());
 
     rerender({ level: "city" });
@@ -5162,7 +5162,7 @@ describe("a change of level", () => {
     const plan = holdThePlan(refused);
     const { result, rerender } = renderAtLevel();
     await waitFor(() => expect(result.current.current?.id).toBe(7));
-    act(() => result.current.propose({ level: "country" }, "Retry", "failed"));
+    act(() => result.current.propose({ level: "country" }, "failed"));
     await waitFor(() => expect(result.current.busy).toBe("planning"));
 
     rerender({ level: "city" });
@@ -5187,7 +5187,7 @@ describe("a change of level", () => {
   it("clears an armed start rather than hiding it until the level comes back", async () => {
     const { result, rerender } = renderAtLevel();
     await waitFor(() => expect(result.current.current?.id).toBe(7));
-    act(() => result.current.propose({ level: "country" }, "Retry", "failed"));
+    act(() => result.current.propose({ level: "country" }, "failed"));
     await waitFor(() => expect(result.current.armed).not.toBeNull());
 
     rerender({ level: "city" });
@@ -5200,7 +5200,7 @@ describe("a change of level", () => {
     const plan = holdThePlan();
     const { result, rerender } = renderAtLevel();
     await waitFor(() => expect(result.current.current?.id).toBe(7));
-    act(() => result.current.propose({ level: "country" }, "Retry", "failed"));
+    act(() => result.current.propose({ level: "country" }, "failed"));
     await waitFor(() => expect(result.current.busy).toBe("planning"));
 
     rerender({ level: "city" });
