@@ -1928,15 +1928,34 @@ select.field__control {
   color: var(--colour-text-muted);
 }
 
+/* **One rounded box holding the figure and its bar**, as the design draws a comparator cell: the
+   tint fills the box and the track sits inside it with room on every side, so the colour reads as
+   the cell's verdict and the bar as the measure within it. Too little padding left the track
+   flush with the tint's edge, so it looked like a strip hung under a coloured line. */
 .matrix__cell {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 4px 6px;
-  margin: -4px 0;
+  gap: 7px;
   border: var(--border-width) solid transparent;
   border-radius: var(--radius-medium);
+}
+
+/* An attribute row's cell, opened under its pillar: the same box, a size smaller. */
+.matrix__cell--compact {
+  gap: 5px;
+}
+
+/* **The padding has to outrank the table's.** `.table--matrix > tbody > tr > td` sets every
+   cell's padding to 0 and weighs one class and three elements against `.matrix__cell`'s one
+   class, so the cell's own padding never applied: the tint sat flush on the figure and the track
+   on its bottom edge -- the bug this box exists to fix. */
+.table--matrix .matrix__cell {
+  padding: 9px 11px 10px;
+}
+
+.table--matrix .matrix__cell--compact {
+  padding: 6px 9px 7px;
 }
 
 /* Above the tint layer, which is absolutely positioned under everything in the cell. */
@@ -2005,7 +2024,6 @@ select.field__control {
   position: relative;
   width: 100%;
   height: 8px;
-  margin-top: 2px;
   border-radius: var(--radius-small);
   background: var(--colour-track);
   overflow: visible;
@@ -2060,7 +2078,8 @@ select.field__control {
   inset: 0;
   width: 100%;
   height: 100%;
-  border-radius: var(--radius-medium);
+  /* Clipped rather than rounded: an SVG's own box keeps square corners under `border-radius`. */
+  clip-path: inset(0 round var(--radius-medium));
   pointer-events: none;
 }
 
