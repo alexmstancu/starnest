@@ -265,10 +265,10 @@ describe("what Compare remembers", () => {
 
     await userEvent.selectOptions(
       screen.getByRole("combobox", { name: /active criteria set/i }),
-      "remote-only",
+      "remote_only",
     );
 
-    await waitFor(() => expect(asked).toContain("remote-only"));
+    await waitFor(() => expect(asked).toContain("remote_only"));
     await expectRemembered();
   });
 

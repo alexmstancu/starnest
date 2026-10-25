@@ -77,29 +77,29 @@ describe("the remembered selection (PL-017)", () => {
   it("a reload keeps Remote only", async () => {
     const page = renderShell("/rank");
     await opensOn("default");
-    await userEvent.selectOptions(setPicker(), "remote-only");
+    await userEvent.selectOptions(setPicker(), "remote_only");
 
     page.unmount();
     renderShell("/rank");
 
-    await opensOn("remote-only");
+    await opensOn("remote_only");
   });
 
   it("a new tab opens on the last set used", async () => {
     const page = renderShell("/rank");
     await opensOn("default");
-    await userEvent.selectOptions(setPicker(), "remote-only");
+    await userEvent.selectOptions(setPicker(), "remote_only");
     page.unmount();
 
     window.sessionStorage.clear();
     renderShell("/rank");
 
-    await opensOn("remote-only");
+    await opensOn("remote_only");
   });
 
   it("two tabs each keep their own set: a reload is not moved by the other tab's choice", async () => {
     remember(window.sessionStorage, { id: "default", name: "Default" });
-    remember(window.localStorage, { id: "remote-only", name: "Remote only" });
+    remember(window.localStorage, { id: "remote_only", name: "Remote only" });
 
     renderShell("/rank");
 
@@ -134,7 +134,7 @@ describe("the remembered selection (PL-017)", () => {
     renderShell("/rank");
     await screen.findByText(/Old plan, no longer exists/);
 
-    await userEvent.selectOptions(setPicker(), "remote-only");
+    await userEvent.selectOptions(setPicker(), "remote_only");
 
     expect(screen.queryByText(/no longer exists/)).toBeNull();
   });

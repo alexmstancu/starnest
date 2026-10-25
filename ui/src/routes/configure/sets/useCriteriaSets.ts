@@ -17,7 +17,7 @@
  * guessed around.
  */
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import {
   createCriteriaSet,
   deleteCriteriaSet,
@@ -26,7 +26,6 @@ import {
   restoreCriteriaSet,
 } from "../../../api/endpoints";
 import type { Selection } from "../../../shell/SelectionContext";
-import type { Write } from "../changeHistory";
 import type { ChangeHistory } from "../useChangeHistory";
 import { copyName, identifierFrom } from "./setIdentifier";
 
@@ -59,12 +58,8 @@ export interface CriteriaSetsForm {
   duplicate: (criteriaSetId: string, currentName: string) => Promise<void>;
   /** Resolves true once the set is gone, false when it was refused or not sent. */
   discard: (criteriaSetId: string) => Promise<boolean>;
-  /**
-   * Delete is held on a set while a write to it is in flight, whichever set is in use (S8):
-   * answered after the deletion, that write would sit above its entry and 404 before the
-   * restore could run.
-   */
-  deleteHeld: (criteriaSetId: string) => boolean;
+  /** The list has yet to show the last set action, so every set action and undo waits. */
+  listPending: boolean;
   /** The list failed to be read again after a set action, so every set action waits. */
   listFailure: unknown;
   retryList: () => void;
@@ -107,40 +102,29 @@ export function useCriteriaSets(options: {
     setRenameDraft("");
   }
   const [failure, setFailure] = useState<unknown>(null);
-  const [busy, setBusy] = useState(false);
   const [createRefused, setCreateRefused] = useState(false);
-  // **One action at a time, across every row** (PL-037). A ref, not the state above: two presses
-  // can land before the first has re-rendered, and the second would be sent too.
-  const inFlight = useRef(false);
   const createRefusal = refusalOf(newName, names);
-  const held = busy || history.undoing || !listSettled;
+  const held = history.busy || !listSettled;
 
   /**
-   * Whether the action was sent and answered without a refusal. It takes its place in the
-   * history's order as it is sent (PL-033); `reshapes` when it creates or deletes the set.
+   * Whether the action was sent and answered without a refusal. **It is Configure's one write in
+   * flight** (PL-037, PL-033) until the list shows it, so no other write, undo or set action is
+   * sent beside it.
    */
-  async function act(
-    criteriaSetId: string,
-    reshapes: boolean,
-    action: (write: Write) => Promise<void>,
-  ): Promise<boolean> {
-    if (inFlight.current || !listSettled) return false;
-    const write = history.begin(criteriaSetId, reshapes);
-    if (write === null) return false;
-    inFlight.current = true;
-    setBusy(true);
+  async function act(action: () => Promise<void>): Promise<boolean> {
+    if (!listSettled) return false;
+    const done = history.begin();
+    if (done === null) return false;
     setFailure(null);
     try {
-      await action(write);
+      await action();
       await reread();
       return true;
     } catch (error) {
       setFailure(error);
       return false;
     } finally {
-      history.end(write);
-      inFlight.current = false;
-      setBusy(false);
+      done();
     }
   }
 
@@ -176,7 +160,7 @@ export function useCriteriaSets(options: {
       const latest = history.changes[0];
       const first =
         latest?.target === targetKey ? (latest.before as { name: string }).name : was;
-      await act(target, false, async (write) => {
+      await act(async () => {
         await renameCriteriaSet(target, name);
         setRenaming(null);
         setRenameDraft("");
@@ -193,7 +177,6 @@ export function useCriteriaSets(options: {
             },
             undoes: { criteriaSetId: target, by: "write" },
           },
-          write,
         );
       });
     },
@@ -205,7 +188,7 @@ export function useCriteriaSets(options: {
         return;
       }
       const name = newName.trim();
-      await act(identifierFrom(name), true, async (write) => {
+      await act(async () => {
         const created = await createCriteriaSet(identifierFrom(name), name);
         setNewName("");
         selection.selectCriteriaSet(created.id);
@@ -219,7 +202,6 @@ export function useCriteriaSets(options: {
             reverse: () => deleteAndReread(created.id),
             undoes: { criteriaSetId: created.id, by: "delete" },
           },
-          write,
         );
       });
     },
@@ -227,7 +209,7 @@ export function useCriteriaSets(options: {
     // edit belongs to the copy rather than to what it was copied from.
     duplicate: async (criteriaSetId, currentName) => {
       const name = copyName(currentName, names);
-      await act(identifierFrom(name), true, async (write) => {
+      await act(async () => {
         const copy = await duplicateCriteriaSet(
           criteriaSetId,
           identifierFrom(name),
@@ -244,7 +226,6 @@ export function useCriteriaSets(options: {
             reverse: () => deleteAndReread(copy.id),
             undoes: { criteriaSetId: copy.id, by: "delete" },
           },
-          write,
         );
       });
     },
@@ -258,7 +239,7 @@ export function useCriteriaSets(options: {
       const fallback = wasInUse
         ? (selection.criteriaSets.find((set) => set.id !== criteriaSetId)?.id ?? null)
         : null;
-      return act(criteriaSetId, true, async (write) => {
+      return act(async () => {
         await deleteCriteriaSet(criteriaSetId);
         history.note(
           {
@@ -276,11 +257,10 @@ export function useCriteriaSets(options: {
             },
             undoes: { criteriaSetId, by: "restore" },
           },
-          write,
         );
       });
     },
-    deleteHeld: (criteriaSetId) => held || history.waits(criteriaSetId, true),
+    listPending: !listSettled,
     listFailure,
     retryList: selection.reload,
     isDeleted: (criteriaSetId) =>

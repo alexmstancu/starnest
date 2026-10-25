@@ -38,12 +38,6 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   const selection = useSelection();
   const { criteriaSetId, levelId } = selection;
   const history = useChangeHistory();
-  // **An undo waits for a pillar's write as it does for a criterion's** (D41): every write is
-  // in the history's ledger, so one to the set on screen holds every undo; one to another set
-  // holds only an undo that does not commute with it (PL-033).
-  const pillarSaving = history.writes.some(
-    (write) => !write.reshapes && write.criteriaSetId === criteriaSetId,
-  );
   const pillarAnswers = usePillarAnswers();
   // Once for the screen rather than once per opened pillar: every criterion row wants the
   // same copy of what the attributes are, and the panel inside a pillar is mounted and
@@ -195,7 +189,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
         <aside className="configure__rail">
           <RecentChanges
             history={history}
-            busy={editor.busy || pillarSaving || sets.busy}
+            busy={sets.listPending}
             isDeleted={sets.isDeleted}
           />
         </aside>

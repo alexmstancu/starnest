@@ -141,9 +141,9 @@ export function useCriteriaEditor(
   const setWeight = useCallback(
     (attribute: string, weight: number) => {
       if (criteriaSetId === null || inFlight.current || undoing) return;
-      // Its place in the order, or a wait while its set is being deleted (PL-033).
-      const write = history?.begin(criteriaSetId);
-      if (write === null) return;
+      // The one write in flight, or a wait while another is (PL-033).
+      const done = history?.begin();
+      if (done === null) return;
       inFlight.current = true;
       const sentFor = criteriaSetId;
 
@@ -187,13 +187,13 @@ export function useCriteriaEditor(
               mergeInto(sentFor, back.criteria);
             },
             undoes: { criteriaSetId: sentFor, by: "write" },
-          }, write);
+          });
         })
         .catch((error: unknown) => reportFor(sentFor, error))
         .finally(() => {
           inFlight.current = false;
           setSavingAttribute(null);
-          if (write !== undefined) history?.end(write);
+          done?.();
         });
     },
     [
@@ -211,9 +211,9 @@ export function useCriteriaEditor(
   const setLock = useCallback(
     (attribute: string, weightLocked: boolean) => {
       if (criteriaSetId === null || inFlight.current || undoing) return;
-      // Its place in the order, or a wait while its set is being deleted (PL-033).
-      const write = history?.begin(criteriaSetId);
-      if (write === null) return;
+      // The one write in flight, or a wait while another is (PL-033).
+      const done = history?.begin();
+      if (done === null) return;
       inFlight.current = true;
       const sentFor = criteriaSetId;
 
@@ -240,13 +240,13 @@ export function useCriteriaEditor(
               mergeInto(sentFor, back.criteria);
             },
             undoes: { criteriaSetId: sentFor, by: "write" },
-          }, write);
+          });
         })
         .catch((error: unknown) => reportFor(sentFor, error))
         .finally(() => {
           inFlight.current = false;
           setSavingAttribute(null);
-          if (write !== undefined) history?.end(write);
+          done?.();
         });
     },
     [criteriaSetId, history, undoing, catalog, setName, mergeInto, reportFor],
@@ -255,9 +255,9 @@ export function useCriteriaEditor(
   const setRule = useCallback(
     (attribute: string, rule: CriterionRule): Promise<unknown> => {
       if (criteriaSetId === null || inFlight.current || undoing) return Promise.resolve(null);
-      // Its place in the order, or a wait while its set is being deleted (PL-033).
-      const write = history?.begin(criteriaSetId);
-      if (write === null) return Promise.resolve(null);
+      // The one write in flight, or a wait while another is (PL-033).
+      const done = history?.begin();
+      if (done === null) return Promise.resolve(null);
       inFlight.current = true;
       const sentFor = criteriaSetId;
 
@@ -280,7 +280,7 @@ export function useCriteriaEditor(
         .finally(() => {
           inFlight.current = false;
           setSavingAttribute(null);
-          if (write !== undefined) history?.end(write);
+          done?.();
           setSavingRuleFor(null);
         });
     },
@@ -296,7 +296,7 @@ export function useCriteriaEditor(
     busy:
       savingAttribute !== null ||
       undoing ||
-      (criteriaSetId !== null && history?.waits(criteriaSetId) === true),
+      history?.busy === true,
     saveError,
     setWeight,
     setLock,

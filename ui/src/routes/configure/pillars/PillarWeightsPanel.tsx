@@ -92,8 +92,8 @@ export function PillarWeightsPanel({
   // name rather than a member expression. `useWeightDrag` keeps it stable for exactly that.
   const { preview, previewFor, moveTo, ended } = useWeightDrag();
   const undoing = history?.undoing === true;
-  // Held too while the set is being deleted or restored: the two never overlap (PL-033).
-  const held = saving || undoing || history?.waits(criteriaSet.id) === true;
+  // Held too while any other write in Configure is in flight: one at a time (PL-033).
+  const held = saving || undoing || history?.busy === true;
   useEffect(() => answers?.listen(criteriaSet.id, setWeights), [answers, criteriaSet.id]);
   const showAnswer = useCallback(
     (setId: string, answer: PillarWeight[]) => {
@@ -107,23 +107,23 @@ export function PillarWeightsPanel({
   const move = useCallback(
     async (pillar: string, weight: number) => {
       if (inFlight.current || undoing) return;
-      // Its place in the order, and what holds the undo and the set's Delete (D41, S8): told
-      // from the write itself, which outlives this panel when a set switch remounts it.
-      const write = history?.begin(criteriaSet.id);
-      if (write === null) return;
+      // The one write in Configure's flight (D41, PL-033), given back by the write itself,
+      // which outlives this panel when a set switch remounts it.
+      const done = history?.begin();
+      if (done === null) return;
       inFlight.current = true;
       setSaving(true);
       setFailure(null);
       try {
         const rebalanced = await updatePillarWeight(criteriaSet.id, pillar, weight);
         setWeights(rebalanced.items);
-        note.weight(pillar, weights, rebalanced.items, weight, write);
+        note.weight(pillar, weights, rebalanced.items, weight);
       } catch (error) {
         setFailure(error);
       } finally {
         inFlight.current = false;
         setSaving(false);
-        if (write !== undefined) history?.end(write);
+        done?.();
         // **Here rather than on release**, so the preview stands until the answer that replaces
         // it. A refusal ends the gesture too: the weights it previewed are not the stored ones
         // and never will be, so the rows go back to what is stored and the notice says why.
@@ -138,23 +138,23 @@ export function PillarWeightsPanel({
   const lock = useCallback(
     async (pillar: string, locked: boolean) => {
       if (inFlight.current || undoing) return;
-      // Its place in the order, and what holds the undo and the set's Delete (D41, S8): told
-      // from the write itself, which outlives this panel when a set switch remounts it.
-      const write = history?.begin(criteriaSet.id);
-      if (write === null) return;
+      // The one write in Configure's flight (D41, PL-033), given back by the write itself,
+      // which outlives this panel when a set switch remounts it.
+      const done = history?.begin();
+      if (done === null) return;
       inFlight.current = true;
       setSaving(true);
       setFailure(null);
       try {
         const rebalanced = await updatePillarLock(criteriaSet.id, pillar, locked);
         setWeights(rebalanced.items);
-        note.lock(pillar, locked, write);
+        note.lock(pillar, locked);
       } catch (error) {
         setFailure(error);
       } finally {
         inFlight.current = false;
         setSaving(false);
-        if (write !== undefined) history?.end(write);
+        done?.();
       }
     },
     [criteriaSet.id, undoing, note, history],

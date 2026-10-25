@@ -7,7 +7,6 @@ import {
   UNDO_CANNOT_RESTORE_THE_PILLARS,
   undoCanRestore,
   type PillarShare,
-  type Write,
 } from "../changeHistory";
 import type { ChangeHistory } from "../useChangeHistory";
 
@@ -36,7 +35,6 @@ export function useNotePillarChange(
         was: PillarWeight[],
         answer: PillarWeight[],
         weight: number,
-        write?: Write,
       ) {
         const before = was.find((each) => each.pillar === pillar)?.weight;
         history?.note({
@@ -53,9 +51,9 @@ export function useNotePillarChange(
             showAnswer(sentFor, (await updatePillarWeight(sentFor, pillar, back)).items);
           },
           undoes: { criteriaSetId: sentFor, by: "write" },
-        }, write);
+        });
       },
-      lock(pillar: string, locked: boolean, write?: Write) {
+      lock(pillar: string, locked: boolean) {
         history?.note({
           target: `pillar-lock:${sentFor}:${pillar}`,
           stage: "Pillar weights",
@@ -66,7 +64,7 @@ export function useNotePillarChange(
             showAnswer(sentFor, (await updatePillarLock(sentFor, pillar, back === true)).items);
           },
           undoes: { criteriaSetId: sentFor, by: "write" },
-        }, write);
+        });
       },
     };
   }, [criteriaSet, names, showAnswer, history]);

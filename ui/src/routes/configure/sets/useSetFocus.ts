@@ -21,6 +21,8 @@ type Verb = "rename" | "delete";
 export function useSetFocus(
   criteriaSets: readonly CriteriaSetSummary[],
   renaming: string | null,
+  /** The list failed to be read again, so the stage offers Try again. */
+  listFailed: boolean,
 ) {
   const prefix = useId();
   const renameField = useRef<HTMLInputElement>(null);
@@ -76,6 +78,14 @@ export function useSetFocus(
     // `buttonId` is derived from `prefix`, which never changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settled, criteriaSets]);
+
+  // **Try again takes its own button away** while the list is read again (PL-033), so focus it
+  // held goes to the new-set field rather than to the page.
+  const wasFailing = useRef(listFailed);
+  useEffect(() => {
+    if (wasFailing.current && !listFailed) refocusIfLost(newName.current);
+    wasFailing.current = listFailed;
+  }, [listFailed]);
 
   const expect = (next: Pending) => {
     pending.current = next;

@@ -2574,23 +2574,32 @@ describe("a pillar change undone after the panel remounted", () => {
     await waitFor(() => expect(economy()).toHaveValue("40"));
   });
 
-  it("releases Recent changes when the panel unmounts with a write in flight", async () => {
+  // PL-033: Configure writes one thing at a time, so the undo waits for the write -- and is
+  // given back by the write itself once it answers, though no pillar panel is there to say so.
+  it("holds Recent changes until a write answers, though its panel has unmounted", async () => {
+    let answer = (): void => undefined;
+    const write = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
     let release = (): void => undefined;
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
-    onTestFinished(() => release());
+    onTestFinished(() => {
+      answer();
+      release();
+    });
     renderShell("/configure");
     await screen.findByRole("slider", { name: "Economy weight" });
     await settled();
-    // One change to undo, made before the write that will hang.
+    // One change to undo, made before the write that will wait.
     await saveWeight(COST_OF_LIVING, "40");
     const panel = await historyPanel();
     await panel.findByText(/Weight for Cost of living index: 50 to 40/);
 
     mockServer.use(
       http.put("/v1/criteria-sets/:id/pillar-weights/:pillar", async () => {
-        await held;
+        await write;
         return HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 });
       }),
       // No set comes back, so no pillar panel mounts again to say the write is over.
@@ -2609,6 +2618,8 @@ describe("a pillar change undone after the panel remounted", () => {
     await waitFor(() =>
       expect(screen.queryByRole("slider", { name: "Economy weight" })).toBeNull(),
     );
+    expectHeld(panel.getByRole("button", { name: "Undo this" }));
+    answer();
     await waitFor(() =>
       expect(panel.getByRole("button", { name: "Undo this" })).not.toHaveAttribute(
         "aria-disabled",

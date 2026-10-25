@@ -44,3 +44,37 @@ describe("an undo while another is on its way", () => {
     expect(result.current.undoing).toBe(false);
   });
 });
+
+/** PL-033. **One write in flight at a time across Configure**, an undo included. */
+describe("a write and an undo", () => {
+  const entry = (reversed: unknown[]) => ({
+    target: "criterion:default:a",
+    stage: "Pillar weights",
+    label: "Weight for A: 50 to 40, in Default",
+    before: 50,
+    after: 40,
+    reverse: (before: unknown) => {
+      reversed.push(before);
+    },
+  });
+
+  it("refuses a second write and any undo while one write is in flight, until it is given back", async () => {
+    const reversed: unknown[] = [];
+    const { result } = renderHook(() => useChangeHistory());
+    act(() => result.current.note(entry(reversed)));
+    let done: (() => void) | null = null;
+    act(() => {
+      done = result.current.begin();
+    });
+
+    expect(result.current.begin()).toBeNull();
+    await act(async () => result.current.undoThrough(result.current.changes[0]!.id));
+    expect(reversed).toEqual([]);
+    expect(result.current.busy).toBe(true);
+
+    act(() => done!());
+    await act(async () => result.current.undoThrough(result.current.changes[0]!.id));
+    expect(reversed).toEqual([50]);
+    expect(result.current.busy).toBe(false);
+  });
+});

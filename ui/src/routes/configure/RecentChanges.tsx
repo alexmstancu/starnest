@@ -1,12 +1,6 @@
 import { useId, useRef, useState } from "react";
 import { ActRefusal } from "../../shell/ActRefusal";
-import {
-  describeReach,
-  describeWhen,
-  mustWait,
-  reachOf,
-  stranded,
-} from "./changeHistory";
+import { type Change, describeReach, describeWhen, reachOf, stranded } from "./changeHistory";
 import type { ChangeHistory } from "./useChangeHistory";
 import { useFocusAfterUndo } from "./useFocusAfterUndo";
 
@@ -28,8 +22,8 @@ export function RecentChanges({
 }: {
   history: ChangeHistory;
   /**
-   * A change is being saved, so nothing may be undone until it has answered: an undo sent
-   * meanwhile would race it, and the two answers could land in either order.
+   * The list of sets has yet to show the last set action, so nothing may be undone until it
+   * does. A write in flight holds every undo through the history itself (PL-033).
    */
   busy: boolean;
   /** Whether a set is deleted now, as the list of sets says once it has settled (PL-033). */
@@ -45,10 +39,10 @@ export function RecentChanges({
   // **Held, never disabled, while a write is in flight** (NEW-34). Chromium throws focus off a
   // button the moment it is disabled, so an undo pressed from the keyboard put the reader back
   // on the page. Held, a button keeps focus and says so, and pressing it does nothing.
-  const held = history.undoing || busy;
+  const held = history.busy || busy;
   // **An entry never outlives its set** (PL-033): one whose undo would find its set deleted is
   // held and says why, and so is everything its undo would have to pass through, until the set
-  // is restored. One whose undo does not commute with a write in flight waits for it.
+  // is restored.
   const deleted = new Set(
     history.changes.flatMap(({ undoes }) =>
       undoes !== undefined && isDeleted(undoes.criteriaSetId) ? [undoes.criteriaSetId] : [],
@@ -58,8 +52,7 @@ export function RecentChanges({
   const reasonIdOf = (id: number) => `${headingId}-stranded-${String(id)}`;
   const blocked = (reach: readonly { id: number }[]) =>
     reach.some((each) => strandedIds.has(each.id));
-  const heldFor = (reach: Parameters<typeof mustWait>[0]) =>
-    held || blocked(reach) || mustWait(reach, history.writes);
+  const heldFor = (reach: readonly Change[]) => held || blocked(reach);
   const heading = useRef<HTMLButtonElement>(null);
   const focus = useFocusAfterUndo(history, heading);
   const undoThrough = (id: number) => {
@@ -123,6 +116,13 @@ export function RecentChanges({
         <p id={resetCaveatId} className="panel__hint" role="note">
           Going back cannot restore every weight exactly: a change below left
           the rest of its pillar at 0.
+        </p>
+      )}
+
+      {/* Why everything waits, while it does: Configure sends one write at a time (PL-033). */}
+      {history.busy && (
+        <p className="panel__hint" role="status">
+          A change is being saved; the next waits until it is stored.
         </p>
       )}
 

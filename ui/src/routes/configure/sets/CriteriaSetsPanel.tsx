@@ -32,6 +32,7 @@ export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
   const { renameField, newName, buttonId, renameClosed, deleted } = useSetFocus(
     criteriaSets,
     form.renaming,
+    form.listFailure !== null,
   );
   const saveRename = async (criteriaSetId: string) => {
     await form.saveRename();
@@ -168,7 +169,7 @@ export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
                     <HeldButton
                       id={buttonId(set.id, "delete")}
                       className="action action--danger"
-                      held={form.deleteHeld(set.id) || only}
+                      held={form.busy || only}
                       title={
                         only
                           ? "The only set there is cannot be deleted"

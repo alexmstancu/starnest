@@ -1125,7 +1125,7 @@ describe("the drill-down", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("combobox", { name: /active criteria set/i })).toHaveValue(
-        "remote-only",
+        "remote_only",
       ),
     );
     expect(await toggleOf("Portugal")).toHaveAttribute("aria-expanded", "true");
