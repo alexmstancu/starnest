@@ -237,7 +237,7 @@ function CriterionRow({
   onDragEnd: () => void;
   onSave: (attribute: string, weight: number) => void;
   onSetLock: (attribute: string, weightLocked: boolean) => void;
-  onSaveRule: (attribute: string, rule: CriterionRule) => void;
+  onSaveRule: (attribute: string, rule: CriterionRule) => Promise<unknown>;
 }) {
   // Zero where the server sent no weight at all, which it never does -- `weight` is required
   // on `Criterion` and optional only in the generated type. A slider has no way to show
@@ -266,10 +266,12 @@ function CriterionRow({
   // can read. Local state, because which row is open is this component's own business and
   // nothing outside it needs to know.
   const [editingRule, setEditingRule] = useState(false);
-  const rule = useCriterionRule(criterion, onSaveRule, {
-    saving: savingRule,
-    busy: held,
-  });
+  const rule = useCriterionRule(
+    criterion,
+    onSaveRule,
+    { saving: savingRule, busy: held },
+    { valueType: attribute?.value_type, title: titleOf(criterion.attribute, attribute) },
+  );
 
   // A rebalance moves this row's weight without this row having been dragged -- the server's
   // on the way back, the preview's while another row's pointer is down -- and a refused change

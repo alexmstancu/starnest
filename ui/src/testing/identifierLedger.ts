@@ -22,19 +22,6 @@ export interface KnownOffender {
   readonly removedBy: string;
 }
 
-const RULE_EDITOR: readonly KnownOffender[] = [
-  {
-    identifier: "target_range",
-    where: "stage 3, the open rule editor: the goal's option and the band's hint",
-    removedBy: "PL-029 (C02)",
-  },
-  {
-    identifier: "as_is",
-    where: "stage 3, the open rule editor: the normalisation method's option",
-    removedBy: "PL-029 (C02)",
-  },
-];
-
 const COMPOUND_RULES: readonly KnownOffender[] = [
   {
     identifier: "ShareOfHouseholdField",
@@ -85,7 +72,6 @@ const MANUAL_SOURCE: KnownOffender = {
 
 export const IDENTIFIER_LEDGER = {
   "Configure, a pillar and a rule editor open": [
-    ...RULE_EDITOR,
     ...COMPOUND_RULES,
     ...GATE_PROPOSALS,
     COVERAGE_FLOOR,

@@ -1,7 +1,8 @@
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, delay, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
+import { ATTRIBUTES } from "../../../mocks/fixtures";
 import { mockServer } from "../../../mocks/server";
 import {
   expectHeld,
@@ -84,6 +85,10 @@ async function openTheRuleFor(attribute: string): Promise<void> {
   );
 }
 
+function ruleForm(attribute: string): HTMLElement {
+  return screen.getByRole("form", { name: `The rule for ${attribute}` });
+}
+
 function goalSelect(): HTMLSelectElement {
   return screen.getByRole<HTMLSelectElement>("combobox", { name: "Goal" });
 }
@@ -122,7 +127,7 @@ describe("reading the rule a criterion already has", () => {
         .value,
     ).toBe("fixed");
     expect(
-      screen.getByRole<HTMLInputElement>("spinbutton", {
+      screen.getByRole<HTMLInputElement>("textbox", {
         name: `Anchor 1 value for ${ANCHORED}`,
       }).value,
     ).toBe("2");
@@ -137,12 +142,12 @@ describe("reading the rule a criterion already has", () => {
     await openTheRuleFor(ANCHORED);
 
     expect(
-      screen.getByRole<HTMLInputElement>("spinbutton", {
+      screen.getByRole<HTMLInputElement>("textbox", {
         name: "Threshold maximum",
       }).value,
     ).toBe("15");
     expect(
-      screen.getByRole<HTMLInputElement>("spinbutton", {
+      screen.getByRole<HTMLInputElement>("textbox", {
         name: "Threshold minimum",
       }).value,
     ).toBe("");
@@ -196,7 +201,7 @@ describe("changing the rule", () => {
     // The row's own goal chip, re-rendered from the response rather than from the draft.
     await waitFor(() =>
       expect(screen.getByRole("group", { name: ANCHORED })).toHaveTextContent(
-        "goal: maximise",
+        "Higher is better",
       ),
     );
   });
@@ -223,7 +228,7 @@ describe("changing the rule", () => {
     const user = userEvent.setup();
     await openTheRuleFor(ANCHORED);
     const writes = holdCriterionWrites();
-    act(() => screen.getByRole("spinbutton", { name: "Threshold maximum" }).focus());
+    act(() => screen.getByRole("textbox", { name: "Threshold maximum" }).focus());
 
     await user.keyboard("{Enter}");
     await aMomentLater();
@@ -238,13 +243,13 @@ describe("changing the rule", () => {
     await user.click(screen.getByRole("button", { name: "Add an anchor" }));
 
     expect(
-      screen.getByRole("spinbutton", { name: `Anchor 1 value for ${PLAIN}` }),
+      screen.getByRole("textbox", { name: `Anchor 1 value for ${PLAIN}` }),
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Remove anchor 1" }));
 
     expect(
-      screen.queryByRole("spinbutton", { name: `Anchor 1 value for ${PLAIN}` }),
+      screen.queryByRole("textbox", { name: `Anchor 1 value for ${PLAIN}` }),
     ).not.toBeInTheDocument();
   });
 
@@ -262,10 +267,9 @@ describe("changing the rule", () => {
     );
 
     await openTheRuleFor(ANCHORED);
-    // A number input will not hold letters, so the unreadable figure comes from an anchor's
-    // label field being left where a score is needed: one half of a pair.
+    // One half of a pair: a value with no score maps nothing.
     await user.clear(
-      screen.getByRole("spinbutton", {
+      screen.getByRole("textbox", {
         name: `Anchor 1 score for ${ANCHORED}`,
       }),
     );
@@ -297,7 +301,7 @@ describe("changing the rule", () => {
     await user.click(screen.getByRole("button", { name: "Save rule" }));
 
     expect(
-      await screen.findByText(/cannot express a band/i),
+      await within(ruleForm(ANCHORED)).findByText(/cannot express a band/i),
     ).toBeInTheDocument();
   });
 
@@ -373,6 +377,273 @@ describe("changing the rule", () => {
   });
 });
 
+
+/**
+ * PL-024 on the rule editor (C02-S1). The band, zero points, anchors and threshold were
+ * `type="number"` boxes, which report text they cannot parse as "" -- and the form read "" as
+ * "no bound", so "1,000" typed as a threshold cleared it in silence. They are the shared field
+ * now: what was typed stays, and what cannot be read is refused on the box.
+ */
+describe("a figure typed into the rule", () => {
+  it("keeps 1,000 as typed, refuses it on the box, and sends nothing", async () => {
+    const user = userEvent.setup();
+    await openTheRuleFor(ANCHORED);
+    const writes = holdCriterionWrites();
+    const threshold = screen.getByRole("textbox", { name: "Threshold maximum" });
+
+    await user.clear(threshold);
+    await user.type(threshold, "1,000");
+    await user.click(screen.getByRole("button", { name: "Save rule" }));
+
+    expect(threshold).toHaveValue("1,000");
+    expect(threshold).toHaveAttribute("aria-invalid", "true");
+    expect(threshold).toHaveAccessibleDescription(/a comma is not read/i);
+    expect(await within(ruleForm(ANCHORED)).findByText(/^The threshold's maximum: /)).toBeInTheDocument();
+    await aMomentLater();
+    expect(writes.sent).toEqual([]);
+  });
+
+  it("sends a negative bound, since a figure may be below zero", async () => {
+    const user = userEvent.setup();
+    await openTheRuleFor(ANCHORED);
+    const writes = holdCriterionWrites();
+
+    await user.type(screen.getByRole("textbox", { name: "Zero below" }), "-5");
+    await user.click(screen.getByRole("button", { name: "Save rule" }));
+
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+    expect(writes.sent[0]?.body).toMatchObject({ zero_score_below: -5 });
+    writes.release();
+  });
+
+  it("refuses a fraction as an anchor's score, on the box", async () => {
+    const user = userEvent.setup();
+    await openTheRuleFor(ANCHORED);
+    const score = screen.getByRole("textbox", { name: `Anchor 1 score for ${ANCHORED}` });
+
+    await user.clear(score);
+    await user.type(score, "2.5");
+    await user.tab();
+
+    expect(score).toHaveAttribute("aria-invalid", "true");
+    expect(score).toHaveAccessibleDescription(/a whole number, with no point/i);
+  });
+
+  it("reads the figures of a counted attribute as whole numbers", async () => {
+    mockServer.use(
+      http.get("/v1/attributes", () =>
+        HttpResponse.json({
+          items: [
+            ...ATTRIBUTES,
+            { ...ATTRIBUTES[0]!, id: "country.homicide_rate", name: PLAIN, value_type: "Count", unit: null },
+          ],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    await openTheRuleFor(PLAIN);
+    const threshold = screen.getByRole("textbox", { name: "Threshold minimum" });
+
+    await user.type(threshold, "2.5");
+    await user.tab();
+
+    expect(threshold).toHaveAccessibleDescription(/a whole number, with no point/i);
+  });
+
+  it("offers each goal and method in words", async () => {
+    await openTheRuleFor(ANCHORED);
+
+    expect(
+      within(goalSelect()).getAllByRole("option").map((option) => option.textContent),
+    ).toEqual(["Lower is better", "Higher is better", "Within a band"]);
+    expect(
+      within(screen.getByRole("combobox", { name: "Normalisation" }))
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual(["Against fixed anchors", "By percentile", "As published"]);
+  });
+});
+
+/**
+ * PL-026. **A refused rule is reported where it is, field by field**: inside the rule's own form,
+ * from the fields the server names in `details.errors`, in the server's sentence and never its
+ * code. The stored rule is shown again (P55), and what was asked for stays one click away.
+ */
+describe("a rule the server refuses", () => {
+  async function aBackwardsBand(): Promise<void> {
+    const user = userEvent.setup();
+    await openTheRuleFor(ANCHORED);
+    await user.selectOptions(goalSelect(), "target_range");
+    await user.type(screen.getByRole("textbox", { name: "Band minimum" }), "30");
+    await user.type(screen.getByRole("textbox", { name: "Band maximum" }), "10");
+    await user.click(screen.getByRole("button", { name: "Save rule" }));
+    expect(await within(ruleForm(ANCHORED)).findByRole("alert")).toHaveTextContent(
+      /runs 30 to 10, which is backwards/,
+    );
+  }
+
+  it("says why inside the rule's form, naming the attribute, with no code", async () => {
+    await aBackwardsBand();
+    const form = ruleForm(ANCHORED);
+
+    expect(within(form).getByRole("alert")).toHaveTextContent(
+      "the target range of Overcrowding rate runs 30 to 10, which is backwards",
+    );
+    expect(screen.queryByText(/invalid_criterion/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/country\.overcrowding_rate/)).not.toBeInTheDocument();
+    // Nothing at the top of the pillar, where a weight's refusal goes.
+    expect(screen.getAllByRole("alert").every((alert) => form.contains(alert))).toBe(true);
+  });
+
+  it("marks the fields it names, and only those", async () => {
+    await aBackwardsBand();
+
+    for (const name of ["Band minimum", "Band maximum"]) {
+      const field = screen.getByRole("textbox", { name });
+      expect(field).toHaveAttribute("aria-invalid", "true");
+      expect(field).toHaveAccessibleDescription(/which is backwards/);
+    }
+    expect(screen.getByRole("textbox", { name: "Zero below" })).toHaveAttribute(
+      "aria-invalid",
+      "false",
+    );
+    expect(goalSelect()).not.toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("marks the goal and method when it is their combination it refuses", async () => {
+    const user = userEvent.setup();
+    await openTheRuleFor(ANCHORED);
+    await user.selectOptions(goalSelect(), "target_range");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Normalisation" }), "percentile");
+    await user.type(screen.getByRole("textbox", { name: "Band minimum" }), "5");
+    await user.type(screen.getByRole("textbox", { name: "Band maximum" }), "10");
+    await user.click(screen.getByRole("button", { name: "Save rule" }));
+
+    expect(await within(ruleForm(ANCHORED)).findByRole("alert")).toHaveTextContent(
+      /cannot express a band/,
+    );
+    expect(goalSelect()).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("combobox", { name: "Normalisation" })).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+  });
+
+  it("marks both threshold bounds when it refuses the threshold", async () => {
+    const user = userEvent.setup();
+    await openTheRuleFor(ANCHORED);
+    await user.type(screen.getByRole("textbox", { name: "Threshold minimum" }), "50");
+    await user.click(screen.getByRole("button", { name: "Save rule" }));
+
+    expect(await within(ruleForm(ANCHORED)).findByRole("alert")).toHaveTextContent(
+      "minimum 50 is above maximum 15",
+    );
+    for (const name of ["Threshold minimum", "Threshold maximum"]) {
+      expect(screen.getByRole("textbox", { name })).toHaveAttribute("aria-invalid", "true");
+    }
+  });
+
+  it("says a refusal about the anchors under them", async () => {
+    const user = userEvent.setup();
+    await openTheRuleFor(ANCHORED);
+    const score = screen.getByRole("textbox", { name: `Anchor 1 score for ${ANCHORED}` });
+    await user.clear(score);
+    await user.type(score, "150");
+    await user.click(screen.getByRole("button", { name: "Save rule" }));
+
+    const anchors = screen.getByRole("group", { name: "Scale anchors" });
+    expect(
+      await within(anchors).findByText(/the score scale stops at 100/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the stored rule, says what was asked for, and puts it back on request", async () => {
+    const user = userEvent.setup();
+    await aBackwardsBand();
+
+    await waitFor(() => expect(goalSelect()).toHaveValue("minimise"));
+    expect(screen.getByRole("textbox", { name: "Band minimum" })).toHaveValue("");
+    expect(within(ruleForm(ANCHORED)).getByText(/^You asked for: /)).toHaveTextContent(
+      "You asked for: within a band, against fixed anchors; a band from 30 to 10; 2 anchors; " +
+        "a threshold of at most 15.",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Put my values back" }));
+
+    expect(goalSelect()).toHaveValue("target_range");
+    expect(screen.getByRole("textbox", { name: "Band minimum" })).toHaveValue("30");
+    expect(screen.getByRole("textbox", { name: "Band maximum" })).toHaveValue("10");
+    // Back, so nothing is left to put back -- and the reason stays until the rule is sent again.
+    expect(screen.queryByRole("button", { name: "Put my values back" })).not.toBeInTheDocument();
+    expect(within(ruleForm(ANCHORED)).getByRole("alert")).toHaveTextContent(/which is backwards/);
+  });
+
+  it("clears a field's mark when that field is typed in, and only that one", async () => {
+    const user = userEvent.setup();
+    await aBackwardsBand();
+    await user.click(screen.getByRole("button", { name: "Put my values back" }));
+
+    await user.clear(screen.getByRole("textbox", { name: "Band minimum" }));
+    await user.type(screen.getByRole("textbox", { name: "Band minimum" }), "5");
+
+    expect(screen.getByRole("textbox", { name: "Band minimum" })).toHaveAttribute(
+      "aria-invalid",
+      "false",
+    );
+    expect(screen.getByRole("textbox", { name: "Band maximum" })).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+  });
+
+  it("forgets the refusal once the rule is sent again and stored", async () => {
+    const user = userEvent.setup();
+    await aBackwardsBand();
+    await user.click(screen.getByRole("button", { name: "Put my values back" }));
+    await user.clear(screen.getByRole("textbox", { name: "Band maximum" }));
+    await user.type(screen.getByRole("textbox", { name: "Band maximum" }), "40");
+
+    await user.click(screen.getByRole("button", { name: "Save rule" }));
+
+    await waitFor(() =>
+      expect(within(ruleForm(ANCHORED)).queryByRole("alert")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("textbox", { name: "Band maximum" })).toHaveAttribute(
+      "aria-invalid",
+      "false",
+    );
+    expect(screen.getByRole("group", { name: ANCHORED })).toHaveTextContent("Within a band");
+  });
+
+  it("says a refusal that names no field in words, inside the form, with no code", async () => {
+    mockServer.use(
+      http.patch("/v1/criteria-sets/:id/criteria/:attribute", () =>
+        HttpResponse.json({ code: "internal_error", message: "Something broke on the server." }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+    await openTheRuleFor(ANCHORED);
+    await user.selectOptions(goalSelect(), "maximise");
+    await user.click(screen.getByRole("button", { name: "Save rule" }));
+
+    expect(
+      await within(ruleForm(ANCHORED)).findByText("Something broke on the server."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("internal_error")).not.toBeInTheDocument();
+  });
+
+  it("keeps the refusal when the rule's editor is closed and opened again", async () => {
+    const user = userEvent.setup();
+    await aBackwardsBand();
+    const toggle = screen.getByRole("button", { name: `Close the rule for ${ANCHORED}` });
+
+    await user.click(toggle);
+    await user.click(screen.getByRole("button", { name: `Edit the rule for ${ANCHORED}` }));
+
+    expect(within(ruleForm(ANCHORED)).getByRole("alert")).toHaveTextContent(/which is backwards/);
+  });
+});
+
 /**
  * Every write to a criterion, recorded with the attribute it was for, held until the test lets
  * go and then answered by the stateful mock behind this one.
@@ -403,7 +674,7 @@ function holdCriterionWrites(): {
 
 /** An anchor's figure field, which is how many anchors the rule holds can be counted. */
 function anchorValues(): HTMLElement[] {
-  return screen.getAllByRole("spinbutton", { name: /^Anchor \d+ value for/ });
+  return screen.getAllByRole("textbox", { name: /^Anchor \d+ value for/ });
 }
 
 /**
@@ -433,8 +704,8 @@ describe("a rule while it is being saved", () => {
         "true",
       );
     }
-    const bandMinimum = screen.getByRole("spinbutton", { name: "Band minimum" });
-    const threshold = screen.getByRole("spinbutton", {
+    const bandMinimum = screen.getByRole("textbox", { name: "Band minimum" });
+    const threshold = screen.getByRole("textbox", {
       name: "Threshold maximum",
     });
     for (const field of [bandMinimum, anchorValues()[0]!, threshold]) {
@@ -454,7 +725,7 @@ describe("a rule while it is being saved", () => {
     await user.click(screen.getByRole("button", { name: "Discard changes" }));
     expect(goalSelect()).toHaveValue("maximise");
     expect(blocks).not.toBeChecked();
-    expect(bandMinimum).toHaveValue(null);
+    expect(bandMinimum).toHaveValue("");
     expect(anchorValues()).toHaveLength(2);
 
     writes.release();
@@ -470,7 +741,7 @@ describe("a rule while it is being saved", () => {
     const user = userEvent.setup();
     await openTheRuleFor(ANCHORED);
     await user.clear(
-      screen.getByRole("spinbutton", { name: `Anchor 1 score for ${ANCHORED}` }),
+      screen.getByRole("textbox", { name: `Anchor 1 score for ${ANCHORED}` }),
     );
     const writes = holdCriterionWrites();
     const neighbour = screen.getByRole("slider", {
@@ -509,7 +780,8 @@ describe("a rule while it is being saved", () => {
     it("keeps focus on Save while the rule is saved, and a second Enter sends nothing", async () => {
       const user = userEvent.setup();
       await openTheRuleFor(ANCHORED);
-      await user.selectOptions(goalSelect(), "maximise");
+      // A change the server stores: "maximise" would be refused, its anchors falling (PL-026).
+      await user.click(screen.getByRole("checkbox", { name: "Missing figure blocks scoring" }));
       const writes = holdCriterionWrites();
       const save = screen.getByRole("button", { name: "Save rule" });
       act(() => save.focus());
@@ -531,7 +803,7 @@ describe("a rule while it is being saved", () => {
       expect(writes.sent).toEqual([
         {
           attribute: "country.overcrowding_rate",
-          body: expect.objectContaining({ goal: "maximise" }),
+          body: expect.objectContaining({ blocks_if_missing: true }),
         },
       ]);
     });
@@ -554,7 +826,7 @@ describe("a rule while it is being saved", () => {
       const user = userEvent.setup();
       await openTheRuleFor(ANCHORED);
       const writes = holdCriterionWrites();
-      const threshold = screen.getByRole("spinbutton", {
+      const threshold = screen.getByRole("textbox", {
         name: "Threshold maximum",
       });
       await user.clear(threshold);
@@ -567,7 +839,7 @@ describe("a rule while it is being saved", () => {
       expectHeld(threshold);
       expect(threshold).toHaveAttribute("readonly");
       await user.keyboard("3");
-      expect(threshold).toHaveValue(12);
+      expect(threshold).toHaveValue("12");
 
       writes.release();
 
@@ -576,13 +848,13 @@ describe("a rule while it is being saved", () => {
       expect(threshold).toHaveFocus();
       await user.clear(threshold);
       await user.type(threshold, "9");
-      expect(threshold).toHaveValue(9);
+      expect(threshold).toHaveValue("9");
     });
 
     it("keeps focus on Save while another write is in flight, and sends the rule once it has answered", async () => {
       const user = userEvent.setup();
       await openTheRuleFor(ANCHORED);
-      await user.selectOptions(goalSelect(), "maximise");
+      await user.click(screen.getByRole("checkbox", { name: "Missing figure blocks scoring" }));
       const save = screen.getByRole("button", { name: "Save rule" });
       act(() => save.focus());
       const writes = holdCriterionWrites();
@@ -612,7 +884,7 @@ describe("a rule while it is being saved", () => {
         },
         {
           attribute: "country.overcrowding_rate",
-          body: expect.objectContaining({ goal: "maximise" }),
+          body: expect.objectContaining({ blocks_if_missing: true }),
         },
       ]);
     });
@@ -628,7 +900,7 @@ describe("a rule while it is being saved", () => {
       );
       const user = userEvent.setup();
       await openTheRuleFor(ANCHORED);
-      const threshold = screen.getByRole("spinbutton", {
+      const threshold = screen.getByRole("textbox", {
         name: "Threshold maximum",
       });
       await user.clear(threshold);
@@ -643,7 +915,7 @@ describe("a rule while it is being saved", () => {
       expect(threshold).toHaveFocus();
       // The stored rule is back on screen, as it is after any refusal: nothing to save until the
       // next edit (UIC-G1), and the next edit can be saved -- Save was let go, not held.
-      await waitFor(() => expect(threshold).toHaveValue(15));
+      await waitFor(() => expect(threshold).toHaveValue("15"));
       const save = screen.getByRole("button", { name: "Save rule" });
       expectUnavailable(save);
       await user.clear(threshold);

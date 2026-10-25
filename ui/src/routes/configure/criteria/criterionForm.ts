@@ -14,6 +14,13 @@
  */
 
 import type { Criterion, CriterionRule } from "../../../api/endpoints";
+import {
+  describeRefusal,
+  numberAsInput,
+  readNumber,
+  type NumberKind,
+  type NumberRule,
+} from "../../../format/typedNumber";
 
 /**
  * The goals and methods a criterion may take.
@@ -24,6 +31,57 @@ import type { Criterion, CriterionRule } from "../../../api/endpoints";
  */
 export const THE_GOALS = ["minimise", "maximise", "target_range"] as const;
 export const THE_METHODS = ["fixed", "percentile", "as_is"] as const;
+
+type Goal = (typeof THE_GOALS)[number];
+type Method = (typeof THE_METHODS)[number];
+
+/**
+ * What each goal and method is called on screen (PL-029). **The option's value stays the id and
+ * its text is these words**: one table read by the options, the chip and "You asked for", so no
+ * identifier reaches the reader through any of them.
+ */
+export const GOAL_WORDS: Record<Goal, string> = {
+  minimise: "Lower is better",
+  maximise: "Higher is better",
+  target_range: "Within a band",
+};
+export const METHOD_WORDS: Record<Method, string> = {
+  fixed: "Against fixed anchors",
+  percentile: "By percentile",
+  as_is: "As published",
+};
+
+/**
+ * What kind of figure a rule's band, zero points, anchors and threshold are, from what the
+ * attribute measures (PL-024): money in euros and cents, a count in whole numbers, anything else
+ * a decimal. Signed, because a temperature or a growth rate can be below zero.
+ */
+export function numberKindFor(valueType: string | undefined): NumberKind {
+  if (valueType === "Monetary") return "money";
+  if (valueType === "Count") return "whole";
+  return "decimal";
+}
+
+/** How each numeric field of the rule reads what is typed into it. */
+export interface RuleNumberRules {
+  /** A band bound, a zero point, a threshold bound: blank means "none". */
+  bound: NumberRule;
+  /** An anchor's figure, in the attribute's own unit. */
+  anchorValue: NumberRule;
+  /**
+   * The score an anchor maps to. Whole and at least zero; its ceiling is the server's, because
+   * it is the top of the score range, a setting this form does not hold.
+   */
+  anchorScore: NumberRule;
+}
+
+export function numberRulesFor(kind: NumberKind): RuleNumberRules {
+  return {
+    bound: { kind, signed: true, optional: true },
+    anchorValue: { kind, signed: true, optional: false },
+    anchorScore: { kind: "whole", minimum: 0, optional: false },
+  };
+}
 
 /** One anchor as typed: a figure, the score it maps to, and an optional word for the band. */
 export interface AnchorDraft {
@@ -84,8 +142,11 @@ export type Rule = Required<
 export type Parsed =
   { rule: Rule; problems: [] } | { rule: null; problems: string[] };
 
+/** A stored figure as its box shows it: never in exponent form, never rounded. */
+const AS_TYPED: NumberRule = { kind: "decimal", signed: true, optional: true };
+
 function textOf(figure: number | null | undefined): string {
-  return figure === null || figure === undefined ? "" : String(figure);
+  return numberAsInput(figure, AS_TYPED);
 }
 
 /**
@@ -112,8 +173,8 @@ export function draftFrom(criterion: Criterion): RuleDraft {
     zero_score_below: textOf(criterion.zero_score_below),
     zero_score_above: textOf(criterion.zero_score_above),
     anchors: (criterion.scale_anchors ?? []).map((anchor) => ({
-      input_value: String(anchor.input_value),
-      score: String(anchor.score),
+      input_value: textOf(anchor.input_value),
+      score: textOf(anchor.score),
       label: anchor.label ?? "",
     })),
     threshold_min: textOf(range?.min_value),
@@ -180,12 +241,22 @@ interface Reading {
   problem: string | null;
 }
 
-function figureIn(typed: string, named: string): Reading {
-  if (typed.trim() === "") return { figure: null, problem: null };
-  const figure = Number(typed);
-  return Number.isFinite(figure)
-    ? { figure, problem: null }
-    : { figure: null, problem: `${named} must be a number.` };
+/**
+ * One typed figure read by the shared grammar (`format/typedNumber.ts`). Blank is "none" here,
+ * whatever the field's rule says, because the caller decides what a missing figure means.
+ */
+function figureIn(typed: string, rule: NumberRule, named: string): Reading {
+  const reading = readNumber(typed, { ...rule, optional: true });
+  switch (reading.kind) {
+    case "blank":
+      return { figure: null, problem: null };
+    case "number":
+      return { figure: reading.value, problem: null };
+    case "incomplete":
+      return { figure: null, problem: `${named}: ${describeRefusal({ code: "not_a_number" }, rule)}` };
+    case "refused":
+      return { figure: null, problem: `${named}: ${describeRefusal(reading.refusal, rule)}` };
+  }
 }
 
 /**
@@ -194,11 +265,12 @@ function figureIn(typed: string, named: string): Reading {
  * **Every problem at once, not the first.** A form that reported one error per attempt would
  * make correcting three fields take three round trips through the same screen.
  */
-export function ruleFrom(draft: RuleDraft): Parsed {
+export function ruleFrom(draft: RuleDraft, kind: NumberKind = "decimal"): Parsed {
   const problems: string[] = [];
+  const rules = numberRulesFor(kind);
 
-  function figure(typed: string, named: string): number | null {
-    const read = figureIn(typed, named);
+  function figure(typed: string, named: string, rule = rules.bound): number | null {
+    const read = figureIn(typed, rule, named);
     if (read.problem !== null) problems.push(read.problem);
     return read.figure;
   }
@@ -221,8 +293,10 @@ export function ruleFrom(draft: RuleDraft): Parsed {
   draft.anchors
     .filter((anchor) => !isBlank(anchor))
     .forEach((anchor, index) => {
-      const value = figure(anchor.input_value, `Anchor ${index + 1}'s value`);
-      const score = figure(anchor.score, `Anchor ${index + 1}'s score`);
+      const before = problems.length;
+      const value = figure(anchor.input_value, `Anchor ${index + 1}'s value`, rules.anchorValue);
+      const score = figure(anchor.score, `Anchor ${index + 1}'s score`, rules.anchorScore);
+      if (problems.length > before) return;
       if (value === null || score === null) {
         problems.push(`Anchor ${index + 1} needs both a value and a score.`);
         return;
@@ -277,4 +351,38 @@ function isBlank(anchor: AnchorDraft): boolean {
     anchor.score.trim() === "" &&
     anchor.label.trim() === ""
   );
+}
+
+/**
+ * What a refused draft asked for, in words (PL-026): the form shows the stored rule again after
+ * a refusal (P55), and this keeps the attempt in view beside it. Only the parts that are set are
+ * said, as typed, so it reads back what the reader wrote rather than a reading of it.
+ */
+export function describeAsked(draft: RuleDraft): string {
+  const goal = wordsFor(GOAL_WORDS, draft.goal);
+  const method = wordsFor(METHOD_WORDS, draft.normalisation_method);
+  const anchors = draft.anchors.filter((anchor) => !isBlank(anchor)).length;
+  const parts = [
+    `${goal}, ${method}`,
+    between("a band", draft.target_range_min, draft.target_range_max),
+    draft.zero_score_below.trim() === "" ? null : `zero below ${draft.zero_score_below.trim()}`,
+    draft.zero_score_above.trim() === "" ? null : `zero above ${draft.zero_score_above.trim()}`,
+    anchors === 0 ? null : `${anchors} anchor${anchors === 1 ? "" : "s"}`,
+    between("a threshold", draft.threshold_min, draft.threshold_max),
+    draft.blocks_if_missing ? "a missing figure blocks scoring" : null,
+  ];
+  return `${parts.filter((part) => part !== null).join("; ")}.`;
+}
+
+/** The words for an id this table knows, lower-cased to sit inside a sentence; else as typed. */
+function wordsFor(words: Record<string, string>, id: string): string {
+  return Object.hasOwn(words, id) ? (words[id] ?? id).toLowerCase() : id;
+}
+
+function between(what: string, low: string, high: string): string | null {
+  const [from, to] = [low.trim(), high.trim()];
+  if (from !== "" && to !== "") return `${what} from ${from} to ${to}`;
+  if (from !== "") return `${what} of at least ${from}`;
+  if (to !== "") return `${what} of at most ${to}`;
+  return null;
 }

@@ -54,7 +54,7 @@ export interface CriteriaEditor {
    * flight can answer in either order, and the later answer would be shown over newer weights.
    */
   busy: boolean;
-  /** The failure of the last weight change. Shown; never swallowed. */
+  /** The failure of the last weight or lock change. Shown; never swallowed. A rule's is its own. */
   saveError: unknown;
   setWeight: (attribute: string, weight: number) => void;
   /**
@@ -68,8 +68,11 @@ export interface CriteriaEditor {
    * Separate from `setWeight` because the server treats them differently -- a weight
    * rebalances its pillar and a rule moves nothing -- and because the refusals differ: a
    * weight is refused by locks, a rule by the ontology (`reqs.md` 3.4).
+   *
+   * Resolves to the refusal for the rule form to report, or null: stored, nothing sent while
+   * another write is in flight, or answered for a set no longer on screen.
    */
-  setRule: (attribute: string, rule: CriterionRule) => void;
+  setRule: (attribute: string, rule: CriterionRule) => Promise<unknown>;
   reload: () => Promise<void>;
 }
 
@@ -239,8 +242,8 @@ export function useCriteriaEditor(
   );
 
   const setRule = useCallback(
-    (attribute: string, rule: CriterionRule) => {
-      if (criteriaSetId === null || inFlight.current || undoing) return;
+    (attribute: string, rule: CriterionRule): Promise<unknown> => {
+      if (criteriaSetId === null || inFlight.current || undoing) return Promise.resolve(null);
       inFlight.current = true;
       const sentFor = criteriaSetId;
 
@@ -248,20 +251,25 @@ export function useCriteriaEditor(
       setSavingRuleFor(attribute);
       setSaveError(null);
 
-      void updateCriterionRule(sentFor, attribute, rule)
-        .then((changed) => {
-          // The same response shape as a weight change, and applied the same way: the screen
-          // shows what the server decided rather than what was typed at it.
-          mergeInto(sentFor, changed.criteria);
-        })
-        .catch((error: unknown) => reportFor(sentFor, error))
+      return updateCriterionRule(sentFor, attribute, rule)
+        .then(
+          (changed) => {
+            // The same response shape as a weight change, and applied the same way: the screen
+            // shows what the server decided rather than what was typed at it.
+            mergeInto(sentFor, changed.criteria);
+            return null;
+          },
+          // **A refused rule is the rule form's to report** (PL-026), field by field inside it,
+          // never the pillar's `saveError` -- and only while its set is the one on screen.
+          (error: unknown) => (shownSet.current === sentFor ? error : null),
+        )
         .finally(() => {
           inFlight.current = false;
           setSavingAttribute(null);
           setSavingRuleFor(null);
         });
     },
-    [criteriaSetId, undoing, mergeInto, reportFor],
+    [criteriaSetId, undoing, mergeInto],
   );
 
   return {

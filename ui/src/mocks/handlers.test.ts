@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../api/ApiError";
 import { getJson } from "../api/client";
-import { fetchRanking, replaceHousehold, replaceSettings } from "../api/endpoints";
+import {
+  fetchCriteriaSet,
+  fetchRanking,
+  replaceHousehold,
+  replaceSettings,
+  updateCriterionRule,
+  type CriterionRule,
+} from "../api/endpoints";
 import { HOUSEHOLD, SETTINGS } from "./fixtures";
 
 /**
@@ -208,5 +215,166 @@ describe("the mock's refusal of a field", () => {
     expect(error.details).toEqual({
       errors: [{ location: ["body", "net_income"], problem: "Field required", kind: "missing" }],
     });
+  });
+});
+
+/**
+ * PL-026. **A rule the domain refuses is refused as the server refuses it**: 422
+ * `invalid_criterion`, the domain's sentence as the message, and each field it concerns in
+ * `details.errors` with that sentence and the kind `invalid_criterion`. The mock once stored any
+ * rule at all, which certified a form whose refusal path no test could reach.
+ */
+describe("the mock's refusal of a rule", () => {
+  const ANCHORED = "country.overcrowding_rate";
+
+  async function refusalOf(rule: CriterionRule): Promise<ApiError> {
+    return (await updateCriterionRule("default", ANCHORED, rule).catch(
+      (thrown: unknown) => thrown,
+    )) as ApiError;
+  }
+
+  function naming(message: string, ...fields: string[]) {
+    return fields.map((field) => ({
+      location: ["body", field],
+      problem: message,
+      kind: "invalid_criterion",
+    }));
+  }
+
+  it.each<[string, CriterionRule, string, string[]]>([
+    [
+      "a band goal with no band",
+      { goal: "target_range", target_range_min: 10 },
+      `${ANCHORED} aims at a target range but names no band; a target range needs both a ` +
+        "minimum and a maximum, in the attribute's own unit",
+      ["target_range_max"],
+    ],
+    [
+      "a band percentile cannot draw",
+      { goal: "target_range", normalisation_method: "percentile", target_range_min: 10, target_range_max: 30 },
+      `${ANCHORED} aims at a target range and normalises \`percentile\`, which cannot express a ` +
+        "band: `percentile` scores by standing among the candidates and `as_is` reads the " +
+        "figure as a score. A target range is a `fixed` scale -- the band, and where the score " +
+        "reaches zero on each side",
+      ["goal", "normalisation_method"],
+    ],
+    [
+      "a backwards band",
+      { target_range_min: 30, target_range_max: 10 },
+      `the target range of ${ANCHORED} runs 30 to 10, which is backwards`,
+      ["target_range_min", "target_range_max"],
+    ],
+    [
+      "a lower zero point inside the band",
+      { target_range_min: 10, target_range_max: 30, zero_score_below: 12 },
+      `${ANCHORED} scores 0 below 12, which is inside its target band starting at 10`,
+      ["target_range_min", "zero_score_below"],
+    ],
+    [
+      "an upper zero point inside the band",
+      { target_range_min: 10, target_range_max: 30, zero_score_above: 25 },
+      `${ANCHORED} scores 0 above 25, which is inside its target band ending at 30`,
+      ["target_range_max", "zero_score_above"],
+    ],
+    [
+      "one anchor",
+      { scale_anchors: [{ input_value: 5, score: 50, label: null }] },
+      `${ANCHORED} has one scale anchor, which maps that single value and nothing else; a ` +
+        "fixed scale needs at least two points, or none at all",
+      ["scale_anchors"],
+    ],
+    [
+      "one figure anchored twice",
+      {
+        scale_anchors: [
+          { input_value: 5, score: 100, label: null },
+          { input_value: 5, score: 0, label: null },
+        ],
+      },
+      `${ANCHORED} anchors the same input value twice, so it maps to two different scores`,
+      ["scale_anchors"],
+    ],
+    [
+      "anchors that rise where lower is better",
+      {
+        goal: "minimise",
+        scale_anchors: [
+          { input_value: 2, score: 0, label: null },
+          { input_value: 20, score: 100, label: null },
+        ],
+      },
+      `${ANCHORED} is to minimise, but its anchors' scores rise as the value rises -- it ` +
+        "would reward exactly what it means to penalise",
+      ["goal", "scale_anchors"],
+    ],
+    [
+      "a backwards threshold",
+      { matching_threshold: { min_value: 50, max_value: 10 } },
+      "minimum 50 is above maximum 10",
+      ["matching_threshold"],
+    ],
+  ])("refuses %s, naming its fields", async (_, rule, message, fields) => {
+    const error = await refusalOf(rule);
+
+    expect([error.status, error.code, error.message]).toEqual([422, "invalid_criterion", message]);
+    expect(error.details).toEqual({ errors: naming(message, ...fields) });
+  });
+
+  it("refuses an anchor above the top of the score range, with the bound", async () => {
+    const error = await refusalOf({
+      scale_anchors: [
+        { input_value: 2, score: 150, label: null },
+        { input_value: 20, score: 0, label: null },
+      ],
+    });
+
+    expect(error.message).toBe(
+      `${ANCHORED} anchors 2.0 to a score of 150, and the score scale stops at 100`,
+    );
+    expect(error.details).toEqual({
+      reason: "anchor_above_scale",
+      attribute: ANCHORED,
+      anchor_score: 150,
+      score_scale_max: 100,
+      errors: [{ ...naming(error.message, "scale_anchors")[0], limit: 100 }],
+    });
+  });
+
+  it("refuses a method the attribute's type does not permit", async () => {
+    const error = await updateCriterionRule("default", "country.cost_of_living_index", {
+      normalisation_method: "as_is",
+    }).catch((thrown: unknown) => thrown as ApiError);
+
+    expect((error as ApiError).details).toEqual({
+      errors: naming(
+        "country.cost_of_living_index is a Quantity and normalises `as_is`, which `reqs.md` " +
+          "3.3a does not permit for that type; the legal methods for a Quantity are: fixed, " +
+          "percentile",
+        "normalisation_method",
+      ),
+    });
+  });
+
+  it("stores nothing it refused", async () => {
+    await refusalOf({ target_range_min: 30, target_range_max: 10 });
+
+    const stored = (await fetchCriteriaSet("default")).criteria?.find(
+      (criterion) => criterion.attribute === ANCHORED,
+    );
+    expect(stored?.target_range_min ?? null).toBeNull();
+  });
+
+  it("stores a rule it accepts", async () => {
+    await updateCriterionRule("default", ANCHORED, {
+      goal: "target_range",
+      target_range_min: 10,
+      target_range_max: 30,
+      scale_anchors: [],
+    });
+
+    const stored = (await fetchCriteriaSet("default")).criteria?.find(
+      (criterion) => criterion.attribute === ANCHORED,
+    );
+    expect(stored).toMatchObject({ goal: "target_range", target_range_min: 10 });
   });
 });

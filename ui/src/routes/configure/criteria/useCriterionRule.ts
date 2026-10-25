@@ -2,11 +2,22 @@ import { useEffect, useRef, useState } from "react";
 import type { CriterionRule, Criterion } from "../../../api/endpoints";
 import {
   anEmptyAnchor,
+  describeAsked,
   draftFrom,
+  numberKindFor,
+  numberRulesFor,
   ruleFrom,
   type AnchorDraft,
   type RuleDraft,
+  type RuleNumberRules,
 } from "./criterionForm";
+import {
+  refusalOf,
+  withoutMarks,
+  type RuleMark,
+  type RuleMarks,
+  type RuleRefusal,
+} from "./ruleRefusal";
 
 /**
  * One criterion's rule, while it is being edited.
@@ -26,6 +37,18 @@ export interface RuleForm {
   draft: RuleDraft;
   /** Why the draft cannot be sent. Empty when it can. */
   problems: string[];
+  /** How each numeric field reads what is typed, from what the attribute measures (PL-024). */
+  rules: RuleNumberRules;
+  /** The server's last refusal of this rule, until the rule is sent again. */
+  refusal: {
+    sentences: string[];
+    /** The fields it named that have not been edited since, each with its reason. */
+    marks: RuleMarks;
+    /** What the refused draft asked for, in words; null while it is the draft on screen. */
+    asked: string | null;
+  } | null;
+  /** Put the refused draft back in the fields. Refuses while the rule is being saved. */
+  putBack: () => void;
   /** Whether anything has been typed that is not already stored. */
   changed: boolean;
   /**
@@ -64,14 +87,21 @@ export interface RuleWrites {
  */
 export function useCriterionRule(
   criterion: Criterion,
-  onSave: (attribute: string, rule: CriterionRule) => void,
+  /** Resolves to the refusal to report, or null when the rule was stored or is no longer shown. */
+  onSave: (attribute: string, rule: CriterionRule) => Promise<unknown>,
   { saving, busy }: RuleWrites,
+  /** What the attribute measures and what the form calls it, from the catalog. */
+  { valueType, title }: { valueType?: string; title: string },
 ): RuleForm {
   const stored = draftFrom(criterion);
   const asJson = JSON.stringify(stored);
+  const kind = numberKindFor(valueType);
 
   const [draft, setDraft] = useState<RuleDraft>(stored);
   const [problems, setProblems] = useState<string[]>([]);
+  // Not cleared by P55's restore below: the refusal can land after it, and it is what the
+  // restore leaves the reader to act on.
+  const [refused, setRefused] = useState<RuleRefusal | null>(null);
 
   // The stored rule can change without this row having been edited -- another panel's save,
   // a reload, a different criteria set -- so the draft follows it.
@@ -93,9 +123,13 @@ export function useCriterionRule(
   }, [saving, asJson]);
 
   const held = saving || busy;
-  /** An edit to the draft, unless the rule is being saved. */
-  const edit = (change: (current: RuleDraft) => RuleDraft) => {
-    if (!saving) setDraft(change);
+  /** An edit to the draft, unless the rule is being saved. It answers the marks it names. */
+  const edit = (change: (current: RuleDraft) => RuleDraft, answers: readonly RuleMark[]) => {
+    if (saving) return;
+    setDraft(change);
+    setRefused((current) =>
+      current === null ? null : { ...current, marks: withoutMarks(current.marks, answers) },
+    );
   };
 
   const changed = JSON.stringify(draft) !== asJson;
@@ -103,34 +137,67 @@ export function useCriterionRule(
   return {
     draft,
     problems,
+    rules: numberRulesFor(kind),
+    refusal:
+      refused === null
+        ? null
+        : {
+            sentences: refused.sentences,
+            marks: refused.marks,
+            asked:
+              JSON.stringify(refused.draft) === JSON.stringify(draft)
+                ? null
+                : describeAsked(refused.draft),
+          },
+    putBack: () => {
+      if (saving || refused === null) return;
+      setDraft(refused.draft);
+    },
     changed,
     saving,
     held,
-    set: (field, value) => edit((current) => ({ ...current, [field]: value })),
+    set: (field, value) =>
+      edit((current) => ({ ...current, [field]: value }), MARKS_OF_FIELD[field] ?? []),
     setAnchor: (index, field, value) =>
-      edit((current) => ({
-        ...current,
-        anchors: current.anchors.map((anchor, at) =>
-          at === index ? { ...anchor, [field]: value } : anchor,
-        ),
-      })),
+      edit(
+        (current) => ({
+          ...current,
+          anchors: current.anchors.map((anchor, at) =>
+            at === index ? { ...anchor, [field]: value } : anchor,
+          ),
+        }),
+        ["anchors"],
+      ),
     addAnchor: () =>
-      edit((current) => ({
-        ...current,
-        anchors: [...current.anchors, anEmptyAnchor()],
-      })),
+      edit(
+        (current) => ({
+          ...current,
+          anchors: [...current.anchors, anEmptyAnchor()],
+        }),
+        ["anchors"],
+      ),
     removeAnchor: (index) =>
-      edit((current) => ({
-        ...current,
-        anchors: current.anchors.filter((_, at) => at !== index),
-      })),
+      edit(
+        (current) => ({
+          ...current,
+          anchors: current.anchors.filter((_, at) => at !== index),
+        }),
+        ["anchors"],
+      ),
     submit: () => {
       // Unchanged is refused here, not by a disabled button: Enter in a field submits the form
       // whatever the button says, and an unchanged rule is nothing to send (UIC-G1).
       if (held || !changed) return;
-      const parsed = ruleFrom(draft);
+      const parsed = ruleFrom(draft, kind);
       setProblems(parsed.problems);
-      if (parsed.rule !== null) onSave(criterion.attribute, parsed.rule);
+      if (parsed.rule === null) return;
+      const sent = draft;
+      setRefused(null);
+      void onSave(criterion.attribute, parsed.rule).then((error) => {
+        if (error !== null && error !== undefined) {
+          setRefused(refusalOf(error, sent, { attribute: criterion.attribute, title }));
+        }
+      });
     },
     revert: () => {
       if (held || !changed) return;
@@ -139,3 +206,16 @@ export function useCriterionRule(
     },
   };
 }
+
+/** The mark an edit to each draft field answers. */
+const MARKS_OF_FIELD: Partial<Record<keyof RuleDraft, readonly RuleMark[]>> = {
+  goal: ["goal"],
+  normalisation_method: ["normalisation_method"],
+  blocks_if_missing: ["blocks_if_missing"],
+  target_range_min: ["target_range_min"],
+  target_range_max: ["target_range_max"],
+  zero_score_below: ["zero_score_below"],
+  zero_score_above: ["zero_score_above"],
+  threshold_min: ["threshold_min"],
+  threshold_max: ["threshold_max"],
+};

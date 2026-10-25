@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  GOAL_WORDS,
+  METHOD_WORDS,
+  THE_GOALS,
+  THE_METHODS,
   anEmptyAnchor,
+  describeAsked,
   draftFrom,
+  numberKindFor,
   ruleFrom,
   type RuleDraft,
 } from "./criterionForm";
@@ -135,7 +141,63 @@ describe("the draft as something to send", () => {
     const parsed = ruleFrom(aDraft({ target_range_max: "soon" }));
 
     expect(parsed.rule).toBeNull();
-    expect(parsed.problems).toEqual(["The band's maximum must be a number."]);
+    expect(parsed.problems).toEqual([
+      "The band's maximum: Not a number. Type digits, with a point for a fraction.",
+    ]);
+  });
+
+  /**
+   * C02-S1. A `type="number"` box reported "1,000" as "", and "" is "no bound": the threshold
+   * the reader typed was cleared in silence. Read by the shared grammar, it is refused instead.
+   */
+  it("refuses a grouped figure rather than reading it as no bound", () => {
+    const parsed = ruleFrom(aDraft({ threshold_max: "1,000" }));
+
+    expect(parsed.rule).toBeNull();
+    expect(parsed.problems).toEqual([
+      "The threshold's maximum: A comma is not read: it can mean thousands or a decimal. " +
+        "Type 1000, or 1 if the comma was a decimal point.",
+    ]);
+  });
+
+  it("reads a negative bound, since an attribute's figure may be below zero", () => {
+    const parsed = ruleFrom(aDraft({ zero_score_below: "-5" }));
+
+    expect(parsed.rule?.zero_score_below).toBe(-5);
+  });
+
+  it("refuses an exponent rather than reading 1e3 as a thousand", () => {
+    const parsed = ruleFrom(aDraft({ target_range_min: "1e3" }));
+
+    expect(parsed.rule).toBeNull();
+    expect(parsed.problems).toEqual([
+      "The band's minimum: Write the figure out in digits: 1000.",
+    ]);
+  });
+
+  it("refuses a money bound with three decimals, which a Romanian reader means as thousands", () => {
+    const parsed = ruleFrom(aDraft({ target_range_max: "72.000" }), "money");
+
+    expect(parsed.rule).toBeNull();
+    expect(parsed.problems).toEqual([
+      "The band's maximum: Euros and cents take at most two decimals. " +
+        "If the point separated thousands, type 72000.",
+    ]);
+  });
+
+  it("refuses a fraction where the attribute counts", () => {
+    const parsed = ruleFrom(aDraft({ threshold_min: "2.5" }), "whole");
+
+    expect(parsed.problems).toEqual(["The threshold's minimum: A whole number, with no point."]);
+  });
+
+  it("refuses a half-typed figure rather than sending nothing for it", () => {
+    const parsed = ruleFrom(aDraft({ threshold_min: "-" }));
+
+    expect(parsed.rule).toBeNull();
+    expect(parsed.problems).toEqual([
+      "The threshold's minimum: Not a number. Type digits, with a point for a fraction.",
+    ]);
   });
 
   it("reports every problem at once rather than the first", () => {
@@ -199,6 +261,22 @@ describe("the draft as something to send", () => {
     ]);
   });
 
+  it("refuses an anchor score with a fraction, since a score is a whole number", () => {
+    const parsed = ruleFrom(
+      aDraft({ anchors: [{ input_value: "500", score: "2.5", label: "" }] }),
+    );
+
+    expect(parsed.problems).toEqual(["Anchor 1's score: A whole number, with no point."]);
+  });
+
+  it("refuses a negative anchor score, which no scale has", () => {
+    const parsed = ruleFrom(
+      aDraft({ anchors: [{ input_value: "-500", score: "-1", label: "" }] }),
+    );
+
+    expect(parsed.problems).toEqual(["Anchor 1's score: This figure cannot be negative."]);
+  });
+
   it("sends an anchor with no label as a null rather than an empty word", () => {
     const parsed = ruleFrom(
       aDraft({
@@ -246,5 +324,73 @@ describe("the draft as something to send", () => {
 
     expect(parsed.problems).toEqual([]);
     expect(parsed.rule).not.toBeNull();
+  });
+});
+
+describe("what kind of figure a rule's bounds are", () => {
+  it.each([
+    ["Monetary", "money"],
+    ["Count", "whole"],
+    ["Quantity", "decimal"],
+    ["Ratio", "decimal"],
+    ["Index", "decimal"],
+    [undefined, "decimal"],
+  ] as const)("reads a %s attribute's figures as %s", (valueType, kind) => {
+    expect(numberKindFor(valueType)).toBe(kind);
+  });
+});
+
+describe("the rule's words", () => {
+  it("says every goal and method in words, never as its identifier", () => {
+    const words = [...THE_GOALS.map((goal) => GOAL_WORDS[goal]), ...THE_METHODS.map((method) => METHOD_WORDS[method])];
+
+    expect(words).toEqual([
+      "Lower is better",
+      "Higher is better",
+      "Within a band",
+      "Against fixed anchors",
+      "By percentile",
+      "As published",
+    ]);
+  });
+
+  it("says what a refused draft asked for, in words", () => {
+    expect(
+      describeAsked(
+        aDraft({
+          goal: "target_range",
+          normalisation_method: "percentile",
+          target_range_min: "10",
+          target_range_max: "30",
+          threshold_max: "40",
+        }),
+      ),
+    ).toBe("within a band, by percentile; a band from 10 to 30; a threshold of at most 40.");
+  });
+
+  it("names the parts of a draft that are set, and only those", () => {
+    expect(
+      describeAsked(
+        aDraft({
+          blocks_if_missing: true,
+          zero_score_below: "-5",
+          anchors: [
+            { input_value: "1", score: "100", label: "" },
+            { input_value: "9", score: "0", label: "" },
+          ],
+          threshold_min: "2",
+          threshold_max: "8",
+        }),
+      ),
+    ).toBe(
+      "lower is better, against fixed anchors; zero below -5; 2 anchors; " +
+        "a threshold from 2 to 8; a missing figure blocks scoring.",
+    );
+  });
+
+  it("says a goal it does not know as typed, rather than inventing words for it", () => {
+    expect(describeAsked(aDraft({ goal: "whatever", anchors: [anEmptyAnchor()] }))).toBe(
+      "whatever, against fixed anchors.",
+    );
   });
 });

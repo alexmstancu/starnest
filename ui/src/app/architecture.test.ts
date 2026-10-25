@@ -391,7 +391,6 @@ describe("typed text becomes a number in one place", () => {
     "routes/configure/weights.ts": "permanent: a range slider's value is always a number in range",
     "routes/run/acquisitionDiff.ts": "permanent: a select's value, never typed",
     "routes/run/manualEntry.ts": "C06 (PL-085) moves hand entry onto readNumber",
-    "routes/configure/criteria/criterionForm.ts": "C02 U3 (PL-024) moves it onto readNumber",
   };
 
   it("happens nowhere else in a screen, unless the ledger says why", () => {
@@ -424,11 +423,6 @@ describe("every class the markup uses is styled", () => {
     fieldset: "C01",
     "matrix__cell--focus": "C07",
     "matrix__cell--compact": "C07",
-    "rule-form": "C02 U3 (PL-027)",
-    "rule-form__row": "C02 U3 (PL-027)",
-    "rule-form__group": "C02 U3 (PL-027)",
-    "rule-form__problems": "C02 U3 (PL-027)",
-    "rule-form__actions": "C02 U3 (PL-027)",
     "lock-icon": "C08 (PL-109): sized by its attributes, a hook with no rule yet",
   };
 
@@ -496,12 +490,9 @@ describe("a checkbox is drawn with its words in one place", () => {
   /**
    * T27-4 (PL-027). `label.field` is a column flex that fills the card, so a checkbox inside it
    * was ticked by a click anywhere across the card. `shell/CheckboxField.tsx` is the one label
-   * that wraps a box and its words; the screens still writing their own move onto it in U3.
+   * that wraps a box and its words, and every screen draws its checkboxes with it.
    */
-  const LEDGER: Record<string, string> = {
-    "routes/configure/criteria/CriterionRuleFields.tsx": "C02 U3 (PL-027)",
-    "routes/configure/proposals/ProposalsPanel.tsx": "C02 U3 (PL-027)",
-  };
+  const LEDGER: Record<string, string> = {};
 
   /**
    * Whether the source has a checkbox inside a `<label>` whose classes include `field`, however

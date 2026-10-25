@@ -583,6 +583,8 @@ export const handlers = [
       // A rule change, or a lock on its own: the fields that move no weight. Applied in
       // place, because the point of a mock here is that the screen can read back what it sent.
       if (body.weight === undefined) {
+        const refused = refusedRule(criterion, body);
+        if (refused !== null) return HttpResponse.json(refused, { status: 422 });
         Object.assign(criterion, body);
         return HttpResponse.json({
           pillar: criterion.pillar,
@@ -929,6 +931,204 @@ function scaleInForce(): number {
 }
 
 type FieldProblem = components["schemas"]["FieldProblem"];
+
+/**
+ * **A rule the domain refuses, refused in the server's words and order** (PL-026): the body's
+ * threshold first (`api/criteria.py` builds it), then `Criterion`'s validators as
+ * `_reject_a_criterion_that_is_not_a_rule` runs them, then the anchors this request wrote
+ * against the top of the score range. Each names the fields it concerns in `details.errors`, as
+ * `errors.py` renders a domain refusal. A reducer and a threshold of another shape are not
+ * modelled: the rule form edits neither.
+ */
+function refusedRule(stored: Criterion, sent: Partial<Criterion>) {
+  const rule = { ...stored, ...sent };
+  const refusal =
+    thresholdRefusal(sent) ?? domainRefusal(stored.attribute, rule) ?? anchorsAboveTheRange(stored, sent);
+  if (refusal === null) return null;
+  const { message, fields, limit, details = {} } = refusal;
+  return {
+    code: "invalid_criterion",
+    message,
+    details: {
+      ...details,
+      errors: fields.map((field) => ({
+        location: ["body", field],
+        problem: message,
+        kind: "invalid_criterion",
+        ...(limit !== undefined && { limit }),
+      })),
+    },
+  };
+}
+
+interface RuleRefusal {
+  message: string;
+  fields: string[];
+  limit?: number;
+  details?: Record<string, unknown>;
+}
+
+function thresholdRefusal(sent: Partial<Criterion>): RuleRefusal | null {
+  const threshold = sent.matching_threshold as { min_value?: number | null; max_value?: number | null } | null | undefined;
+  if (threshold === null || threshold === undefined) return null;
+  if (!("min_value" in threshold) && !("max_value" in threshold)) return null;
+  const { min_value: low = null, max_value: high = null } = threshold;
+  if (low === null && high === null) {
+    return {
+      message:
+        "a range threshold needs a minimum, a maximum, or both; one open at both ends excludes nothing",
+      fields: ["matching_threshold"],
+    };
+  }
+  if (low !== null && high !== null && low > high) {
+    return { message: `minimum ${String(low)} is above maximum ${String(high)}`, fields: ["matching_threshold"] };
+  }
+  return null;
+}
+
+/** `criterion.py`'s `_LEGAL_METHODS`: a type absent here is unconstrained. */
+const LEGAL_METHODS: Record<string, readonly string[]> = {
+  Monetary: ["fixed"],
+  Quantity: ["fixed", "percentile"],
+  Count: ["fixed", "percentile"],
+  Ratio: ["as_is", "fixed", "percentile"],
+  Index: ["as_is", "percentile"],
+  AssignedScore: ["as_is"],
+};
+
+function domainRefusal(attribute: string, rule: Criterion): RuleRefusal | null {
+  const {
+    goal,
+    normalisation_method: method,
+    target_range_min: low = null,
+    target_range_max: high = null,
+    zero_score_below: zeroBelow = null,
+    zero_score_above: zeroAbove = null,
+  } = rule;
+  if (goal === "target_range") {
+    const unset = [
+      ["target_range_min", low],
+      ["target_range_max", high],
+    ].flatMap(([name, bound]) => (bound === null ? [String(name)] : []));
+    if (unset.length > 0) {
+      return {
+        message:
+          `${attribute} aims at a target range but names no band; a target range needs both a ` +
+          "minimum and a maximum, in the attribute's own unit",
+        fields: unset,
+      };
+    }
+    if (method !== "fixed") {
+      return {
+        message:
+          `${attribute} aims at a target range and normalises \`${String(method)}\`, which ` +
+          "cannot express a band: `percentile` scores by standing among the candidates and " +
+          "`as_is` reads the figure as a score. A target range is a `fixed` scale -- the band, " +
+          "and where the score reaches zero on each side",
+        fields: ["goal", "normalisation_method"],
+      };
+    }
+  }
+  const valueType = ATTRIBUTES.find((each) => each.id === attribute)?.value_type;
+  const legal = valueType === undefined ? undefined : LEGAL_METHODS[valueType];
+  if (legal !== undefined && method !== undefined && !legal.includes(method)) {
+    return {
+      message:
+        `${attribute} is a ${String(valueType)} and normalises \`${method}\`, which \`reqs.md\` ` +
+        `3.3a does not permit for that type; the legal methods for a ${String(valueType)} are: ` +
+        legal.join(", "),
+      fields: ["normalisation_method"],
+    };
+  }
+  if (low !== null && high !== null && low > high) {
+    return {
+      message: `the target range of ${attribute} runs ${String(low)} to ${String(high)}, which is backwards`,
+      fields: ["target_range_min", "target_range_max"],
+    };
+  }
+  if (zeroBelow !== null && low !== null && zeroBelow > low) {
+    return {
+      message: `${attribute} scores 0 below ${String(zeroBelow)}, which is inside its target band starting at ${String(low)}`,
+      fields: ["target_range_min", "zero_score_below"],
+    };
+  }
+  if (zeroAbove !== null && high !== null && zeroAbove < high) {
+    return {
+      message: `${attribute} scores 0 above ${String(zeroAbove)}, which is inside its target band ending at ${String(high)}`,
+      fields: ["target_range_max", "zero_score_above"],
+    };
+  }
+  return anchorRefusal(attribute, rule);
+}
+
+function anchorRefusal(attribute: string, rule: Criterion): RuleRefusal | null {
+  const anchors = rule.scale_anchors ?? [];
+  if (anchors.length === 1) {
+    return {
+      message:
+        `${attribute} has one scale anchor, which maps that single value and nothing else; a ` +
+        "fixed scale needs at least two points, or none at all",
+      fields: ["scale_anchors"],
+    };
+  }
+  const inputs = anchors.map((anchor) => anchor.input_value);
+  if (new Set(inputs).size !== inputs.length) {
+    return {
+      message: `${attribute} anchors the same input value twice, so it maps to two different scores`,
+      fields: ["scale_anchors"],
+    };
+  }
+  if (rule.goal === "target_range" || anchors.length < 2) return null;
+  const scores = [...anchors].sort((one, other) => one.input_value - other.input_value).map((anchor) => anchor.score);
+  const rising = scores.some((score, at) => at > 0 && score > (scores[at - 1] ?? score));
+  const falling = scores.some((score, at) => at > 0 && score < (scores[at - 1] ?? score));
+  if (rule.goal === "minimise" && rising) {
+    return {
+      message:
+        `${attribute} is to minimise, but its anchors' scores rise as the value rises -- it ` +
+        "would reward exactly what it means to penalise",
+      fields: ["goal", "scale_anchors"],
+    };
+  }
+  if (rule.goal === "maximise" && falling) {
+    return {
+      message:
+        `${attribute} is to maximise, but its anchors' scores fall as the value rises -- it ` +
+        "would penalise exactly what it means to reward",
+      fields: ["goal", "scale_anchors"],
+    };
+  }
+  return null;
+}
+
+/** Only the anchors this request wrote, against a range that is set (`api/criteria.py`). */
+function anchorsAboveTheRange(stored: Criterion, sent: Partial<Criterion>): RuleRefusal | null {
+  const top = settings.score_scale_max;
+  if (top === null || top === undefined || sent.scale_anchors === undefined) return null;
+  const key = (anchor: { input_value: number; score: number; label?: string | null }) =>
+    JSON.stringify([anchor.input_value, anchor.score, anchor.label ?? null]);
+  const before = new Set((stored.scale_anchors ?? []).map(key));
+  const after = sent.scale_anchors ?? [];
+  if (after.length === before.size && after.every((anchor) => before.has(key(anchor)))) return null;
+  const over = after.find((anchor) => anchor.score > top);
+  if (over === undefined) return null;
+  return {
+    message: `${stored.attribute} anchors ${pythonFloat(over.input_value)} to a score of ${String(over.score)}, and the score scale stops at ${String(top)}`,
+    fields: ["scale_anchors"],
+    limit: top,
+    details: {
+      reason: "anchor_above_scale",
+      attribute: stored.attribute,
+      anchor_score: over.score,
+      score_scale_max: top,
+    },
+  };
+}
+
+/** An anchor's figure as the server prints it: a float there, so a whole one keeps its ".0". */
+function pythonFloat(value: number): string {
+  return Number.isInteger(value) ? `${String(value)}.0` : String(value);
+}
 
 /** One body field as `api/household.py` and `api/settings.py` declare it, which is the contract's. */
 interface FieldBound {

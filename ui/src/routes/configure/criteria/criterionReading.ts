@@ -20,6 +20,7 @@ import {
   describeNormalisation,
   describeThreshold,
 } from "../../../format/criterionWords";
+import { GOAL_WORDS } from "./criterionForm";
 
 /**
  * What a row needs from the catalog, named structurally so the generated `Attribute` satisfies
@@ -107,7 +108,7 @@ export function chipsFor(
   const chips: CriterionChip[] = [];
 
   if (criterion.goal !== undefined) {
-    chips.push({ key: "goal", text: `goal: ${criterion.goal}`, tone: "accent" });
+    chips.push({ key: "goal", text: GOAL_WORDS[criterion.goal], tone: "accent" });
   }
 
   chips.push({

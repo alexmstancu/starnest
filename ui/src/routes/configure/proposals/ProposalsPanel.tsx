@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { MatchRuleResult } from "../../../api/endpoints";
 import { formatMoney } from "../../../format/display";
+import { CheckboxField } from "../../../shell/CheckboxField";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { describePeriod } from "./proposalReading";
@@ -140,15 +141,13 @@ export function ProposalsPanel({
               The cost is a ceiling, not a forecast: {plan.estimate_basis}
             </p>
           )}
-          <label className="field field--inline" htmlFor="accept-uncapped">
-            <input
-              id="accept-uncapped"
-              type="checkbox"
-              checked={acceptUncapped}
-              onChange={(event) => setAcceptUncapped(event.target.checked)}
-            />
+          <CheckboxField
+            id="accept-uncapped"
+            checked={acceptUncapped}
+            onChange={setAcceptUncapped}
+          >
             Accept an uncapped spend for this pass
-          </label>
+          </CheckboxField>
         </>
       )}
 

@@ -23,7 +23,8 @@ const NO_PARSING_IN_MARKUP = {
 
 // **A box that takes a number is a NumberField** (PL-024, UF-026). `type="number"` reports text
 // it cannot parse as "", which a form read as "no bound"; a keystroke filter behind `inputMode`
-// turned "72,000" into 72. `src/app/numberBoxes.test.ts` holds the ledger below to the code.
+// turned "72,000" into 72. Every screen now draws the shared field (C02 U3), so the only
+// exemption is the field itself; `src/app/numberBoxes.test.ts` holds that to the code.
 const NUMBER_BOX_MESSAGE =
   "A box that takes a number is a NumberField: it keeps what was typed and refuses what " +
   "it cannot read.";
@@ -38,11 +39,6 @@ const NO_HAND_MADE_NUMBER_BOX = [
     message: NUMBER_BOX_MESSAGE,
   },
 ];
-
-/** Today's hand-made number boxes, and who moves each onto NumberField. */
-const NUMBER_BOX_LEDGER = {
-  "src/routes/configure/criteria/CriterionRuleFields.tsx": "C02 U3 (PL-024)",
-};
 
 /**
  * The interface's lint rules.
@@ -144,14 +140,6 @@ export default tseslint.config(
     // The shared field is the one place a box sets its numeric keypad.
     name: "number boxes: the shared field",
     files: ["src/shell/NumberField.tsx"],
-    rules: {
-      "no-restricted-syntax": ["error", NO_INLINE_STYLE, NO_PARSING_IN_MARKUP],
-    },
-  },
-
-  {
-    name: "number boxes: today's call sites, ledgered",
-    files: Object.keys(NUMBER_BOX_LEDGER),
     rules: {
       "no-restricted-syntax": ["error", NO_INLINE_STYLE, NO_PARSING_IN_MARKUP],
     },

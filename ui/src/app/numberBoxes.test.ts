@@ -1,19 +1,16 @@
 // @vitest-environment node
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { ESLint, Linter } from "eslint";
 import tseslint from "typescript-eslint";
 import { describe, expect, it } from "vitest";
-import eslintConfig from "../../eslint.config.js";
 
 /**
  * Guard 1 of PL-024 (UF-026): **a box that takes a number is a NumberField.** The rule editor's
  * `type="number"` boxes report text they cannot parse as "", which the form read as "no bound";
  * the household and settings boxes filtered every keystroke. `eslint.config.js` refuses both
- * shapes everywhere but `shell/NumberField.tsx` and a ledger of today's call sites.
- *
- * eslint runs the rule; this holds the ledger to the code. A listed file that no longer draws a
- * number box of its own is stale, and fails.
+ * shapes everywhere but `shell/NumberField.tsx`; the last ledgered call site, the rule editor,
+ * moved onto it in C02 U3, and the ledger went with it.
  */
 
 const UI_ROOT = join(__dirname, "..", "..");
@@ -49,11 +46,17 @@ async function numberBoxesIn(source: string, path: string): Promise<number> {
   return messages.filter((message) => message.message.includes(MESSAGE)).length;
 }
 
-function ledger(): string[] {
-  const block = (eslintConfig as { name?: string; files?: string[] }[]).find(
-    (each) => each.name === "number boxes: today's call sites, ledgered",
-  );
-  return block?.files ?? [];
+/**
+ * Every component the product ships, as a path from the interface's root. `main.tsx` mounts the
+ * app and draws nothing, and the product lint block leaves it out with the scaffolding.
+ */
+function productComponents(directory = "src"): string[] {
+  return readdirSync(join(UI_ROOT, directory), { withFileTypes: true }).flatMap((entry) => {
+    const path = `${directory}/${entry.name}`;
+    if (entry.isDirectory()) return ["mocks", "testing"].includes(entry.name) ? [] : productComponents(path);
+    const component = path.endsWith(".tsx") && !path.endsWith(".test.tsx") && path !== "src/main.tsx";
+    return component ? [path] : [];
+  });
 }
 
 const BOXES = `
@@ -82,21 +85,17 @@ describe("a box that takes a number", () => {
     expect(await numberBoxesIn(field, "src/shell/NewShellPart.tsx")).toBeGreaterThan(0);
   });
 
-  it("is ledgered only where a screen still draws one of its own", async () => {
-    expect(ledger()).not.toEqual([]);
-
-    for (const path of ledger()) {
-      const source = readFileSync(join(UI_ROOT, path), "utf8");
-      expect.soft(await numberBoxesIn(source, path), `${path} is exempt`).toBe(0);
-      expect
-        .soft(await numberBoxesIn(source, "src/routes/Unlisted.tsx"), `${path} is stale`)
-        .toBeGreaterThan(0);
+  it("is exempt nowhere but the shared field, now that every screen draws it", async () => {
+    const exempt: string[] = [];
+    for (const path of productComponents()) {
+      if (path !== FIELD && (await numberBoxesIn(BOXES, path)) !== 2) exempt.push(path);
     }
+
+    expect(exempt).toEqual([]);
   });
 
-  it("keeps the other bans on a ledgered file", async () => {
-    const [path] = ledger();
-    const banned = JSON.stringify(await ruleFor(path ?? ""));
+  it("keeps the other bans on the shared field", async () => {
+    const banned = JSON.stringify(await ruleFor(FIELD));
 
     expect(banned).toContain("JSXAttribute[name.name='style']");
     expect(banned).toContain("toFixed");

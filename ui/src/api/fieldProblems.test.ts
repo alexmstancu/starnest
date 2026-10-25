@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "./ApiError";
-import { fieldProblems } from "./fieldProblems";
+import { fieldProblemEntries, fieldProblems } from "./fieldProblems";
 
 /**
  * T28-3's arithmetic (PL-028). A refusal about a field is said on that field, in words worded
@@ -88,6 +88,45 @@ describe("a refusal's field problems", () => {
     );
 
     expect(Object.fromEntries(problems)).toEqual({ citizenships: "Required." });
+  });
+
+  it("says a rule the domain refused in the domain's own sentence, on every field it names", () => {
+    const sentence = "the target range of a band runs 30 to 10, which is backwards";
+    const problems = fieldProblems(
+      refused(
+        { location: ["body", "target_range_min"], problem: sentence, kind: "invalid_criterion" },
+        { location: ["body", "target_range_max"], problem: sentence, kind: "invalid_criterion" },
+      ),
+    );
+
+    expect(Object.fromEntries(problems)).toEqual({
+      target_range_min: sentence,
+      target_range_max: sentence,
+    });
+  });
+
+  it("lists each named field with the kind that refused it, so a list can say which is which", () => {
+    const entries = fieldProblemEntries(
+      refused(
+        { location: ["body", "goal"], problem: "no band", kind: "invalid_criterion" },
+        { location: ["body", "scale_anchors", "0", "score"], problem: "x", kind: "int_from_float" },
+        { location: ["body", "scale_anchors", "1", "score"], problem: "y", kind: "int_from_float" },
+      ),
+    );
+
+    expect(entries).toEqual([
+      { field: "goal", kind: "invalid_criterion", sentence: "no band" },
+      { field: "scale_anchors", kind: "int_from_float", sentence: "A whole number." },
+    ]);
+  });
+
+  it("falls back to the field's range when a domain refusal carries no sentence", () => {
+    const problems = fieldProblems(
+      refused({ location: ["body", "goal"], kind: "invalid_criterion" }),
+      { goal: "One of three goals." },
+    );
+
+    expect(problems.get("goal")).toBe("One of three goals.");
   });
 
   it.each<[string, unknown]>([

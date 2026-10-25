@@ -21,7 +21,7 @@ export interface HasPayload {
  * token with no entry falls back to its words rather than its underscores, so a new one reads
  * tolerably until it is given a line here.
  */
-const READABLE_UNIT: Record<string, string> = {
+export const READABLE_UNIT: Readonly<Record<string, string>> = {
   celsius: "°C",
   days_per_year: "days/year",
   eu27_average_100: "EU27 = 100",
@@ -37,6 +37,7 @@ const READABLE_UNIT: Record<string, string> = {
   pisa_points: "PISA points",
   weeks: "weeks",
   years: "years",
+  years_of_income: "years of income",
 };
 
 export function readableUnit(unit: unknown): string {

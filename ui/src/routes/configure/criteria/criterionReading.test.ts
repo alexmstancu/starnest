@@ -34,7 +34,7 @@ describe("the chips on a row", () => {
       chipsFor(
         criterion({ matching_threshold: { max_value: 20 } }),
       ).map((chip) => chip.text),
-    ).toEqual(["goal: minimise", "at most 20", "scored against fixed anchors"]);
+    ).toEqual(["Lower is better", "at most 20", "scored against fixed anchors"]);
   });
 
   it("marks a criterion whose absence makes a candidate unscoreable", () => {

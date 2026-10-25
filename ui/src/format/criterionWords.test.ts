@@ -11,10 +11,19 @@ describe("what the attribute measures", () => {
   it("says the type and its unit together", () => {
     expect(describeValueType("Monetary", "EUR")).toBe("Money in EUR");
     expect(describeValueType("Quantity", "index_eu27_100")).toBe(
-      "Measured in index_eu27_100",
+      "Measured in EU27 = 100",
     );
     expect(describeValueType("Count", "flights")).toBe("Counted in flights");
     expect(describeValueType("Index", "0-100")).toBe("An index on 0-100");
+  });
+
+  /** PL-029: the unit is said as a reader writes it, never as the catalog's key. */
+  it("says the unit in words rather than as its identifier", () => {
+    expect(describeValueType("Quantity", "percent_per_year")).toBe("Measured in % per year");
+    expect(describeValueType("Index", "eu27_average_100")).toBe("An index on EU27 = 100");
+    expect(describeValueType("Count", "new_unit_nobody_named")).toBe(
+      "Counted in new unit nobody named",
+    );
   });
 
   /** A unit is optional in the catalog, and half a phrase is worse than a shorter one. */

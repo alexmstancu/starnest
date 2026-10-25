@@ -6,6 +6,7 @@
  */
 
 import { formatCount } from "./display";
+import { readableUnit } from "./figure";
 
 /**
  * The four threshold shapes the contract carries, named structurally so this module needs no
@@ -36,7 +37,9 @@ export function describeValueType(
   valueType: string | undefined,
   unit: string | null | undefined,
 ): string {
-  const named = unit?.trim() ? unit.trim() : null;
+  // Said as a reader writes it (PL-029): `percent_per_year` is the catalog's key, "% per year"
+  // is the unit.
+  const named = unit?.trim() ? readableUnit(unit.trim()) : null;
 
   switch (valueType) {
     case "Monetary":

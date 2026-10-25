@@ -295,11 +295,11 @@ describe("the criteria list", () => {
     const row = screen.getByRole("group", {
       name: COST_OF_LIVING,
     });
-    expect(row).toHaveTextContent("goal: minimise");
+    expect(row).toHaveTextContent("Lower is better");
     expect(row).toHaveTextContent("scored by percentile");
     expect(row).toHaveTextContent("no threshold");
     // From the catalog, not the criterion: what the figure is is a fact about the attribute.
-    expect(row).toHaveTextContent("Measured in index_eu27_100");
+    expect(row).toHaveTextContent("Measured in EU27 = 100");
   });
 
   /**

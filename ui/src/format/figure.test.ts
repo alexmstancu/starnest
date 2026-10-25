@@ -9,7 +9,9 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { describeFigure } from "./figure";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { READABLE_UNIT, describeFigure } from "./figure";
 import { ABSENT } from "./display";
 
 describe("one payload as one line", () => {
@@ -319,5 +321,32 @@ describe("a figure exactly as stored", () => {
         },
       }),
     ).toBe("7.13 on 0–10 (assigned by human)");
+  });
+});
+
+/**
+ * T29-2 (PL-029). The catalog's units are rows a migration seeds, and the screen says each in
+ * words from `READABLE_UNIT`: a unit seeded without a line there reaches the reader as its key
+ * with the underscores taken out. The two copies of one fact are held together here.
+ */
+describe("the units the catalog ships", () => {
+  const MIGRATIONS = join(__dirname, "..", "..", "..", "storage", "migrations");
+
+  function seededUnits(): string[] {
+    return readdirSync(MIGRATIONS)
+      .filter((name) => name.endsWith(".sql") && !name.endsWith(".rollback.sql"))
+      .flatMap((name) =>
+        [...readFileSync(join(MIGRATIONS, name), "utf8").matchAll(/INSERT INTO unit\b[^;]*?;/gi)],
+      )
+      .flatMap((insert) => [...insert[0].matchAll(/\(\s*'([a-z0-9_]+)'\s*,/g)])
+      .map((match) => match[1] ?? "");
+  }
+
+  it("finds the units the migrations seed", () => {
+    expect(seededUnits()).toEqual(expect.arrayContaining(["celsius", "years_of_income"]));
+  });
+
+  it("has words for every one of them", () => {
+    expect(seededUnits().filter((unit) => !Object.hasOwn(READABLE_UNIT, unit))).toEqual([]);
   });
 });
