@@ -1,8 +1,8 @@
 import type { Read } from "../api/read";
 import { LoadedRegion } from "./LoadedRegion";
-import { ReadFailureCard } from "./ReadFailureCard";
 import { type SelectionLists, useSelection } from "./SelectionContext";
 import type { SkeletonShape } from "./Skeleton";
+import type { FocusRegion } from "./useFocusWhenLost";
 
 /**
  * What a screen says while no criteria set and level are chosen.
@@ -13,23 +13,30 @@ import type { SkeletonShape } from "./Skeleton";
  * the lists never arrived**, it says so rather than inviting a choice from lists that are not
  * there (PL-002); only lists that were read and hold nothing to choose ask for a choice.
  */
-export function NothingSelected({ toSee, skeleton }: { toSee: string; skeleton: SkeletonShape }) {
+export function NothingSelected({
+  toSee,
+  skeleton,
+  takesFocusFrom,
+}: {
+  toSee: string;
+  skeleton: SkeletonShape;
+  /** The screen whose Try again it may be drawn in place of, mid-way through a selection. */
+  takesFocusFrom?: FocusRegion;
+}) {
   const { read, reload } = useSelection();
-  if (stillChoosing(read)) {
+  // **One region for still-being-read and could-not-be-read**, so the Try again it draws keeps
+  // focus in it while the lists are read again (`LoadedRegion`).
+  if (stillChoosing(read) || read.state === "failed") {
     return (
-      <LoadedRegion read={PENDING} what="The criteria sets and levels" skeleton={skeleton} onRetry={reload}>
+      <LoadedRegion
+        read={read.state === "failed" ? read : PENDING}
+        what="The criteria sets and levels"
+        skeleton={skeleton}
+        onRetry={reload}
+        takesFocusFrom={takesFocusFrom}
+      >
         {() => null}
       </LoadedRegion>
-    );
-  }
-  if (read.state === "failed") {
-    return (
-      <ReadFailureCard
-        what="The criteria sets and levels"
-        error={read.error}
-        onRetry={reload}
-        prominence="screen"
-      />
     );
   }
   return <p className="screen__note">Choose a criteria set and a level {toSee}.</p>;

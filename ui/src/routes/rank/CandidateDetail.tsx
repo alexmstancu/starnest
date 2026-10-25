@@ -1,4 +1,4 @@
-import { useCallback, useId, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { describeRepeats } from "./repeatedValues";
 import {
   fetchAttributes,
@@ -36,6 +36,7 @@ import {
 } from "../../format/display";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { ReadFailureCard } from "../../shell/ReadFailureCard";
+import { useRetryFocus } from "../../shell/useRetryFocus";
 import { useSelection } from "../../shell/SelectionContext";
 import { describeFigure } from "../../format/figure";
 import { scoreRange, scoreTrackWidth } from "../../format/scoreScale";
@@ -303,9 +304,14 @@ function Evidence({
   const criteria = new Map<string, Criterion>(
     (setCriteria ?? []).map((each) => [each.attribute, each]),
   );
+  // **The figures hold focus while the scoring or the rules are read again**, since each Try
+  // again takes its own button away; a retry that fails again hands it to the new one.
+  const figures = useRef<HTMLDivElement>(null);
+  const scoringFocus = useRetryFocus(scoring, figures);
+  const rulesFocus = useRetryFocus(rules, figures);
 
   return (
-    <>
+    <div ref={figures} tabIndex={-1}>
       <h3 className="drill__title">
         {filter === null
           ? "Every stored value"
@@ -316,7 +322,11 @@ function Evidence({
           <ReadFailureCard
             what="The scoring"
             error={scoring.error}
-            onRetry={onRetryScoring}
+            onRetry={() => {
+              scoringFocus.hold();
+              void onRetryScoring();
+            }}
+            retryRef={scoringFocus.retryButton}
             prominence="region"
           />
           <p className="screen__note">
@@ -328,7 +338,11 @@ function Evidence({
         <ReadFailureCard
           what="The criteria set's rules"
           error={rules.error}
-          onRetry={onRetryRules}
+          onRetry={() => {
+            rulesFocus.hold();
+            void onRetryRules();
+          }}
+          retryRef={rulesFocus.retryButton}
           prominence="region"
         />
       )}
@@ -348,7 +362,7 @@ function Evidence({
         rows={rows}
         pillar={filter}
       />
-    </>
+    </div>
   );
 }
 

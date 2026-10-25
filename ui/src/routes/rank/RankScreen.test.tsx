@@ -2376,3 +2376,104 @@ describe("the ranking read again when an acquisition ends", () => {
     expect(table).toBeInTheDocument();
   });
 });
+
+/**
+ * RULES "Focus": **a Try again takes its own button away**, and the browser answers by putting
+ * focus on the page. Each one on Rank hands it to what replaces it -- the region read again,
+ * then the new Try again if that fails too -- pressed from the keyboard as a reader would.
+ */
+describe("focus when a Try again on Rank takes itself away", () => {
+  /** Answers `path` with a 500 until `recover()`, then holds its answer until `release()`. */
+  function failThenHold(path: string) {
+    let failing = true;
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockServer.use(
+      http.get(path, async () => {
+        if (failing) return serverFault();
+        await held;
+        return undefined;
+      }),
+    );
+    return { recover: () => (failing = false), release };
+  }
+
+  async function pressFromTheKeyboard(button: HTMLElement): Promise<void> {
+    act(() => button.focus());
+    await userEvent.keyboard("{Enter}");
+  }
+
+  it.each([
+    ["the scoring", "/v1/rankings/candidates/:candidateId", "The scoring could not be loaded"],
+    ["the set's rules", "/v1/criteria-sets/default", "The criteria set's rules could not be loaded"],
+  ])("keeps focus in the figures when %s is read again", async (_what, path, failed) => {
+    const read = failThenHold(path);
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+    await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
+    const card = (await screen.findByText(failed)).parentElement!;
+
+    read.recover();
+    await pressFromTheKeyboard(within(card).getByRole("button", { name: "Try again" }));
+
+    expect(document.activeElement).not.toBe(document.body);
+    read.release();
+    await waitFor(() => expect(screen.queryByText(failed)).toBeNull());
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toContainElement(
+      screen.getByRole("table", { name: /every stored value/i }),
+    );
+  });
+
+  it.each([
+    ["the scoring", "/v1/rankings/candidates/:candidateId", "The scoring could not be loaded"],
+    ["the set's rules", "/v1/criteria-sets/default", "The criteria set's rules could not be loaded"],
+  ])("puts focus on the new Try again when %s fails again", async (_what, path, failed) => {
+    mockServer.use(http.get(path, () => serverFault()));
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+    await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
+    const card = (await screen.findByText(failed)).parentElement!;
+
+    await pressFromTheKeyboard(within(card).getByRole("button", { name: "Try again" }));
+
+    await waitFor(() =>
+      expect(document.activeElement).toHaveAccessibleName("Try again"),
+    );
+    expect(document.activeElement?.parentElement).toHaveTextContent(failed);
+  });
+
+  it("puts focus on the new Try again when the criteria sets and levels fail again", async () => {
+    mockServer.use(http.get("/v1/levels", () => serverFault()));
+    renderShell("/rank");
+    const rank = within(rankRegion());
+    const card = (await rank.findByText(/criteria sets and levels could not be loaded/i))
+      .parentElement!;
+
+    await pressFromTheKeyboard(within(card).getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(document.activeElement).toHaveAccessibleName("Try again"));
+    expect(rankRegion()).toContainElement(document.activeElement as HTMLElement);
+  });
+
+  it("keeps focus on Rank when the criteria sets and levels are read again", async () => {
+    let failing = true;
+    mockServer.use(
+      http.get("/v1/levels", () => (failing ? serverFault() : undefined)),
+    );
+    renderShell("/rank");
+    const rank = within(rankRegion());
+    const card = (await rank.findByText(/criteria sets and levels could not be loaded/i))
+      .parentElement!;
+
+    failing = false;
+    await pressFromTheKeyboard(within(card).getByRole("button", { name: "Try again" }));
+
+    expect(document.activeElement).not.toBe(document.body);
+    await rankingRow("Portugal");
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(rankRegion()).toContainElement(document.activeElement as HTMLElement);
+  });
+});

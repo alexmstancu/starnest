@@ -158,7 +158,11 @@ function TheRanking({
       </header>
 
       {ranking.read.state === "idle" ? (
-        <NothingSelected toSee="to see the ranking" skeleton="rank-table" />
+        <NothingSelected
+          toSee="to see the ranking"
+          skeleton="rank-table"
+          takesFocusFrom={focusRegion}
+        />
       ) : unset !== null ? (
         <NoRanking error={unset} region={focusRegion} />
       ) : (
@@ -168,6 +172,8 @@ function TheRanking({
             what="The ranking"
             skeleton="rank-table"
             onRetry={ranking.reload}
+            // In place of a Try again that read the selection again (NothingSelected).
+            takesFocusFrom={focusRegion}
           >
             {(data) => (
               <RankingTable

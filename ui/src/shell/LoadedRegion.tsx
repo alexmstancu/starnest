@@ -1,8 +1,10 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useLayoutEffect, useRef } from "react";
 import type { Read } from "../api/read";
 import { formatDateTime } from "../format/display";
 import { ReadFailureCard } from "./ReadFailureCard";
 import { Skeleton, type SkeletonShape } from "./Skeleton";
+import { type FocusRegion, takeFocusIfLost } from "./useFocusWhenLost";
+import { useRetryFocus } from "./useRetryFocus";
 
 /**
  * A region drawn from one read (C01 M1): a skeleton while it is pending, the failure card when
@@ -17,7 +19,10 @@ import { Skeleton, type SkeletonShape } from "./Skeleton";
  * **Try again takes its own button away**, and a browser answers by putting focus on the page.
  * So the wrapper holds focus while the read is retried, and hands it to the new Try again if
  * that fails too -- but only while focus is still in the region or lost: a reader who tabbed
- * elsewhere meanwhile put it there on purpose.
+ * elsewhere meanwhile put it there on purpose (`useRetryFocus`).
+ *
+ * **Drawn in place of something pressed in `takesFocusFrom`** -- a Try again that changed the
+ * selection the region was keyed on -- it takes the focus that was lost with it.
  */
 export function LoadedRegion<T>({
   read,
@@ -25,6 +30,7 @@ export function LoadedRegion<T>({
   skeleton,
   onRetry,
   prominence = "screen",
+  takesFocusFrom,
   children,
 }: {
   read: Read<T>;
@@ -33,28 +39,22 @@ export function LoadedRegion<T>({
   skeleton: SkeletonShape;
   onRetry: () => void | Promise<void>;
   prominence?: "screen" | "region";
+  takesFocusFrom?: FocusRegion;
   children: (data: T) => ReactNode;
 }) {
   const region = useRef<HTMLDivElement>(null);
-  const retryButton = useRef<HTMLButtonElement>(null);
-  const holdingFocus = useRef(false);
+  const { retryButton, hold } = useRetryFocus(read, region);
 
   function retry() {
-    holdingFocus.current = region.current?.contains(document.activeElement) ?? false;
+    hold();
     void onRetry();
   }
 
-  useEffect(() => {
-    if (!holdingFocus.current) return;
-    if (!focusIsInOrLost(region.current)) {
-      holdingFocus.current = false;
-      return;
-    }
-    (retryButton.current ?? region.current)?.focus();
-    const settled =
-      read.state !== "pending" && !(read.state === "ready" && read.refresh === "running");
-    if (settled) holdingFocus.current = false;
-  }, [read]);
+  // Before paint: between the commit that took the pressed control away and a passive effect,
+  // focus would sit on the page.
+  useLayoutEffect(() => {
+    if (takesFocusFrom) takeFocusIfLost(takesFocusFrom, region.current);
+  }, [takesFocusFrom]);
 
   const busy = read.state === "pending" || (read.state === "ready" && read.refresh === "running");
   return (
@@ -81,9 +81,4 @@ export function LoadedRegion<T>({
       {read.state === "ready" && children(read.data)}
     </div>
   );
-}
-
-function focusIsInOrLost(region: HTMLElement | null): boolean {
-  const focused = document.activeElement;
-  return focused === null || focused === document.body || (region?.contains(focused) ?? false);
 }

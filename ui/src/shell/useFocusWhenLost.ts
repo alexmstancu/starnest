@@ -48,11 +48,14 @@ export function useFocusRegion(): FocusRegion {
 export function useFocusWhenLost<T extends HTMLElement>(region: FocusRegion) {
   const target = useRef<T>(null);
 
-  useEffect(() => {
-    const focused = document.activeElement;
-    const lost = focused === null || focused === document.body;
-    if (lost && region.holds()) target.current?.focus();
-  }, [region]);
+  useEffect(() => takeFocusIfLost(region, target.current), [region]);
 
   return target;
+}
+
+/** Puts focus on `element` if focus is lost and `region` holds the claim to it. */
+export function takeFocusIfLost(region: FocusRegion, element: HTMLElement | null): void {
+  const focused = document.activeElement;
+  const lost = focused === null || focused === document.body;
+  if (lost && region.holds()) element?.focus();
 }
