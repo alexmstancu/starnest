@@ -1035,6 +1035,19 @@ export const HOLDINGS_GAPS: Holdings["gaps"] = {
 };
 
 /**
+ * A failed gap that is **not one of its run's failure rows**: run 7 stored Eurostat's figure for
+ * the pair, and Eurostat has been switched off since, so the holdings count it failed with the
+ * reason its figure is unusable. A retry of run 7 cannot name it -- the server refuses it as
+ * `selection_not_in_run` -- so the screen must ask about it some other way.
+ */
+export const UNUSABLE_FIGURE_GAP: Holdings["gaps"]["failed"][number] = {
+  candidate: "country.spain",
+  attribute: "country.cost_of_living_index",
+  data_acquisition_run: 7,
+  failures: [{ data_source: "eurostat", error_message: "its source is switched off" }],
+};
+
+/**
  * Two values for one attribute and one for another: the drill-down's whole point is that a
  * superseded figure is still there, with the source that produced it (`reqs.md` 3.6).
  */

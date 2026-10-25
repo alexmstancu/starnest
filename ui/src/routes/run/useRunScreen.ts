@@ -55,6 +55,7 @@ import { UNCLAIMED, useWatchedRun } from "./useWatchedRun";
 import type { Idle, Read } from "../../api/read";
 import { useRead } from "../../api/useRead";
 import { alwaysAsked } from "./alwaysAsked";
+import { settleProposal } from "./retryRoute";
 import { type Proposal, levelOf } from "./runScope";
 import { isUnreachable } from "../../api/reachability";
 
@@ -585,7 +586,7 @@ export function useRunScreen(
     holdings: holdings.read,
     reloadHoldings,
     dismissFailure: () => setFailure(null),
-    propose: (proposal, origin) => {
+    propose: (asked, origin) => {
       const version = selectionVersion.current;
       const stillAsked = () => version === selectionVersion.current;
       const drawnFrom = gapsOf(holdings.read, origin);
@@ -593,6 +594,8 @@ export function useRunScreen(
         setArmed(null);
         setPlan(null);
         setPlanOrigin(null);
+        // A retry only of the run's own items; otherwise the pairs as a scoped run.
+        const proposal = await settleProposal(asked);
         const planned =
           proposal.via === "retry"
             ? await planRetry(proposal.runId, { items: proposal.items, pairs: proposal.pairs })

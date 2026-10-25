@@ -21,6 +21,7 @@ import {
   SETTINGS,
   STARTED_RUN_DETAIL,
   STORED_VALUES,
+  UNUSABLE_FIGURE_GAP,
 } from "../../mocks/fixtures";
 import { type Holdings, type Run, type RunDetail, updateDataSource } from "../../api/endpoints";
 import { presentError } from "../../api/errorPresentation";
@@ -1287,6 +1288,80 @@ describe("re-asking about part of a run", () => {
       runId: 7,
       body: { items: "failed", pairs: [TAX_PAIR], accept_uncapped_spend: false },
     });
+  });
+
+  /**
+   * Review finding 1. **A failed gap may not be its run's failure row**: a figure that run stored
+   * and that has since become unusable. A retry of that run refuses the whole selection, so the
+   * list goes out as a scoped run unless every pair is one of the run's own failures.
+   */
+  it("scopes a failed list holding a pair its run did not fail on, rather than retrying the run", async () => {
+    serveGaps({ failed: [...HOLDINGS_GAPS.failed, UNUSABLE_FIGURE_GAP] });
+    renderShell("/acquire");
+    const sent = recordPlans();
+    const started = recordStartsOf();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Retry 2 failed" }));
+
+    const strip = await screen.findByRole("alert");
+    const both = [TAX_PAIR, { candidate: UNUSABLE_FIGURE_GAP.candidate, attribute: UNUSABLE_FIGURE_GAP.attribute }];
+    expect(sent.retries).toEqual([]);
+    expect(sent.scoped).toEqual([{ level: "country", pairs: both }]);
+
+    await userEvent.click(within(strip).getByRole("button", { name: /yes, start it/i }));
+    await waitFor(() =>
+      expect(started).toEqual([{ level: "country", pairs: both, accept_uncapped_spend: false }]),
+    );
+  });
+
+  it("scopes a failed list whose only pair is an unusable figure", async () => {
+    serveGaps({ failed: [UNUSABLE_FIGURE_GAP] });
+    renderShell("/acquire");
+    const sent = recordPlans();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Retry 1 failed" }));
+
+    await screen.findByRole("button", { name: /yes, start it/i });
+    expect(sent.retries).toEqual([]);
+    expect(sent.scoped).toHaveLength(1);
+  });
+
+  it("still retries the run for a selection of its own failure rows from a mixed list", async () => {
+    serveSourceNames({ oecd: "OECD", eurostat: "Eurostat" });
+    serveGaps({ failed: [...HOLDINGS_GAPS.failed, UNUSABLE_FIGURE_GAP] });
+    renderShell("/acquire");
+    const sent = recordPlans();
+    const group = within(await screen.findByRole("region", { name: /which sources broke/i }));
+    await group.findByRole("button", { name: "OECD 1 item" });
+    // The first group is OECD's, whose one failure is run 7's own failure row.
+    await userEvent.click(group.getAllByRole("button", { name: "All" })[0]!);
+    await userEvent.click(screen.getByRole("button", { name: "Retry 1 selected" }));
+
+    await screen.findByRole("button", { name: /yes, start it/i });
+    expect(sent.retries).toEqual([{ runId: 7, body: { items: "failed", pairs: [TAX_PAIR] } }]);
+    expect(sent.scoped).toEqual([]);
+  });
+
+  it("offers Try again when the run a retry would go back to cannot be read", async () => {
+    let reads = 0;
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/7`, () => {
+        reads += 1;
+        // The card's own opening read answers; the retry's read of the run fails once.
+        return reads === 2
+          ? HttpResponse.json({ code: "internal_error", message: "SENTINEL_MESSAGE" }, { status: 500 })
+          : undefined;
+      }),
+    );
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Retry 1 failed" }));
+
+    const refusal = await screen.findByRole("alert");
+    expect(refusal).toHaveTextContent("The estimate did not go through");
+    await userEvent.click(within(refusal).getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("button", { name: /yes, start it/i })).toBeInTheDocument();
   });
 
   it("scopes a selection spanning two runs to its pairs, naming every source asked", async () => {
