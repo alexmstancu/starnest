@@ -1213,7 +1213,7 @@ export interface components {
             max_rent?: number;
             home_country_candidate: string;
             home_city_candidate?: string | null;
-            /** @description Candidate ids of countries. At least one is required: eu_free_movement and the UK and Swiss gates all turn on it (reqs.md 7.3), and an empty set would make every such gate pass or fail silently rather than visibly. */
+            /** @description Candidate ids of countries. At least one is required: eu_free_movement and the UK and Swiss gates all turn on it (reqs.md 7.3), and an empty set would make every such gate pass or fail silently rather than visibly. A change moves the ranking at once -- a gate a held citizenship clears (MatchRule.cleared_by) rules nothing out -- and flags every gate answer that assumed other citizenships (needs_recheck). */
             citizenships: string[];
         };
         Household: components["schemas"]["HouseholdInput"];
@@ -1367,6 +1367,10 @@ export interface components {
             level: string | null;
             /** @description When a candidate matches this gate, in words: catalog data seeded from reqs.md 7.3's "Matches when" column, never an identifier. */
             description: string;
+            /** @description Candidate ids of the citizenships that clear this gate wherever it asks: a household holding one matches it with no recorded answer, and an answer recorded for it rules nothing out (reqs.md 7.3, Q239). Catalog data; empty where no source names one. */
+            cleared_by: string[];
+            /** @description Whether the household's citizenships decide this gate outright (eu_free_movement): where none of them clears it, it does not match, with no recorded answer, and the refusal or warning names the citizenships it read. Never researched. */
+            decided_by_citizenship: boolean;
         };
         MatchRuleResultInput: {
             /** @enum {string} */
@@ -1400,6 +1404,10 @@ export interface components {
              * @description When this answer was stored, by the server's clock: `retrieval_date` is when its pages were read, and the client may send it. With `reference_period`, what the interface computes an answer's age and whether its period has ended from (D54). An ended period never expires an answer: it applies until a person changes it. Null only on an answer not yet stored.
              */
             recorded_at?: string | null;
+            /** @description Candidate ids of the household citizenships this answer assumed, copied when it was recorded (Q239); empty when it was recorded with no household. **Null means not recorded**: an answer recorded before 0517 has an unknown assumption. Null too on an answer not yet stored and on a ranking's gate evidence. */
+            assumed_citizenships?: string[] | null;
+            /** @description The household's citizenships differ from those this answer assumed -- or its assumption is unknown (null) while the household holds any, since an unknown assumption cannot be shown to match -- so a person should re-check it (`researchMatchRules` with `recheck`, or record again). A flag only: the answer still applies until a person records again, and is never expired or overwritten. Always false on a ranking's gate evidence. */
+            needs_recheck?: boolean;
             /** @description What a re-check found about an answer a person recorded, stored beside it after it and never over it (`researchMatchRules` with `recheck`). It rules nothing out and changes nothing; taking it is recording its answer through `putMatchRuleResult`, after which it is no longer pending. Null when there is none, and always null on a proposal. */
             pending_proposal?: components["schemas"]["PendingProposal"] | null;
         };
@@ -1499,6 +1507,8 @@ export interface components {
             llm_call_count: number;
             estimated_cost_eur: number;
             estimate_basis?: string | null;
+            /** @description Pairs left out of `gates_total` because a citizenship the household holds clears them (MatchRule.cleared_by, Q239): the passport decides them, so a model is never asked or paid. The pass leaves out the same pairs. */
+            cleared_by_citizenship: number;
         };
         Run: {
             id: number;
@@ -1638,8 +1648,10 @@ export interface components {
         Warning: {
             compound_rule?: string | null;
             match_rule?: string | null;
-            /** @description The answer a gate held as a warning read, as it stood then, as for a refusal (D46). Null for a compound rule. */
+            /** @description The answer a gate held as a warning read, as it stood then, as for a refusal (D46). Null for a compound rule, and for a gate decided by citizenship. */
             gate_answer?: components["schemas"]["MatchRuleResult"] | null;
+            /** @description Candidate ids of the household citizenships a gate decided by citizenship read in place of a recorded answer, none of which clears it (Q239); a saved ranking keeps those it read. Empty for anything else. */
+            citizenships?: string[];
             /** @description In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved. */
             detail: string;
             /** @description The figures the rule read, each with its source and both dates, in the order the rule names them -- for a saved ranking, the rows it read when it was saved, never today's (D46). Empty when the ranking was saved before its evidence was kept. */
@@ -1653,8 +1665,10 @@ export interface components {
             compound_rule?: string | null;
             /** @description In words: attributes and gates named as the catalog names them, with units where the catalog has them and figures at a readable precision; never an identifier or a vocabulary token. Frozen as written when a ranking is saved. A gate's own recorded reason is served as it was written. */
             reason_detail: string;
-            /** @description The answer a gate's refusal read, as it stood then: a saved ranking keeps the version it read however the gate is answered later (D46). Null for any other reason, and for a refusal saved before its evidence was kept. */
+            /** @description The answer a gate's refusal read, as it stood then: a saved ranking keeps the version it read however the gate is answered later (D46). Null for any other reason, for a refusal saved before its evidence was kept, and for a gate decided by citizenship. */
             gate_answer?: components["schemas"]["MatchRuleResult"] | null;
+            /** @description Candidate ids of the household citizenships a gate decided by citizenship read in place of a recorded answer, none of which clears it (Q239); a saved ranking keeps those it read. Empty for anything else. */
+            citizenships?: string[];
             /** @description The figure a threshold judged, or a compound rule's inputs in the order it names them, each with its source and both dates (D46). Empty for a gate, which reads no figure, and for a refusal saved before its evidence was kept. */
             inputs?: components["schemas"]["Value"][];
         };

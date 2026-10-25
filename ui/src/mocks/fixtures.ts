@@ -1486,12 +1486,30 @@ export const HOUSEHOLD: Household = {
  * which is the shape of the real catalog, where only the UK, Swiss and Liechtenstein gates are,
  * one country each. The order is the order a research pass asks them in.
  */
+/**
+ * Whose passport carries free movement, as 0517 seeds it (Q239): the 27 EU member states (TFEU
+ * Art. 21, 45), Iceland, Liechtenstein and Norway (EEA Agreement, Art. 28), and Switzerland (the
+ * EU-Swiss Agreement on the Free Movement of Persons).
+ */
+const FREE_MOVEMENT_CITIZENSHIPS = [
+  "country.austria", "country.belgium", "country.bulgaria", "country.croatia",
+  "country.cyprus", "country.czechia", "country.denmark", "country.estonia",
+  "country.finland", "country.france", "country.germany", "country.greece",
+  "country.hungary", "country.ireland", "country.italy", "country.latvia",
+  "country.lithuania", "country.luxembourg", "country.malta", "country.netherlands",
+  "country.poland", "country.portugal", "country.romania", "country.slovakia",
+  "country.slovenia", "country.spain", "country.sweden",
+  "country.iceland", "country.liechtenstein", "country.norway", "country.switzerland",
+];
+
 export const MATCH_RULES: MatchRule[] = [
   {
     id: "country.visa_route_exists",
     name: "A visa route exists",
     level: "country",
     description: "A realistic visa route exists for this household.",
+    cleared_by: [],
+    decided_by_citizenship: false,
   },
   {
     id: "country.eu_free_movement",
@@ -1499,12 +1517,16 @@ export const MATCH_RULES: MatchRule[] = [
     level: "country",
     description:
       "The candidate is an EU or EEA state, and the household's citizenship carries free movement there.",
+    cleared_by: FREE_MOVEMENT_CITIZENSHIPS,
+    decided_by_citizenship: true,
   },
   {
     id: "not_manually_excluded",
     name: "Not excluded by hand",
     level: null,
     description: "You have not ruled this candidate out by hand.",
+    cleared_by: [],
+    decided_by_citizenship: false,
   },
   {
     id: "country.uk_skilled_worker",
@@ -1512,6 +1534,8 @@ export const MATCH_RULES: MatchRule[] = [
     level: "country",
     description:
       "A realistic Skilled Worker route exists: sponsorship available in the local market, or the salary threshold met.",
+    cleared_by: ["country.united_kingdom", "country.ireland"],
+    decided_by_citizenship: false,
   },
   {
     id: "country.residence_quota_open",
@@ -1519,6 +1543,8 @@ export const MATCH_RULES: MatchRule[] = [
     level: "country",
     description:
       "The annual residence-permit quota has capacity for this household.",
+    cleared_by: [],
+    decided_by_citizenship: false,
   },
 ];
 
@@ -1593,6 +1619,8 @@ export const RESEARCH_CALL_COST_EUR = 0.04;
  */
 export const RESEARCH_PLAN: ResearchPlan = {
   gates_total: 3,
+  // None of the mock household's citizenships clears a gate this plan asks.
+  cleared_by_citizenship: 0,
   llm_call_count: 3,
   estimated_cost_eur: 0.12,
   estimate_basis:
