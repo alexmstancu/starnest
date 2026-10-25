@@ -198,6 +198,24 @@ export function ProposalsPanel({
       >
         {pass.statusLine?.text}
       </p>
+      {/* **Kept until put away** (PL-052): what a pass spent is said here through a visit to
+          another tab and a reload, and only the reader's Dismiss removes it. Focus goes to
+          Estimate, the act the next pass needs, as the button leaves with the line. */}
+      {pass.end !== null && !pass.running && (
+        <div className="rule-form__actions">
+          <button
+            type="button"
+            className="button"
+            aria-label="Dismiss the last pass"
+            onClick={() => {
+              pass.dismiss();
+              estimateButton.current?.focus();
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       <ActRefusal act="The research pass" error={pass.failure} />
 
       {pass.refusals.length > 0 && (

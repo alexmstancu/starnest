@@ -373,6 +373,14 @@ an end nobody asked for, a held `.button` -- with no new class and no new token.
 the three states**, and say whether the outcome belongs in the line or in a card of its own:
 it is the one place on this screen that reports money already spent.
 
+**The outcome now stays until it is dismissed** (PL-052, 2026-10-25). It is kept above the
+screen, so a visit to another tab and a reload within the tab keep it, and a **Dismiss** under
+the line removes it (focus goes to Estimate). A pass the page stopped running -- the reader
+left Configure or reloaded mid-pass -- is a seventh ending, **abandoned**, said with what it
+had spent and, when a question was in flight, that what that question spent is not known; it
+takes the amber band. The money itself is also in Acquire's "Spent this month", which includes
+research. **Please draw the Dismiss** with the line.
+
 ## The lock is a padlock, and held controls have one look (2026-10-24)
 
 **The lock draws a padlock, not a disc** (NEW-68, D30) -- a deliberate divergence. The design

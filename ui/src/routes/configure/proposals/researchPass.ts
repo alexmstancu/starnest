@@ -69,14 +69,22 @@ export interface Pass {
   tally: PassTally;
 }
 
+/** How far a running pass has got, and the gate whose question is in flight, if one is. */
+export interface Progress {
+  pass: Pass;
+  inFlight: Gate | null;
+}
+
 /**
  * How a pass ended. Five ways, because each is a different fact about what was asked and what
- * it cost -- and a sixth, `unread`, for a pass that could not learn its cap or its gates and so
- * asked nothing at all.
+ * it cost -- a sixth, `unread`, for a pass that could not learn its cap or its gates and so
+ * asked nothing at all, and a seventh, `abandoned`, for a pass the page stopped running: left
+ * for another tab, or reloaded (PL-052).
  */
 export type PassEnd =
   | { kind: "finished" | "cap" | "stopped"; pass: Pass }
-  | { kind: "refused" | "failed" | "unread"; pass: Pass; failure: unknown };
+  | { kind: "refused" | "failed" | "unread"; pass: Pass; failure: unknown }
+  | ({ kind: "abandoned" } & Progress);
 
 /** The gate to ask next, or the end the pass has come to. */
 export type NextStep = { ask: Gate } | { end: PassEnd };
@@ -156,16 +164,29 @@ export function failedOn(pass: Pass, failure: unknown): PassEnd {
   return { kind: spendIsKnown(failure) ? "refused" : "failed", pass, failure };
 }
 
+/** A pass before its cap and its gates are read: it has asked nothing, and nothing is in flight. */
+export function notYetAsking(scope: {
+  level: string;
+  questionsTotal: number;
+  ceilingEur: number;
+}): Progress {
+  return { pass: beginPass({ ...scope, gates: [], capEur: null }), inFlight: null };
+}
+
+/**
+ * A pass the page stopped running, as far as it had got (PL-052). The question in flight, if
+ * any, is still answered and billed by the server; what it cost is not known here.
+ */
+export function abandoned({ pass, inFlight }: Progress): PassEnd {
+  return { kind: "abandoned", pass, inFlight };
+}
+
 /** The spend cap or the gates could not be read, so nothing was asked. */
 export function couldNotStart(
   scope: { level: string; questionsTotal: number; ceilingEur: number },
   failure: unknown,
 ): PassEnd {
-  return {
-    kind: "unread",
-    pass: beginPass({ ...scope, gates: [], capEur: null }),
-    failure,
-  };
+  return { kind: "unread", pass: notYetAsking(scope).pass, failure };
 }
 
 /**
@@ -236,6 +257,11 @@ export function describeEnd(end: PassEnd): string {
         `${the} did not start, because the spend cap and the gates could not be ` +
         "read: it asked nothing and spent nothing."
       );
+    case "abandoned":
+      return end.inFlight === null
+        ? `${the} ended when you left Configure: it ${did}.`
+        : `${the} ended when you left Configure while ${end.inFlight.name} was being ` +
+            `asked, and what that question spent is not known: before it, the pass ${did}.`;
   }
 }
 

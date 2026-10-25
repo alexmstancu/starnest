@@ -1,23 +1,28 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchMatchRules,
   fetchSettings,
   researchMatchRules,
 } from "../../../api/endpoints";
+import { useSessionState } from "../../../shell/SessionProvider";
+import { type PassRecord, parsePassRecord, storedFormOf } from "./passRecord";
 import {
   STARTING,
+  abandoned,
   beginPass,
   couldNotStart,
   describeEnd,
   describeProgress,
   endIsWarning,
   failedOn,
+  notYetAsking,
   shouldReadAnswersAgain,
   nextStep,
   withAnswer,
   type Asking,
   type Pass,
   type PassEnd,
+  type Progress,
 } from "./researchPass";
 
 /**
@@ -32,6 +37,12 @@ import {
  * **Stop takes effect after the question in flight.** The server finishes a call it has begun and
  * stores what it found, so cutting the request would lose an answer already paid for; the pass
  * simply asks nothing after it.
+ *
+ * **What the pass did outlives the screen** (PL-052): its progress and then its end are kept in
+ * the session store, above the routes and mirrored to this tab's storage, so leaving Configure
+ * and a reload keep them. A pass still recorded as running when a screen mounts is one no page
+ * is running any more, and is recorded as abandoned with what it had spent. The end stays until
+ * the reader dismisses it, or the next pass starts.
  *
  * **The decisions are `researchPass.ts`'s** -- which gate is next, whether the cap is reached, how
  * the pass ended. This hook only asks, one request after another, and keeps what the screen shows.
@@ -57,10 +68,12 @@ export interface ResearchPass {
   refusals: readonly string[];
   /** Why the last pass ended early, when a request was refused or failed. Null otherwise. */
   failure: unknown;
-  /** How the last pass ended. Null until one has, and again while the next runs. */
+  /** How the last pass ended. Null until one has, while the next runs, and once dismissed. */
   end: PassEnd | null;
   start: (request: PassRequest) => void;
   stop: () => void;
+  /** Forgets how the last pass ended. Turned away while a pass runs. */
+  dismiss: () => void;
 }
 
 type Phase = { kind: "idle" } | { kind: "starting" } | ({ kind: "asking" } & Asking);
@@ -72,7 +85,14 @@ export function useResearchPass(
   onAnswered: () => void,
 ): ResearchPass {
   const [phase, setPhase] = useState<Phase>(IDLE);
-  const [end, setEnd] = useState<PassEnd | null>(null);
+  const [record, setRecord] = useSessionState<PassRecord | null>(
+    PASS_KEY,
+    null,
+    parsePassRecord,
+    // Across levels: the pass names its own level, and what it spent stays said wherever the
+    // reader goes.
+    { scope: "session" },
+  );
   const [stopAsked, setStopAsked] = useState(false);
   // Refs, because the pass reads them between its requests -- long after the render that a
   // press changed -- and two presses in one tick would both pass a check on state.
@@ -88,27 +108,45 @@ export function useResearchPass(
     return () => controller.abort();
   }, []);
 
+  // A record running that this page is not running was left by a screen that has gone.
+  useEffect(() => {
+    if (record?.kind === "running" && !inFlight.current) setRecord(abandoned(record));
+  }, [record, setRecord]);
+
+  const keep = useCallback(
+    (next: PassRecord | null) => setRecord(next === null ? null : storedFormOf(next)),
+    [setRecord],
+  );
+
   function start(request: PassRequest): void {
     const signal = lifetime.current?.signal;
     if (inFlight.current || signal === undefined) return;
     inFlight.current = true;
     stopping.current = false;
     setStopAsked(false);
-    setEnd(null);
+    keep({ kind: "running", ...notYetAsking(request) });
     setPhase({ kind: "starting" });
 
     askEachGate(request, signal, {
-      asking: (asking) => setPhase({ kind: "asking", ...asking }),
+      reached: (progress) => {
+        // A screen that has gone records nothing more: its pass is abandoned where it was.
+        if (signal.aborted) return;
+        keep({ kind: "running", ...progress });
+        if (progress.inFlight !== null) {
+          setPhase({ kind: "asking", pass: progress.pass, gate: progress.inFlight });
+        }
+      },
       stopAsked: () => stopping.current,
     }).then(
       (ended) => {
         inFlight.current = false;
         setPhase(IDLE);
-        setEnd(ended);
+        keep(ended);
         if (shouldReadAnswersAgain(ended)) onAnswered();
       },
       () => {
-        // Abandoned: the screen that held the pass has gone, and there is nobody left to tell.
+        // Abandoned: the screen that held the pass has gone. Its record says how far it got,
+        // and the next screen to mount records it as abandoned.
         inFlight.current = false;
       },
     );
@@ -120,6 +158,12 @@ export function useResearchPass(
     setStopAsked(true);
   }
 
+  function dismiss(): void {
+    if (inFlight.current) return;
+    keep(null);
+  }
+
+  const end = record === null || record.kind === "running" ? null : record;
   return {
     running: phase.kind !== "idle",
     stopAsked,
@@ -132,8 +176,12 @@ export function useResearchPass(
     end,
     start,
     stop,
+    dismiss,
   };
 }
+
+/** Where the session store keeps the last pass. */
+const PASS_KEY = "configure/research-pass";
 
 function statusLineOf(
   phase: Phase,
@@ -158,7 +206,7 @@ function statusLineOf(
 async function askEachGate(
   request: PassRequest,
   signal: AbortSignal,
-  watch: { asking: (asking: Asking) => void; stopAsked: () => boolean },
+  watch: { reached: (progress: Progress) => void; stopAsked: () => boolean },
 ): Promise<PassEnd> {
   let pass: Pass;
   try {
@@ -177,6 +225,7 @@ async function askEachGate(
     signal.throwIfAborted();
     return couldNotStart(request, failure);
   }
+  watch.reached({ pass, inFlight: null });
 
   for (;;) {
     const step = nextStep(pass, watch.stopAsked());
@@ -184,7 +233,7 @@ async function askEachGate(
     // Checked before every question as well as after a failure: an answer can land in the
     // moment the screen goes, and the next question must not leave with it.
     signal.throwIfAborted();
-    watch.asking({ pass, gate: step.ask });
+    watch.reached({ pass, inFlight: step.ask });
     try {
       const answer = await researchMatchRules(
         {
@@ -195,6 +244,7 @@ async function askEachGate(
         { signal },
       );
       pass = withAnswer(pass, answer);
+      watch.reached({ pass, inFlight: null });
     } catch (failure) {
       signal.throwIfAborted();
       return failedOn(pass, failure);

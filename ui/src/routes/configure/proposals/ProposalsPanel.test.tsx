@@ -1831,3 +1831,219 @@ describe("the gate proposals while a write is in flight", () => {
     expect(uncapped).toBeChecked();
   });
 });
+
+/**
+ * PL-052. **Money spent on gate research never leaves the page unsaid.** How the last pass
+ * ended, with what it spent, stays on Configure -- through a visit to another tab and a reload
+ * -- until the reader dismisses it; a pass the page stopped running is recorded as abandoned.
+ */
+describe("the last pass's outcome, kept until it is dismissed", () => {
+  async function researchedOnScreen(): Promise<void> {
+    renderShell("/configure");
+    await settled();
+    await researched();
+  }
+
+  async function leaveAndComeBack(): Promise<void> {
+    await userEvent.click(screen.getByRole("link", { name: "Acquire" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Gate proposals" })).toBeNull(),
+    );
+    await userEvent.click(screen.getByRole("link", { name: "Configure" }));
+    await settled();
+  }
+
+  function dismissButton(): HTMLElement {
+    return theProposals().getByRole("button", { name: "Dismiss the last pass" });
+  }
+
+  const ENDINGS: readonly { ending: string; run: () => Promise<void>; says: string }[] = [
+    {
+      ending: "asked every gate",
+      run: async () => {
+        watchResearch();
+        await researchedOnScreen();
+      },
+      says: ALL_ASKED,
+    },
+    {
+      ending: "stopped at the spend cap",
+      run: async () => {
+        await capAt(0.08);
+        watchResearch();
+        await researchedOnScreen();
+      },
+      says:
+        "The last pass at the Country level stopped at the spend cap of €0.08: it asked 2 of 3 questions and spent €0.08 of at most €0.12.",
+    },
+    {
+      ending: "stopped by the reader",
+      run: async () => {
+        const research = watchResearch({ holdAt: 2 });
+        await researchedOnScreen();
+        await waitFor(() => expect(research.sent).toHaveLength(2));
+        await userEvent.click(
+          theProposals().getByRole("button", { name: "Stop after this question" }),
+        );
+        research.release();
+      },
+      says:
+        "You stopped the last pass at the Country level: it asked 1 of 3 questions and spent €0.04 of at most €0.12.",
+    },
+    {
+      ending: "refused",
+      run: async () => {
+        watchResearch({
+          answer: () =>
+            HttpResponse.json(
+              { code: "spend_cap_not_set", message: "no spend cap is set" },
+              { status: 409 },
+            ),
+        });
+        await researchedOnScreen();
+      },
+      says:
+        "The last pass at the Country level was refused at A visa route exists, which spent nothing: it asked 0 of 3 questions and spent nothing.",
+    },
+    {
+      ending: "failed on an answering server",
+      run: async () => {
+        watchResearch({
+          answer: (_body, index) =>
+            index === 2
+              ? HttpResponse.json(
+                  { code: "internal_error", message: "the model provider failed" },
+                  { status: 500 },
+                )
+              : undefined,
+        });
+        await researchedOnScreen();
+      },
+      says:
+        "The last pass at the Country level failed at Free movement applies, and what that request spent is not known: before it, the pass asked 1 of 3 questions and spent €0.04 of at most €0.12.",
+    },
+  ];
+
+  it.each(ENDINGS)("keeps a pass that $ending, with what it spent, through a visit to another tab", async ({ run, says }) => {
+    await run();
+    await passSays(says);
+
+    await leaveAndComeBack();
+
+    await passSays(says);
+    expect(dismissButton()).toBeInTheDocument();
+  });
+
+  it("keeps the outcome across a reload", async () => {
+    watchResearch();
+    const page = renderShell("/configure");
+    await settled();
+    await researched();
+    await passSays(ALL_ASKED);
+
+    page.unmount();
+    renderShell("/configure");
+    await settled();
+
+    await passSays(ALL_ASKED);
+  });
+
+  it("records a pass left mid-question as abandoned, with what it had spent", async () => {
+    const research = watchResearch({ holdAt: 2 });
+    await researchedOnScreen();
+    await waitFor(() => expect(research.sent).toHaveLength(2));
+
+    await userEvent.click(screen.getByRole("link", { name: "Acquire" }));
+    research.release();
+    await userEvent.click(screen.getByRole("link", { name: "Configure" }));
+    await settled();
+
+    await passSays(
+      "The last pass at the Country level ended when you left Configure while Free movement applies was being asked, and what that question spent is not known: before it, the pass asked 1 of 3 questions and spent €0.04 of at most €0.12.",
+    );
+    expect(statusLine()).toHaveClass("notice--warning");
+    expect(research.sent).toHaveLength(2);
+  });
+
+  it("removes the outcome once dismissed, for good, and puts focus on Estimate", async () => {
+    watchResearch();
+    const page = renderShell("/configure");
+    await settled();
+    await researched();
+    await passSays(ALL_ASKED);
+
+    await userEvent.click(dismissButton());
+
+    expect(statusLine()).toBeEmptyDOMElement();
+    expect(
+      theProposals().queryByRole("button", { name: "Dismiss the last pass" }),
+    ).toBeNull();
+    expect(
+      theProposals().getByRole("button", { name: "Estimate the research" }),
+    ).toHaveFocus();
+    await leaveAndComeBack();
+    expect(statusLine()).toBeEmptyDOMElement();
+    page.unmount();
+    renderShell("/configure");
+    await settled();
+    expect(statusLine()).toBeEmptyDOMElement();
+  });
+
+  it("offers no Dismiss before any pass, nor while one runs", async () => {
+    const research = watchResearch({ holdAt: 2 });
+    renderShell("/configure");
+    await settled();
+    expect(
+      theProposals().queryByRole("button", { name: "Dismiss the last pass" }),
+    ).toBeNull();
+
+    await researched();
+    await waitFor(() => expect(research.sent).toHaveLength(2));
+
+    expect(
+      theProposals().queryByRole("button", { name: "Dismiss the last pass" }),
+    ).toBeNull();
+    research.release();
+    await passSays(ALL_ASKED);
+  });
+
+  /**
+   * A read that failed with the server up answers a 500 with the contract's body (PL-002): the
+   * pass did not start, and that, with its notice worded from the code, outlives a reload.
+   */
+  it("keeps a pass whose spend cap could not be read, and its notice, through a reload", async () => {
+    const research = watchResearch();
+    const page = renderShell("/configure");
+    await settled();
+    await estimated();
+    mockServer.use(
+      http.get(`${BASE}/settings`, () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "the settings could not be read" },
+          { status: 500 },
+        ),
+      ),
+    );
+    await userEvent.click(
+      theProposals().getByRole("button", { name: "Research the gates" }),
+    );
+    const DID_NOT_START =
+      "The last pass at the Country level did not start, because the spend cap and the gates could not be read: it asked nothing and spent nothing.";
+    await passSays(DID_NOT_START);
+
+    page.unmount();
+    mockServer.resetHandlers();
+    renderShell("/configure");
+    await settled();
+
+    await passSays(DID_NOT_START);
+    expect(
+      theProposals().getByText("The server failed while answering."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/the settings could not be read/)).toBeNull();
+    await userEvent.click(dismissButton());
+    expect(statusLine()).toBeEmptyDOMElement();
+    expect(theProposals().queryByText("The server failed while answering.")).toBeNull();
+    expect(research.sent).toEqual([]);
+  });
+});
