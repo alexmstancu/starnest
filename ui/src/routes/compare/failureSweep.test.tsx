@@ -1,12 +1,18 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, delay, http } from "msw";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { replaceSettings } from "../../api/endpoints";
 import { SETTINGS } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 import { SETTLE_MS } from "./useSettledRequest";
+
+// Each case renders the whole shell and walks a selection through several reads, waiting on
+// events at every step. Under a loaded full gate one case has run past the suite's 15 s without
+// hanging, and passed alone. Still a deadlock detector (vite.config.ts), with room for a busy
+// machine.
+vi.setConfig({ testTimeout: 30_000 });
 
 /**
  * The failure sweep of `map-C01.md` M1 for `/compare` (PL-001, PL-005): every GET the screen
