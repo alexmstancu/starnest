@@ -91,7 +91,12 @@ function defaultCriteria(): Criterion[] {
 function remoteOnlyCriteria(): Criterion[] {
   return [
     criterion("country.broadband_coverage", "connectivity", 70, "maximise"),
-    criterion("country.international_air_connectivity", "connectivity", 30, "maximise"),
+    criterion(
+      "country.international_air_connectivity",
+      "connectivity",
+      30,
+      "maximise",
+    ),
   ];
 }
 
@@ -125,9 +130,24 @@ export function makeCriteriaSetDetails(): Record<string, CriteriaSet> {
       id: "default",
       name: "Default",
       pillar_weights: [
-        { pillar: "economics", level: "country", weight: 40, weight_locked: false },
-        { pillar: "housing", level: "country", weight: 35, weight_locked: false },
-        { pillar: "safety", level: "country", weight: 25, weight_locked: false },
+        {
+          pillar: "economics",
+          level: "country",
+          weight: 40,
+          weight_locked: false,
+        },
+        {
+          pillar: "housing",
+          level: "country",
+          weight: 35,
+          weight_locked: false,
+        },
+        {
+          pillar: "safety",
+          level: "country",
+          weight: 25,
+          weight_locked: false,
+        },
       ],
       criteria: defaultCriteria(),
       enforced_match_rules: ["country.visa_route_exists"],
@@ -137,7 +157,12 @@ export function makeCriteriaSetDetails(): Record<string, CriteriaSet> {
       id: "remote-only",
       name: "Remote only",
       pillar_weights: [
-        { pillar: "connectivity", level: "country", weight: 100, weight_locked: false },
+        {
+          pillar: "connectivity",
+          level: "country",
+          weight: 100,
+          weight_locked: false,
+        },
       ],
       criteria: remoteOnlyCriteria(),
       enforced_match_rules: [],
@@ -297,7 +322,8 @@ const COUNTRY_RESULTS: CandidateResult[] = [
     match_status: "insufficient_data",
     parent_not_matching: false,
     // In the server's words (`ranking.py`), from the coverage above and the settings' floor.
-    insufficient_reason: "only 41% of the scored weight was answered, against a floor of 60%",
+    insufficient_reason:
+      "only 41% of the scored weight was answered, against a floor of 60%",
   },
 ];
 
@@ -359,12 +385,20 @@ function onScale(points: number, scaleMax: number): number {
   return (points * scaleMax) / MOCK_SCORE_SCALE;
 }
 
-function wholeOnScale(points: number | null | undefined, scaleMax: number): number | null {
-  return typeof points === "number" ? Math.round(onScale(points, scaleMax)) : null;
+function wholeOnScale(
+  points: number | null | undefined,
+  scaleMax: number,
+): number | null {
+  return typeof points === "number"
+    ? Math.round(onScale(points, scaleMax))
+    : null;
 }
 
 /** A candidate's result on another scale: its total, its parent's and every pillar. */
-function resultOnScale(result: CandidateResult, scaleMax: number): CandidateResult {
+function resultOnScale(
+  result: CandidateResult,
+  scaleMax: number,
+): CandidateResult {
   return {
     ...result,
     score: wholeOnScale(result.score, scaleMax),
@@ -376,7 +410,8 @@ function resultOnScale(result: CandidateResult, scaleMax: number): CandidateResu
       : {
           pillar_scores: result.pillar_scores.map((pillar) => ({
             ...pillar,
-            score: pillar.score === null ? null : onScale(pillar.score, scaleMax),
+            score:
+              pillar.score === null ? null : onScale(pillar.score, scaleMax),
             contribution: onScale(pillar.contribution, scaleMax),
           })),
         }),
@@ -395,8 +430,8 @@ export function rankingFor(
     level,
     computed_at: "2026-08-30T09:15:00Z",
     score_scale_max: scaleMax,
-    candidates: (level === "city" ? CITY_RESULTS : COUNTRY_RESULTS).map((result) =>
-      resultOnScale(result, scaleMax),
+    candidates: (level === "city" ? CITY_RESULTS : COUNTRY_RESULTS).map(
+      (result) => resultOnScale(result, scaleMax),
     ),
   };
 }
@@ -478,9 +513,14 @@ export function comparisonFor(
       return {
         candidate,
         ...side,
-        delta: rawGap(sideOf(focus.candidate, row.attribute, ours).value, side.value),
+        delta: rawGap(
+          sideOf(focus.candidate, row.attribute, ours).value,
+          side.value,
+        ),
         weighted_contribution:
-          ours === null || theirs === null ? null : ((theirs - ours) * row.effective_weight) / 100,
+          ours === null || theirs === null
+            ? null
+            : ((theirs - ours) * row.effective_weight) / 100,
       };
     }),
   }));
@@ -506,18 +546,27 @@ type ComparisonRow = Comparison["attributes"][number];
 /** One side of a row: its score, and its active stored figure -- omitted, never null, if none. */
 function sideOf(candidate: string, attribute: string, score: number | null) {
   const value = STORED_VALUES.find(
-    (each) => each.candidate === candidate && each.attribute === attribute && each.is_active,
+    (each) =>
+      each.candidate === candidate &&
+      each.attribute === attribute &&
+      each.is_active,
   );
   return { normalised_score: score, ...(value === undefined ? {} : { value }) };
 }
 
 /** Comparator minus focus in the figure's own unit, or null unless both share one. */
-function rawGap(focus: StoredValue | undefined, theirs: StoredValue | undefined): number | null {
-  const figure = (value: StoredValue | undefined) => value?.payload as
-    | { magnitude?: number; unit?: string }
-    | undefined;
+function rawGap(
+  focus: StoredValue | undefined,
+  theirs: StoredValue | undefined,
+): number | null {
+  const figure = (value: StoredValue | undefined) =>
+    value?.payload as { magnitude?: number; unit?: string } | undefined;
   const [ours, their] = [figure(focus), figure(theirs)];
-  if (typeof ours?.magnitude !== "number" || typeof their?.magnitude !== "number") return null;
+  if (
+    typeof ours?.magnitude !== "number" ||
+    typeof their?.magnitude !== "number"
+  )
+    return null;
   if (ours.unit !== their.unit) return null;
   // Rounded as the server's decimal subtraction is exact: 107.9 - 94.5 is 13.4, not 13.400000000000006.
   return Number((their.magnitude - ours.magnitude).toFixed(6));
@@ -528,9 +577,13 @@ function rawGap(focus: StoredValue | undefined, theirs: StoredValue | undefined)
  * then what it trails on, costliest first, three a side, named as the catalog names them.
  */
 function sentences(rows: readonly ComparisonRow[], comparator: string) {
-  const names = new Map(ATTRIBUTES.map((attribute) => [attribute.id, attribute.name]));
+  const names = new Map(
+    ATTRIBUTES.map((attribute) => [attribute.id, attribute.name]),
+  );
   const worth = rows.flatMap((row) => {
-    const cell = (row.comparators ?? []).find((each) => each.candidate === comparator)!;
+    const cell = (row.comparators ?? []).find(
+      (each) => each.candidate === comparator,
+    )!;
     const contribution = cell.weighted_contribution;
     if (contribution === null || contribution === undefined) return [];
     const sign = contribution > 0 ? "+" : "";
@@ -539,19 +592,27 @@ function sentences(rows: readonly ComparisonRow[], comparator: string) {
       `${row.focus.normalised_score}, worth ${sign}${contribution.toFixed(1)} points`;
     return [{ contribution, sentence }];
   });
-  const topThree = (kept: typeof worth) => kept.slice(0, 3).map(({ sentence }) => sentence);
+  const topThree = (kept: typeof worth) =>
+    kept.slice(0, 3).map(({ sentence }) => sentence);
   return {
     advantages: topThree(
-      worth.filter(({ contribution }) => contribution > 0).sort((a, b) => b.contribution - a.contribution),
+      worth
+        .filter(({ contribution }) => contribution > 0)
+        .sort((a, b) => b.contribution - a.contribution),
     ),
     disadvantages: topThree(
-      worth.filter(({ contribution }) => contribution < 0).sort((a, b) => a.contribution - b.contribution),
+      worth
+        .filter(({ contribution }) => contribution < 0)
+        .sort((a, b) => a.contribution - b.contribution),
     ),
   };
 }
 
 /** The comparator's number minus the focus's, or null unless both have one: the server's rule. */
-function againstFocus(focus: number | null, theirs: number | null): number | null {
+function againstFocus(
+  focus: number | null,
+  theirs: number | null,
+): number | null {
   return focus === null || theirs === null ? null : theirs - focus;
 }
 
@@ -572,7 +633,10 @@ export function pillarLines(
   const lines: SynthesisLine[] = [];
   const notComparable: string[] = [];
   for (const { pillar } of focus.pillar_scores ?? []) {
-    const worth = againstFocus(ours.get(pillar) ?? null, theirs.get(pillar) ?? null);
+    const worth = againstFocus(
+      ours.get(pillar) ?? null,
+      theirs.get(pillar) ?? null,
+    );
     if (worth === null) notComparable.push(pillar);
     else lines.push({ pillar, worth });
   }
@@ -595,7 +659,9 @@ function scoredContributions(result: CandidateResult): Map<string, number> {
 
 /** The three lines worth most either way. The sort is stable, so a tie keeps the focus's order. */
 function mostWorthFirst(lines: readonly SynthesisLine[]): SynthesisLine[] {
-  return [...lines].sort((one, other) => Math.abs(other.worth) - Math.abs(one.worth)).slice(0, 3);
+  return [...lines]
+    .sort((one, other) => Math.abs(other.worth) - Math.abs(one.worth))
+    .slice(0, 3);
 }
 
 export const RUN_PLAN: RunPlan = {
@@ -651,7 +717,16 @@ export const STARTED_RUN_DETAIL: RunDetail = {
     items_completed: 93,
     items_failed: 1,
     items_unanswered: 2,
+    // A completed run reached everything it planned to ask (PL-050).
+    items_not_reached: 0,
   },
+  not_reached: [],
+  // Recorded when the run started (0512): eurostat planned 95 items and oecd 1, which sum to
+  // the 96 above; nothing paid was planned, so the ceiling is nought, under the settings' cap.
+  plan_recorded: true,
+  estimate_ceiling_eur: 0,
+  spend_cap_eur: 10,
+  accepted_uncapped: false,
   failures: [
     {
       data_source: "oecd",
@@ -676,8 +751,20 @@ export const STARTED_RUN_DETAIL: RunDetail = {
   // succeeded would never exercise the barren bar, and the barren bar is the one a reader
   // came to this panel to find.
   by_source: [
-    { data_source: "eurostat", items_stored: 93, items_failed: 0 },
-    { data_source: "oecd", items_stored: 0, items_failed: 1 },
+    {
+      data_source: "eurostat",
+      items_stored: 93,
+      items_failed: 0,
+      items_planned: 95,
+      items_asked: 95,
+    },
+    {
+      data_source: "oecd",
+      items_stored: 0,
+      items_failed: 1,
+      items_planned: 1,
+      items_asked: 1,
+    },
   ],
 };
 
@@ -749,7 +836,8 @@ export const ATTRIBUTES: Attribute[] = [
     level: "country",
     value_type: "Quantity",
     unit: "weeks",
-    description: "An attribute with no figure anywhere -- the case this view exists for",
+    description:
+      "An attribute with no figure anywhere -- the case this view exists for",
     manual_entry: true,
     max_age_months: 24,
     breakdown_scheme: null,
@@ -895,7 +983,11 @@ export function attributeScoresOf(
     const score = rescored[row.attribute];
     return score === undefined
       ? row
-      : { ...row, normalised_score: score, contribution: (score * row.effective_weight) / 100 };
+      : {
+          ...row,
+          normalised_score: score,
+          contribution: (score * row.effective_weight) / 100,
+        };
   }).map((row) => ({
     ...row,
     normalised_score:
@@ -1124,7 +1216,8 @@ export const MATCH_RULES: MatchRule[] = [
     id: "country.residence_quota_open",
     name: "A residence quota is open",
     level: "country",
-    description: "The annual residence-permit quota has capacity for this household.",
+    description:
+      "The annual residence-permit quota has capacity for this household.",
   },
 ];
 
@@ -1173,7 +1266,8 @@ export const RESEARCHED_PROPOSALS: MatchRuleResult[] = [
     match_result: "matching",
     data_source: "llm",
     retrieval_date: "2026-09-12T09:01:00Z",
-    reason: "The route is open to these citizenships with a sponsoring employer.",
+    reason:
+      "The route is open to these citizenships with a sponsoring employer.",
     citations: ["https://example.gov/uk-skilled-worker"],
     is_proposal: true,
   },
@@ -1286,7 +1380,6 @@ export const DATA_SOURCES: DataSource[] = [
     is_enabled: false,
   },
 ];
-
 
 /**
  * The eleven verticals as the catalog has them: one word each, in the order they are read.

@@ -687,8 +687,9 @@ export interface paths {
          *     the scope is recorded as two lists, and every pair in it is asked of at least one source.
          *
          *     `items: unanswered` asks again about the items that produced neither a figure nor a
-         *     failure. There is no source to narrow to, because no source failed: every source that
-         *     can answer those attributes is asked. For a country a dataset simply does not cover this
+         *     failure -- the unanswered ones and the ones the run never reached. There is no source to
+         *     narrow to, because no source failed: every source that can answer those attributes is
+         *     asked. For a country a dataset simply does not cover this
          *     will change nothing, which is why it is a separate request rather than part of a retry.
          */
         post: operations["retryRun"];
@@ -1398,23 +1399,42 @@ export interface components {
         RunDetail: components["schemas"]["Run"] & {
             scope?: components["schemas"]["RunScope"];
             progress?: {
-                items_total?: number;
-                items_completed?: number;
+                items_total: number;
+                items_completed: number;
                 /** @description Items some source failed on and no source answered. An item OECD failed on and the estimate answered is complete; the failure is still listed. */
-                items_failed?: number;
-                /** @description Items asked about that produced neither a figure nor a failure: every source asked answered, and none of them had a row for that candidate. The three counts sum to items_total. */
-                items_unanswered?: number;
+                items_failed: number;
+                /** @description Items with neither a figure nor a failure, once every source planned to answer them has been asked: none of them had a row for that candidate. For a run started before plans were recorded, only a completed run has any. */
+                items_unanswered: number;
+                /** @description Items with neither a figure nor a failure that some source planned to answer has not been asked about yet: the run is still going, or stopped first. Always 0 for a completed run. The four counts sum to items_total. */
+                items_not_reached: number;
             };
-            /** @description The items nobody answered, so they can be asked again. Derived rather than stored: an unanswered item is the absence of a value row and of a failure row, and a second record of that absence could disagree with the first. */
+            /** @description The items nobody answered, so they can be asked again. Derived rather than stored: an unanswered item is the absence of a value row and of a failure row once every planned source has been asked, and a second record of that absence could disagree with the first. */
             unanswered?: {
                 candidate: string;
                 attribute: string;
             }[];
-            /** @description What each source contributed: the items it stored a figure for, and the items it failed on. Derived from the value and failure rows rather than stored, for the reason Q217 settled for items_unanswered -- a second record of the same arithmetic can disagree with the first. The two counts are independent and do not sum to anything: a source may fail on an item another source then answers, and both are true of that run. */
+            /** @description The items no figure or failure answered yet because a source planned to answer them was never asked about them -- a run still going, or one stopped, halted on its cap or failed first. Asking again (`items: unanswered`) asks about these too. */
+            not_reached?: {
+                candidate: string;
+                attribute: string;
+            }[];
+            /** @description Whether the run recorded its plan, ceiling and cap when it started. False for a run started before they were recorded: its by_source has no planned or asked counts, its ceiling and cap are null, and its empty items are unanswered only if it completed. Never read as zero. */
+            plan_recorded?: boolean;
+            /** @description What the run's plan was estimated to cost at most when it started, priced as planRun prices it. Null when the plan was not recorded. */
+            estimate_ceiling_eur?: number | null;
+            /** @description The cap the run was held to, as it stood when the run started. Null with plan_recorded true: no cap was set. */
+            spend_cap_eur?: number | null;
+            /** @description Whether the request that started the run accepted spending with no cap. Null when the plan was not recorded. */
+            accepted_uncapped?: boolean | null;
+            /** @description What each source contributed: the items it stored a figure for, and the items it failed on; and, once the plan was recorded, every source the run planned to ask, with how far it got. Derived from the value and failure rows rather than stored, for the reason Q217 settled for items_unanswered -- a second record of the same arithmetic can disagree with the first. The two counts are independent and do not sum to anything: a source may fail on an item another source then answers, and both are true of that run. */
             by_source?: {
                 data_source: string;
                 items_stored: number;
                 items_failed: number;
+                /** @description The items this source was planned to be asked about. Null when the run's plan was not recorded. */
+                items_planned: number | null;
+                /** @description Of those, the items it has been asked about: all of an attribute it got through, else the items it stored or failed on. Never more than items_planned; 0 for a source the run never reached. Null when the plan was not recorded. */
+                items_asked: number | null;
             }[];
             /** @description Pairs a source answered with a figure already on record for the same observation, so no new row carries this run. `value` is the stored figure it restated; null where that is not known -- a pair that restated more than one stored row, in one batch or across several, or a re-confirmation recorded before runs named the figure, with more than one row it could have restated. A null is never evidence that a figure is unchanged. */
             reconfirmed?: {
