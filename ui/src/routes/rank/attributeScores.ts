@@ -36,6 +36,8 @@ export interface ScoreReading {
   weightUsedTone: WeightUsedTone;
   /** What it added to the total, signed, because a contribution can be nothing. */
   pointsAdded: string;
+  /** Whether the pass placed a figure on the score scale at all (a score was served). */
+  placed: boolean;
 }
 
 export function scoresByAttribute(
@@ -61,6 +63,7 @@ export function scoresByAttribute(
         typeof row.contribution === "number"
           ? formatSigned(row.contribution, 1)
           : ABSENT,
+      placed: typeof row.normalised_score === "number",
     });
   }
   return readings;
@@ -93,12 +96,20 @@ export function weightUsedTone(row: AttributeScore): WeightUsedTone {
  * attribute -- and a descriptive attribute has none, while an excluded one judges without
  * counting (`reqs.md` 3.0, 5.3).
  */
-export type InUse = "scored" | "active" | "superseded" | "rejected";
+export type InUse =
+  | "scored"
+  | "unplaced"
+  | "active"
+  | "superseded"
+  | "switchedOff"
+  | "rejected";
 
 export interface StoredFigure {
   attribute: string;
   is_active: boolean;
   rejection_reason?: string | null;
+  /** Served on every value (PL-071); only an explicit `false` says the source is off. */
+  source_is_enabled?: boolean;
 }
 
 export interface FigureInUse {
@@ -134,13 +145,24 @@ export function figureInUse(
   readings: ReadonlyMap<string, ScoreReading>,
 ): FigureInUse {
   if (!figure.is_active) {
-    return {
-      inUse: figure.rejection_reason ? "rejected" : "superseded",
-      reading: null,
-    };
+    return { inUse: notInUse(figure), reading: null };
   }
   if (!(scoredBySet ?? readings.has(figure.attribute))) {
     return { inUse: "active", reading: null };
   }
-  return { inUse: "scored", reading: readings.get(figure.attribute) ?? null };
+  const reading = readings.get(figure.attribute) ?? null;
+  // **In use and not placed** (PL-068): the figure is the active one and its method could not
+  // put it on the scale, which is not the same claim as a score.
+  return { inUse: reading?.placed === false ? "unplaced" : "scored", reading };
+}
+
+/**
+ * Why a figure is not the one in use. **Three causes, not two** (PL-071): a switched-off
+ * source's figure is never chosen, and calling it superseded blamed a better source that may
+ * not exist. A rejection is about the figure itself, so it is named first.
+ */
+function notInUse(figure: StoredFigure): InUse {
+  if (figure.rejection_reason) return "rejected";
+  if (figure.source_is_enabled === false) return "switchedOff";
+  return "superseded";
 }

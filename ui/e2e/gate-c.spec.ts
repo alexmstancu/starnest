@@ -144,7 +144,14 @@ test.describe("provenance on a displayed number", () => {
     // source, the period it describes and when it was fetched -- and those are now stacked
     // under the attribute they belong to rather than being three columns of their own, which
     // is a layout decision and not a change to what is claimed.
-    const first = figures.getByRole("row").nth(1);
+    // **The first row with a figure** (PL-068): a scored attribute with no value in use has a
+    // row of its own, named and saying "No value", and it may come first. Found by role and
+    // exact text: a row's text runs its cells together.
+    const first = figures
+      .getByRole("row")
+      .filter({ has: page.getByRole("rowheader") })
+      .filter({ hasNot: page.getByText("No value", { exact: true }) })
+      .first();
     for (const fact of ["Source", "Describes", "Fetched"]) {
       await expect(first.getByText(fact, { exact: true })).toBeVisible();
     }

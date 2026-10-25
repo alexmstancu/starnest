@@ -307,3 +307,30 @@ describe("the confidence chips", () => {
     });
   });
 });
+
+/**
+ * PL-069, N10. **The stored grade stays; a mark says the figure has aged out**, which is what
+ * counts it one grade lower in the ranking's confidence split.
+ */
+describe("a figure older than its allowed age", () => {
+  it("is marked beside its chip, and a fresh one is not", async () => {
+    serveFigures([
+      { candidate: "country.portugal", is_fresh: false },
+      { candidate: "country.united_kingdom", is_fresh: true },
+    ]);
+    renderShell("/rank");
+    const panel = await theDrillDown();
+
+    await chooseAttribute(panel, "Cost of living index");
+    const table = within(await within(panel).findByRole("table"));
+
+    const aged = table.getByRole("row", { name: /portugal/i });
+    expect(within(aged).getByText("older than its allowed age")).toHaveAttribute(
+      "title",
+      "Counted one grade lower in the confidence split",
+    );
+    expect(within(aged).getByText("high")).toBeInTheDocument();
+    const fresh = table.getByRole("row", { name: /united kingdom/i });
+    expect(within(fresh).queryByText("older than its allowed age")).toBeNull();
+  });
+});

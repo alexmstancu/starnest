@@ -21,6 +21,14 @@ import { useRead } from "./useRead";
 
 export type PillarNames = ReadonlyMap<string, string>;
 
+/** Where each pillar sits in the catalog's reading order, by id (`display_order`). */
+export type PillarOrder = ReadonlyMap<string, number>;
+
+interface PillarCatalog {
+  names: PillarNames;
+  order: PillarOrder;
+}
+
 /**
  * The names once, shared by every caller on the page.
  *
@@ -32,17 +40,19 @@ export type PillarNames = ReadonlyMap<string, string>;
  *
  * `null` until the first caller asks, so nothing is fetched by merely importing this.
  */
-let theNames: Promise<PillarNames> | null = null;
+let theNames: Promise<PillarCatalog> | null = null;
 
-function readThem(signal: AbortSignal): Promise<PillarNames> {
+function readThem(signal: AbortSignal): Promise<PillarCatalog> {
   // **The signal is not passed on.** The request is shared, so one component unmounting must
   // not cancel it for the other four still waiting. It is eleven rows and it happens once.
   void signal;
   theNames ??= fetchPillars()
-    .then(
-      (answer) =>
-        new Map(answer.items.map((pillar) => [pillar.id, pillar.name])) as PillarNames,
-    )
+    .then((answer) => ({
+      names: new Map(answer.items.map((pillar) => [pillar.id, pillar.name])),
+      // **Kept, not dropped** (PL-074): the drill-down orders its rows by it, and the
+      // order is the catalog's fact rather than the order the list happened to arrive in.
+      order: new Map(answer.items.map((pillar) => [pillar.id, pillar.display_order])),
+    }))
     .catch((failure: unknown) => {
       // **A failure is not remembered.** Keeping a rejected promise would make one bad moment
       // permanent for the rest of the session; the next caller tries again.
@@ -57,13 +67,22 @@ export function forgetPillarNames(): void {
   theNames = null;
 }
 
-const NONE: PillarNames = new Map();
+const NONE: PillarCatalog = { names: new Map(), order: new Map() };
 
-export function usePillarNames(): PillarNames {
+function usePillarCatalog(): PillarCatalog {
   const { read } = useRead(
     useCallback((signal: AbortSignal) => readThem(signal), []),
   );
   // **One empty map, not a new one each render.** A fresh `new Map()` on every render of a
   // loading or failed screen is a new object identity for every consumer downstream.
   return read.state === "ready" ? read.data : NONE;
+}
+
+export function usePillarNames(): PillarNames {
+  return usePillarCatalog().names;
+}
+
+/** The catalog's order of the pillars; empty while unread or failed, as the names are. */
+export function usePillarOrder(): PillarOrder {
+  return usePillarCatalog().order;
 }

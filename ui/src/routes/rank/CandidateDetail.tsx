@@ -1,5 +1,5 @@
 import { useCallback, useId } from "react";
-import { describeRepeats, foldRepeats } from "./repeatedValues";
+import { describeRepeats } from "./repeatedValues";
 import {
   fetchAttributes,
   fetchCriteriaSet,
@@ -9,10 +9,13 @@ import {
   type Attribute,
   type Criterion,
   type ExternalScore,
-  type StoredValue,
 } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
-import { usePillarNames, type PillarNames } from "../../api/usePillarNames";
+import {
+  usePillarNames,
+  usePillarOrder,
+  type PillarNames,
+} from "../../api/usePillarNames";
 import {
   useAttributeNames,
   type AttributeNames,
@@ -31,12 +34,9 @@ import { ErrorNotice } from "../../shell/ErrorNotice";
 import { useSelection } from "../../shell/SelectionContext";
 import { describeFigure } from "../../format/figure";
 import { scoreRange, scoreTrackWidth } from "../../format/scoreScale";
-import {
-  judgementsByAttribute,
-  pillarsByAttribute,
-  valuesInPillar,
-  type Judgement,
-} from "./pillarFilter";
+import { judgementsByAttribute, type Judgement } from "./pillarFilter";
+import { drillRows, type DrillRow, type MissingWhy } from "./drillRows";
+import { ConfidenceChip } from "./ConfidenceChip";
 import { pillarCompleteness, type Completeness } from "./pillarCompleteness";
 import { type PillarScore, pillarBars } from "./rankTable";
 import {
@@ -85,6 +85,7 @@ export function CandidateDetail({
   onChoose?: (pillar: string) => void;
 }) {
   const names = usePillarNames();
+  const pillarOrder = usePillarOrder();
   const attributeNames = useAttributeNames();
   const sourceNames = useSourceNames();
   const values = useResource(
@@ -115,11 +116,11 @@ export function CandidateDetail({
   /**
    * What each attribute actually contributed, from the ranking on screen.
    *
-   * **A separate read, and a silent one.** It answers a different question from the values --
-   * those are what is stored, this is what the pass made of it -- and the table is worth
-   * showing without it: a figure, its source and its dates are facts whether or not the
-   * scoring arithmetic arrived. So a failure here empties three columns rather than replacing
-   * the table with an error.
+   * **A separate read, joined to the values before anything is drawn** (PL-068): it says which
+   * attributes this set scores, so it is what names the ones with no value in use. Drawn
+   * before it lands, rows would appear late and jump. A failure here still leaves the figures
+   * -- a figure, its source and its dates are facts whether or not the scoring arrived -- with
+   * a line saying what is not shown.
    */
   const { levelId } = useSelection();
   const scored = useResource(
@@ -162,11 +163,28 @@ export function CandidateDetail({
 
   const setCriteria =
     criteria.resource.status === "ready" ? criteria.resource.data.criteria : null;
-  const byAttribute = pillarsByAttribute(setCriteria);
   const judgements = judgementsByAttribute(setCriteria);
   const rules = new Map<string, Criterion>(
     (setCriteria ?? []).map((each) => [each.attribute, each]),
   );
+
+  // Null while there is no scoring to join: nothing is guessed from it, and no pillar can be
+  // filtered by -- so the title says every value rather than claiming a filter it cannot apply.
+  const scores =
+    scored.resource.status === "ready"
+      ? (scored.resource.data.attribute_scores ?? [])
+      : null;
+  const filter = scores === null ? null : chosen;
+  const rows =
+    values.resource.status === "ready"
+      ? drillRows({
+          values: values.resource.data.items,
+          scores,
+          pillarOrder,
+          names: attributeNames,
+          chosenPillar: filter,
+        })
+      : [];
 
   // **Unique per open panel.** Several candidates' evidence can be open at once, and a
   // hardcoded id would repeat in the document -- so every panel would be announced with the
@@ -203,41 +221,41 @@ export function CandidateDetail({
       {values.resource.status === "error" && (
         <ErrorNotice error={values.resource.error} onRetry={values.reload} />
       )}
-      {values.resource.status === "ready" && (
-        <h3 className="drill__title">
-          {chosen === null
-            ? "Every stored value"
-            : `${pillarName(names, chosen)} — stored values`}
-        </h3>
-      )}
-      {values.resource.status === "ready" && (
-        <CompletenessNote
-          completeness={pillarCompleteness(
-            setCriteria,
-            values.resource.data.items,
-            chosen,
-            names,
-          )}
-        />
-      )}
-      {values.resource.status === "ready" && (
-        <ValueTable
-          names={attributeNames}
-          pillarNames={names}
-          sourceNames={sourceNames}
-          judgements={judgements}
-          rules={rules}
-          measured={measured}
-          contributions={contributions}
-          scaleMax={attributeScale}
-          values={valuesInPillar(
-            values.resource.data.items,
-            byAttribute,
-            chosen,
-          )}
-          pillar={chosen}
-        />
-      )}
+      {values.resource.status === "ready" &&
+        scored.resource.status === "loading" && (
+          <p className="screen__note">Loading…</p>
+        )}
+      {values.resource.status === "ready" &&
+        scored.resource.status !== "loading" && (
+          <>
+            <h3 className="drill__title">
+              {filter === null
+                ? "Every stored value"
+                : `${pillarName(names, filter)} — stored values`}
+            </h3>
+            {scored.resource.status === "error" && (
+              <p className="screen__note">
+                The scoring could not be read; missing attributes and weights
+                are not shown.
+              </p>
+            )}
+            <CompletenessNote
+              completeness={pillarCompleteness(rows, filter, names)}
+            />
+            <ValueTable
+              names={attributeNames}
+              pillarNames={names}
+              sourceNames={sourceNames}
+              judgements={judgements}
+              rules={rules}
+              measured={measured}
+              contributions={contributions}
+              scaleMax={attributeScale}
+              rows={rows}
+              pillar={filter}
+            />
+          </>
+        )}
 
       <h3 className="panel__heading">Outside opinions</h3>
       <p className="panel__hint">
@@ -264,13 +282,7 @@ export function CandidateDetail({
 }
 
 /**
- * How much of what is being scored has a figure at all, said above the figures.
- *
- * **The design says "weight was redistributed"; this says what we can see.** A ranking reports
- * a pillar's weight after redistribution but never which criterion lost its share, so naming
- * redistribution here would be the interface asserting something the server did not tell it.
- * The count of attributes with nothing stored is the same fact from the side we can check --
- * and the reader can check it against the table directly below.
+ * How much of what is being scored has a figure in use, said above the rows that name each gap.
  *
  * Amber when something is missing, a quiet line when nothing is: a state worth noticing and a
  * state worth confirming are not the same thing, and tinting both teaches the reader to ignore
@@ -300,7 +312,7 @@ function CompletenessNote({
 }
 
 function ValueTable({
-  values,
+  rows,
   pillar,
   names,
   pillarNames,
@@ -311,7 +323,8 @@ function ValueTable({
   contributions,
   scaleMax,
 }: {
-  values: StoredValue[];
+  /** The drill-down's rows, in order, the gaps among them (`drillRows`). */
+  rows: readonly DrillRow[];
   pillar: string | null;
   /** The catalog's attribute names, so no row prints a database key (`reqs.md` design rule). */
   names: AttributeNames;
@@ -334,7 +347,7 @@ function ValueTable({
   scaleMax: number | null | undefined;
 }) {
   const range = scoreRange(scaleMax);
-  if (values.length === 0) {
+  if (rows.length === 0) {
     return (
       <p className="screen__note">
         {pillar === null
@@ -383,7 +396,19 @@ function ValueTable({
           </tr>
         </thead>
         <tbody>
-          {foldRepeats(values).map(({ value, copies, firstRetrieved }) => {
+          {rows.map((row) => {
+            if (row.kind === "missing") {
+              return (
+                <MissingRow
+                  key={`missing-${row.attribute}`}
+                  called={attributeName(names, row.attribute)}
+                  why={row.why}
+                  required={judgements.get(row.attribute)?.required === true}
+                  reading={contributions.get(row.attribute) ?? null}
+                />
+              );
+            }
+            const { value, copies, firstRetrieved } = row.repeated;
             const judged = judgements.get(value.attribute);
             const { inUse, reading } = figureInUse(
               value,
@@ -489,9 +514,7 @@ function ValueTable({
                 </td>
 
                 <td>
-                  <span className={`chip chip--${value.confidence_level}`}>
-                    {value.confidence_level}
-                  </span>
+                  <ConfidenceChip figure={value} />
                 </td>
 
                 {/* Four states, and each has its own tint: a figure being scored, one in use
@@ -499,8 +522,22 @@ function ValueTable({
                     refused. They are not degrees of the same thing, which one column of plain
                     words made them look like. */}
                 <td>
-                  <span className={`chip ${IN_USE[inUse].tint}`}>
-                    {IN_USE[inUse].label}
+                  <span className="in-use">
+                    <span className={`chip ${IN_USE[inUse].tint}`}>
+                      {IN_USE[inUse].label}
+                    </span>
+                    {/* Why, in words (PL-072): the server names the attribute as the catalog
+                        does, so the reason is printed as served. */}
+                    {inUse === "rejected" && value.rejection_reason && (
+                      <span className="in-use__reason">
+                        {value.rejection_reason}
+                      </span>
+                    )}
+                    {inUse === "unplaced" && (
+                      <span className="in-use__reason">
+                        could not be placed on the score scale
+                      </span>
+                    )}
                   </span>
                 </td>
               </tr>
@@ -528,10 +565,94 @@ const WEIGHT_USED_TONE: Record<WeightUsedTone, string> = {
  */
 const IN_USE: Record<InUse, { label: string; tint: string }> = {
   scored: { label: "Scored", tint: "chip--accent" },
+  unplaced: { label: "Not placed", tint: "chip--warning" },
   active: { label: "Active", tint: "chip--quiet" },
   superseded: { label: "Superseded", tint: "chip--neutral" },
+  switchedOff: { label: "Source switched off", tint: "chip--neutral" },
   rejected: { label: "Rejected", tint: "chip--not_matching" },
 };
+
+/**
+ * What a gap row says, by why it is a gap (PL-068). **"Stored" and "in use" are kept apart**:
+ * an attribute whose only figures were rejected, or come from a switched-off source, has
+ * something stored and nothing in use, and the rows beneath it show which.
+ */
+const MISSING: Record<MissingWhy, { figure: string; why: string }> = {
+  nothing_stored: {
+    figure: "no value stored",
+    why: "Nothing has been stored for it.",
+  },
+  rejected: {
+    figure: "no value in use",
+    why: "Every figure stored for it was rejected.",
+  },
+  switched_off: {
+    figure: "no value in use",
+    why: "Its figures come from a source that is switched off.",
+  },
+  rejected_or_switched_off: {
+    figure: "no value in use",
+    why: "Its figures were rejected or come from a source that is switched off.",
+  },
+  not_in_use: {
+    figure: "no value in use",
+    why: "None of its stored figures is in use.",
+  },
+};
+
+/**
+ * A scored attribute with no value in use, named in its place among the figures (PL-068).
+ *
+ * **The weight is the server's**: declared, and the nought the pass actually gave it once its
+ * share was spread over the attributes that have a figure (`reqs.md` 5.3).
+ */
+function MissingRow({
+  called,
+  why,
+  required,
+  reading,
+}: {
+  called: string;
+  why: MissingWhy;
+  required: boolean;
+  reading: ScoreReading | null;
+}) {
+  const weightUsedClass = WEIGHT_USED_TONE[reading?.weightUsedTone ?? "plain"];
+  return (
+    <tr className="table__row">
+      <th scope="row" className="value-cell">
+        <span className="value-cell__head">
+          <span className="value-cell__name">{called}</span>
+          {required && <span className="chip chip--accent">Required</span>}
+        </span>
+        <span className="value-cell__meta">
+          <span className="value-cell__label">Why</span>
+          <span className="value-cell__fact">
+            {MISSING[why].why} Its weight is spread over the attributes that
+            have a figure.
+          </span>
+        </span>
+      </th>
+      <td className="figure-cell">
+        <span className="figure-cell__figure figure-cell__figure--missing">
+          {MISSING[why].figure}
+        </span>
+      </td>
+      <td className="col--right value-weight">{reading?.score ?? ABSENT}</td>
+      <td className="col--right value-weight">{reading?.weight ?? ABSENT}</td>
+      <td className={weightUsedClass}>
+        {reading?.weightUsed ?? ABSENT}
+      </td>
+      <td className="col--right value-weight">
+        {reading?.pointsAdded ?? ABSENT}
+      </td>
+      <td>{ABSENT}</td>
+      <td>
+        <span className="chip chip--insufficient_data">No value</span>
+      </td>
+    </tr>
+  );
+}
 
 /**
  * What each pillar put into the total, as the cards the design draws.

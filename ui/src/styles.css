@@ -4759,3 +4759,39 @@ select.field__control {
   font-size: 11.5px;
   color: var(--colour-warning);
 }
+
+/* ── The drill-down names what is missing (C05 U9: PL-068, PL-069, PL-072) ─────────────
+   A gap row reads as a gap: the figure in italic amber, never a number that could be read. */
+.figure-cell__figure--missing {
+  font-style: italic;
+  color: var(--colour-warning);
+}
+
+/* The chip and, beneath it, why: a rejection's reason or a figure the scale could not place. */
+.in-use {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.in-use__reason {
+  max-width: 220px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--colour-text-muted);
+}
+
+/* The stored grade, and beside it the mark of a figure older than its allowed age. */
+.confidence {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.confidence__aged {
+  font-size: 10.5px;
+  color: var(--colour-warning);
+  cursor: help;
+}

@@ -22,9 +22,11 @@ import { useSelection } from "../../shell/SelectionContext";
  * The ranking table: every candidate the selected criteria set was run against, with its
  * score, its coverage and its match status.
  *
- * **Every figure on this screen came from `GET /v1/rankings`.** Nothing is computed here, not
- * even a re-sort: the order, the ranks, the scores and the coverage percentages are the
- * server's, and the interface's whole job is to print them without changing what they mean.
+ * **Every figure on this screen came from `GET /v1/rankings`.** Nothing is computed here, and
+ * the ranking is never re-sorted: its order, the ranks, the scores and the coverage percentages
+ * are the server's, and the interface's whole job is to print them without changing what they
+ * mean. (A candidate's drill-down does order its evidence rows, by the catalog's pillar order
+ * and names -- `drillRows.ts` -- which is a layout of the figures, not a ranking of anything.)
  *
  * Two rules from `reqs.md` shape what it shows, and they are the reason the screen exists:
  *

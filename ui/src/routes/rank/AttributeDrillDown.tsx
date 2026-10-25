@@ -18,6 +18,7 @@ import { ErrorNotice } from "../../shell/ErrorNotice";
 import { describeFigure } from "../../format/figure";
 import { describeFigureCount } from "./figureCount";
 import { judgementsByAttribute } from "./pillarFilter";
+import { ConfidenceChip } from "./ConfidenceChip";
 
 /**
  * One attribute, every candidate (`reqs.md` 8.4).
@@ -183,9 +184,7 @@ function AcrossCandidates({
                 </td>
                 <td>{formatDateTime(value.retrieval_date)}</td>
                 <td>
-                  <span className={`chip chip--${value.confidence_level}`}>
-                    {value.confidence_level}
-                  </span>
+                  <ConfidenceChip figure={value} />
                 </td>
               </tr>
             ))}

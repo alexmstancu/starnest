@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 import {
+  ATTRIBUTE_SCORES,
   HOUSEHOLD,
   STORED_VALUES,
   makeCriteriaSetDetails,
@@ -67,6 +68,63 @@ async function cell(candidate: string, column: string): Promise<HTMLElement> {
     `row for ${candidate} has no cell under "${column}"`,
   ).toBeDefined();
   return found!;
+}
+
+/** Every candidate's ranked detail, scored as the test says (the rest as the mock serves it). */
+function scoreAs(scores: readonly Record<string, unknown>[]): void {
+  mockServer.use(
+    http.get("/v1/rankings/candidates/:candidateId", ({ params, request }) => {
+      const query = new URL(request.url).searchParams;
+      const ranked = rankingFor(
+        query.get("criteria_set") ?? "",
+        query.get("level") ?? "",
+      ).candidates.find((each) => each.candidate === params["candidateId"]);
+      return HttpResponse.json({
+        ...ranked,
+        score_scale_max: 100,
+        attribute_scores: scores,
+      });
+    }),
+  );
+}
+
+/** A scored attribute the pass found no figure for, as the server reports one. */
+function missingScore(row: { attribute: string; pillar: string; weight?: number }) {
+  return {
+    attribute: row.attribute,
+    pillar: row.pillar,
+    normalised_score: null,
+    weight: row.weight ?? 10,
+    effective_weight: 0,
+    contribution: 0,
+  };
+}
+
+const OUTLOOK = { attribute: "country.economic_outlook", pillar: "economics", weight: 5 };
+
+/** The names the drill-down's rows can carry, as the catalog or the id made readable says. */
+const ROW_NAMES = [
+  "European air connectivity",
+  "Cost of living index",
+  "Economic outlook",
+  "Total effective tax rate",
+  "Average rent",
+  "Homicide rate",
+  "Broadband coverage",
+];
+
+/**
+ * The attributes of a drill-down's rows, in order, each run of rows said once. A row header
+ * runs its name and its provenance together, so the name is the known one it starts with.
+ */
+function attributesInOrder(table: HTMLElement): string[] {
+  const names = within(table)
+    .getAllByRole("rowheader")
+    .map((header) => {
+      const text = header.textContent ?? "";
+      return ROW_NAMES.find((name) => text.startsWith(name)) ?? text;
+    });
+  return names.filter((name, at) => name !== names[at - 1]);
 }
 
 /** A candidate's name, which is the toggle a keyboard reaches for its row. */
@@ -654,8 +712,10 @@ describe("the drill-down", () => {
     });
     const rows = within(table).getAllByRole("row").slice(1);
     // Four figures: two for the cost of living index, of which one is superseded, the tax
-    // estimate, and the air connectivity count that no criterion scores.
-    expect(rows).toHaveLength(4);
+    // estimate, and the air connectivity count that no criterion scores -- and two rows naming
+    // the scored attributes with no figure at all, rent and broadband (PL-068).
+    expect(rows).toHaveLength(6);
+    expect(within(table).getAllByText("No value")).toHaveLength(2);
     expect(within(table).getAllByText("Superseded")).toHaveLength(1);
     // **Scored twice, not three times** (UI-15): the air connectivity count is the figure in
     // use for its attribute, and no criterion scores it, so it is active and nothing more.
@@ -898,10 +958,10 @@ describe("the drill-down", () => {
       within(await rankingRow("Portugal")).getByRole("button", { name: "Portugal" }),
     );
 
-    // The set scores seven attributes; the mock stores figures for two of them.
+    // The pass scores four attributes; the mock stores figures for two of them.
     expect(
       await screen.findByText(
-        "5 of the 7 attributes this set scores have no stored value.",
+        "2 of the 4 attributes this set scores have no value in use.",
       ),
     ).toBeInTheDocument();
   });
@@ -910,15 +970,7 @@ describe("the drill-down", () => {
     mockServer.use(
       http.get("/v1/values", () =>
         HttpResponse.json({
-          items: [
-            "country.cost_of_living_index",
-            "country.total_tax_rate_effective",
-            "country.economic_outlook",
-            "country.housing_cost_overburden_rate",
-            "country.overcrowding_rate",
-            "country.homicide_rate",
-            "country.perceived_safety_index",
-          ].map((attribute, at) => ({
+          items: ATTRIBUTE_SCORES.map(({ attribute }, at) => ({
             id: 700 + at,
             candidate: "country.portugal",
             attribute,
@@ -929,8 +981,10 @@ describe("the drill-down", () => {
             retrieval_date: "2026-09-11T08:00:00Z",
             confidence_level: "high",
             is_active: true,
+            is_fresh: true,
+            source_is_enabled: true,
           })),
-          total: 7,
+          total: ATTRIBUTE_SCORES.length,
         }),
       ),
     );
@@ -942,7 +996,7 @@ describe("the drill-down", () => {
 
     expect(
       await screen.findByText(
-        "Every attribute this set scores has a stored value.",
+        "Every attribute this set scores has a value in use.",
       ),
     ).toBeInTheDocument();
   });
@@ -1036,7 +1090,8 @@ describe("the drill-down", () => {
     );
   });
 
-  it("says so when a candidate has no stored figures", async () => {
+  it("names every scored attribute when a candidate has no stored figures", async () => {
+    scoreAs(ATTRIBUTE_SCORES.map(missingScore));
     renderShell("/rank");
     const row = await rankingRow("Estonia");
 
@@ -1046,8 +1101,14 @@ describe("the drill-down", () => {
       within(row).getByRole("button", { name: "Estonia" }),
     );
 
+    const table = await screen.findByRole("table", {
+      name: /every stored value/i,
+    });
+    expect(within(table).getAllByText("no value stored")).toHaveLength(
+      ATTRIBUTE_SCORES.length,
+    );
     expect(
-      await screen.findByText(/no figure has been stored/i),
+      screen.getByText("Nothing this set scores has a value in use."),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/no outside index has been stored/i),
@@ -1278,6 +1339,7 @@ describe("a figure re-read from different pages", () => {
  */
 describe("the chosen pillar, named in a sentence", () => {
   it("names it as the catalog does when counting what is missing", async () => {
+    scoreAs([...ATTRIBUTE_SCORES, missingScore(OUTLOOK)]);
     renderShell("/rank");
     const row = await rankingRow("Portugal");
     await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
@@ -1287,8 +1349,31 @@ describe("the chosen pillar, named in a sentence", () => {
     );
 
     expect(
-      await screen.findByText("1 of the 3 attributes in Economy has no stored value."),
+      await screen.findByText("1 of the 3 attributes in Economy has no value in use."),
     ).toBeInTheDocument();
+  });
+
+  /** PL-068. The filter reads the pass's pillars, so a chosen pillar keeps its gaps. */
+  it("keeps the chosen pillar's missing rows, and nothing from another pillar", async () => {
+    scoreAs([...ATTRIBUTE_SCORES, missingScore(OUTLOOK)]);
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+    await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
+    await userEvent.click(
+      await within(row).findByRole("button", { name: /^Economy:/ }),
+    );
+
+    const table = await screen.findByRole("table", { name: /every stored value/i });
+    await waitFor(() =>
+      expect(attributesInOrder(table)).toEqual([
+        "Cost of living index",
+        "Economic outlook",
+        "Total effective tax rate",
+      ]),
+    );
+    expect(
+      within(table).getByRole("row", { name: /economic outlook/i }),
+    ).toHaveTextContent("no value stored");
   });
 
   it("names it as the catalog does when nothing in it is stored", async () => {
@@ -1303,6 +1388,10 @@ describe("the chosen pillar, named in a sentence", () => {
         }),
       ),
     );
+    scoreAs([
+      ...ATTRIBUTE_SCORES,
+      missingScore({ attribute: "country.homicide_rate", pillar: "safety", weight: 8 }),
+    ]);
     renderShell("/rank");
     const row = await rankingRow("Portugal");
     await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
@@ -1312,13 +1401,13 @@ describe("the chosen pillar, named in a sentence", () => {
     );
 
     expect(
-      await screen.findByText(
-        "No figure has been stored for anything in Personal safety.",
-      ),
+      await screen.findByText("Nothing in Personal safety has a value in use."),
     ).toBeInTheDocument();
+    // Named, rather than an empty table claiming nothing was ever stored (RK-12).
     expect(
-      screen.getByText("Nothing in Personal safety has a stored value."),
-    ).toBeInTheDocument();
+      screen.getByRole("row", { name: /homicide rate/i }),
+    ).toHaveTextContent("no value stored");
+    expect(screen.queryByText(/no figure has been stored/i)).toBeNull();
   });
 });
 
@@ -1785,6 +1874,186 @@ describe("what the pass made of each figure", () => {
     await theActiveCostOfLiving(table);
 
     expect(table.queryByRole("img", { name: /was scored/i })).toBeNull();
+  });
+
+  /** Portugal's values, as the test chooses them. */
+  function storeOnly(...values: Record<string, unknown>[]): void {
+    mockServer.use(
+      http.get("/v1/values", () =>
+        HttpResponse.json({ items: values, total: values.length }),
+      ),
+    );
+  }
+
+  const COST = STORED_VALUES.find((each) => each.id === 501)!;
+
+  /** PL-068. Named, never only counted: the amber nought and "No value" in its place. */
+  it("names each scored attribute with no value in use", async () => {
+    const table = await theValues();
+
+    const broadband = table.getByRole("row", { name: /broadband coverage/i });
+    expect(cellOf(table, broadband, "Stored value")).toHaveTextContent(/^no value stored$/);
+    expect(cellOf(table, broadband, "Weight")).toHaveTextContent(/^10\.0%$/);
+    expect(cellOf(table, broadband, "Weight used")).toHaveTextContent(/^0\.0%$/);
+    expect(cellOf(table, broadband, "Weight used")).toHaveClass("value-weight--missing");
+    expect(cellOf(table, broadband, "In use")).toHaveTextContent(/^No value$/);
+    expect(broadband).toHaveTextContent(/Nothing has been stored for it\./);
+  });
+
+  /** M6's guard: each scored attribute is one run of rows, however many figures it has. */
+  it("draws every scored attribute exactly once, as one group of rows", async () => {
+    const table = await theValues();
+    await theActiveCostOfLiving(table);
+
+    const order = attributesInOrder(screen.getByRole("table", { name: /every stored value/i }));
+    const called: Record<string, string> = {
+      "country.cost_of_living_index": "Cost of living index",
+      "country.average_rent": "Average rent",
+      "country.total_tax_rate_effective": "Total effective tax rate",
+      "country.broadband_coverage": "Broadband coverage",
+    };
+    for (const { attribute } of ATTRIBUTE_SCORES) {
+      expect(
+        order.filter((name) => name === called[attribute]),
+        attribute,
+      ).toHaveLength(1);
+    }
+  });
+
+  /** PL-074 (N8): descriptive first, then by the catalog's pillar order, then by name. */
+  it("lists unscored attributes first, then by pillar order and name, each attribute's figures together", async () => {
+    const table = await theValues();
+    await theActiveCostOfLiving(table);
+
+    expect(attributesInOrder(screen.getByRole("table", { name: /every stored value/i }))).toEqual([
+      "European air connectivity",
+      // Economy (1), by name.
+      "Cost of living index",
+      "Total effective tax rate",
+      // Housing (2), then Transport (7).
+      "Average rent",
+      "Broadband coverage",
+    ]);
+  });
+
+  it("a scored attribute whose only figure was rejected reads no value in use, above the rejected figure", async () => {
+    storeOnly({
+      ...COST,
+      id: 960,
+      is_active: false,
+      rejection_reason: "Cost of living index is outside its allowed range",
+    });
+    const table = await theValues();
+
+    const rows = await table.findAllByRole("row", { name: /cost of living index/i });
+    expect(rows).toHaveLength(2);
+    expect(cellOf(table, rows[0]!, "Stored value")).toHaveTextContent(/^no value in use$/);
+    expect(rows[0]).toHaveTextContent(/Every figure stored for it was rejected\./);
+    expect(cellOf(table, rows[1]!, "In use")).toHaveTextContent("Rejected");
+  });
+
+  /** PL-072. Why, in words, beneath the chip. */
+  it("shows a rejected figure's reason", async () => {
+    storeOnly(COST, {
+      ...COST,
+      id: 961,
+      quote: "Eurostat 2025: 999",
+      is_active: false,
+      rejection_reason: "Cost of living index is outside its allowed range",
+    });
+    const table = await theValues();
+
+    const rejected = rowOf(table, /cost of living index/i, "Eurostat 2025: 999");
+    expect(cellOf(table, rejected, "In use")).toHaveTextContent(
+      "RejectedCost of living index is outside its allowed range",
+    );
+    // The figure in use has no reason to give.
+    const active = await theActiveCostOfLiving(table);
+    expect(cellOf(table, active, "In use")).toHaveTextContent(/^Scored$/);
+  });
+
+  /** PL-071. Nothing superseded it: its source is off, and the active sibling is beside it. */
+  it("a figure from a switched-off source says so, even with an active sibling", async () => {
+    storeOnly(COST, {
+      ...COST,
+      id: 962,
+      data_source: "numbeo",
+      quote: "Numbeo: 88",
+      is_active: false,
+      source_is_enabled: false,
+    });
+    const table = await theValues();
+    await theActiveCostOfLiving(table);
+
+    const off = rowOf(table, /cost of living index/i, "Numbeo: 88");
+    expect(cellOf(table, off, "In use")).toHaveTextContent(/^Source switched off$/);
+    expect(table.queryByText("Superseded")).toBeNull();
+  });
+
+  it("an attribute whose only figure is switched off reads no value in use", async () => {
+    storeOnly({ ...COST, id: 963, is_active: false, source_is_enabled: false });
+    const table = await theValues();
+
+    const [gap, off] = await table.findAllByRole("row", { name: /cost of living index/i });
+    expect(cellOf(table, gap!, "Stored value")).toHaveTextContent(/^no value in use$/);
+    expect(cellOf(table, gap!, "In use")).toHaveTextContent(/^No value$/);
+    expect(gap).toHaveTextContent(/source that is switched off/);
+    expect(cellOf(table, off!, "In use")).toHaveTextContent(/^Source switched off$/);
+  });
+
+  /** PL-069. The stored grade stays; the mark says it counts one grade lower. */
+  it("marks an aged figure's confidence, and leaves a fresh one unmarked", async () => {
+    const tax = STORED_VALUES.find((each) => each.id === 503)!;
+    storeOnly(COST, { ...tax, is_fresh: false });
+    const table = await theValues();
+    const fresh = await theActiveCostOfLiving(table);
+
+    const aged = table.getByRole("row", { name: /total effective tax rate/i });
+    const mark = within(cellOf(table, aged, "Confidence")).getByText(
+      "older than its allowed age",
+    );
+    expect(mark).toHaveAttribute(
+      "title",
+      "Counted one grade lower in the confidence split",
+    );
+    expect(cellOf(table, aged, "Confidence")).toHaveTextContent(/^low/);
+    expect(cellOf(table, fresh, "Confidence")).toHaveTextContent(/^high$/);
+  });
+
+  it("while the scoring is pending, no missing row is guessed", async () => {
+    mockServer.use(
+      http.get("/v1/rankings/candidates/:candidateId", () => new Promise<never>(() => {})),
+    );
+    renderShell("/rank");
+    const row = await rankingRow("Portugal");
+    await userEvent.click(within(row).getByRole("button", { name: "Portugal" }));
+
+    expect(
+      await screen.findByRole("heading", { name: /Portugal: every value/i }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("Loading…").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("table", { name: /every stored value/i })).toBeNull();
+    expect(screen.queryByText("No value")).toBeNull();
+  });
+
+  it("shows the figures alone, and says what is missing from them, when the scoring fails", async () => {
+    mockServer.use(
+      http.get("/v1/rankings/candidates/:candidateId", () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "the ranking could not be read" },
+          { status: 500 },
+        ),
+      ),
+    );
+    const table = await theValues();
+
+    expect(
+      screen.getByText(
+        "The scoring could not be read; missing attributes and weights are not shown.",
+      ),
+    ).toBeInTheDocument();
+    expect(table.queryByText("No value")).toBeNull();
+    expect(table.getAllByRole("row", { name: /cost of living index/i })).toHaveLength(2);
   });
 
   it("says nothing where the ranking scored nothing", async () => {

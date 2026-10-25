@@ -1,31 +1,21 @@
 /**
- * How much of what a pillar scores this candidate actually has a figure for.
+ * How much of what is being scored has a figure in use, said above the rows that name it.
  *
  * A pillar's score is a weighted mean of the criteria that could be scored, so an attribute
- * with nothing stored against it does not score badly -- it drops out, and a reader looking at
+ * with no figure in use does not score badly -- it drops out, and a reader looking at
  * "nature 61" has no way to tell whether that rests on eight attributes or on three.
  *
- * **It counts what is stored, not what scores.** A rejected figure is still a stored value,
- * and the table underneath says which figures were rejected; a count that quietly took a
- * different view of "has a figure" from the table it sits above would be the screen
- * disagreeing with itself.
+ * **It counts the rows it sits above** (PL-068): the scored attributes the drill-down lists and
+ * the "no value in use" rows among them. A count that took a different view of "has a figure"
+ * from the table beneath it would be the screen disagreeing with itself -- so a rejected figure,
+ * or one from a switched-off source, is not a figure in use here either.
  */
 
 import { pillarName } from "../../format/display";
-
-/** A criterion as this count needs one: its attribute, its pillar, and whether it counts. */
-export interface ScoredCriterion {
-  attribute: string;
-  pillar: string;
-  is_scored?: boolean;
-}
-
-export interface Stored {
-  attribute: string;
-}
+import type { DrillRow } from "./drillRows";
 
 export interface Completeness {
-  /** Scored attributes with nothing stored against them. */
+  /** Scored attributes with no figure in use. */
   missing: number;
   /** How many scored attributes were counted -- the chosen pillar's, or the whole set's. */
   counted: number;
@@ -33,36 +23,26 @@ export interface Completeness {
 }
 
 /**
- * What to say above the stored values, or null when there is nothing to say.
+ * What to say above the rows, or null when there is nothing to say.
  *
- * **Null rather than an empty sentence** when the set scores nothing here: before the criteria
- * set has arrived, and for a pillar the set does not score, the truthful answer is silence.
+ * **Null rather than an empty sentence** when no row is scored: while the scoring is pending or
+ * has failed, and for a pillar the pass scored nothing in, the truthful answer is silence.
  *
- * **A criterion the set does not score is not counted as a gap.** It contributes no weight, so
- * a missing figure for it costs the pillar nothing -- calling it incomplete would invite the
- * reader to go looking for data that would change no number (`reqs.md` 3.0).
+ * @param rows the drill-down's rows, already narrowed to `pillar` when one is chosen.
  */
 export function pillarCompleteness(
-  criteria: readonly ScoredCriterion[] | null | undefined,
-  values: readonly Stored[] | null | undefined,
+  rows: readonly DrillRow[],
   pillar: string | null,
   /** The catalog's pillar names: a sentence names a pillar as the charts beside it do. */
   names: ReadonlyMap<string, string>,
 ): Completeness | null {
-  const counted = (criteria ?? []).filter(
-    (each) =>
-      each.is_scored !== false && (pillar === null || each.pillar === pillar),
-  );
-  if (counted.length === 0) return null;
+  const counted = new Set(
+    rows.filter((row) => row.scored).map((row) => row.attribute),
+  ).size;
+  if (counted === 0) return null;
 
-  const stored = new Set((values ?? []).map((value) => value.attribute));
-  const missing = counted.filter((each) => !stored.has(each.attribute)).length;
-
-  return {
-    missing,
-    counted: counted.length,
-    sentence: say(missing, counted.length, pillar, names),
-  };
+  const missing = rows.filter((row) => row.kind === "missing").length;
+  return { missing, counted, sentence: say(missing, counted, pillar, names) };
 }
 
 function say(
@@ -78,14 +58,14 @@ function say(
     pillar === null ? "this set scores" : `in ${pillarName(names, pillar)}`;
 
   if (missing === 0) {
-    return `Every attribute ${scope} has a stored value.`;
+    return `Every attribute ${scope} has a value in use.`;
   }
   // Said whole rather than as "3 of the 3": a fraction that is all of something reads as
   // though part of it survived.
   if (missing === counted) {
-    return `Nothing ${scope} has a stored value.`;
+    return `Nothing ${scope} has a value in use.`;
   }
   // Only reachable with at least two counted, so "attributes" is never the wrong plural.
   const verb = missing === 1 ? "has" : "have";
-  return `${missing} of the ${counted} attributes ${scope} ${verb} no stored value.`;
+  return `${missing} of the ${counted} attributes ${scope} ${verb} no value in use.`;
 }

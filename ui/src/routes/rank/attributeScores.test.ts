@@ -19,6 +19,7 @@ describe("what each attribute put into the total", () => {
       weightUsed: "12.5%",
       weightUsedTone: "moved",
       pointsAdded: "+9.1",
+      placed: true,
     });
   });
 
@@ -54,6 +55,7 @@ describe("what each attribute put into the total", () => {
       weightUsed: "—",
       weightUsedTone: "plain",
       pointsAdded: "—",
+      placed: false,
     });
   });
 
@@ -115,6 +117,7 @@ describe("what the In use column says about one figure", () => {
         weightUsed: "12.5%",
         weightUsedTone: "plain",
         pointsAdded: "+9.1",
+        placed: true,
       },
     });
   });
@@ -177,6 +180,7 @@ describe("what the In use column says about one figure", () => {
         weightUsed: "12.5%",
         weightUsedTone: "plain",
         pointsAdded: "+9.1",
+        placed: true,
       },
     });
   });
@@ -186,6 +190,40 @@ describe("what the In use column says about one figure", () => {
       inUse: "active",
       reading: null,
     });
+  });
+
+  /** PL-071. A switched-off source's figure is never chosen; nothing superseded it. */
+  it("says a figure from a switched-off source is switched off, not superseded", () => {
+    expect(
+      figureInUse(
+        { attribute: "country.rent", is_active: false, source_is_enabled: false },
+        true,
+        readings,
+      ),
+    ).toEqual({ inUse: "switchedOff", reading: null });
+  });
+
+  it("calls a rejected figure rejected even when its source is switched off", () => {
+    expect(
+      figureInUse(
+        {
+          attribute: "country.rent",
+          is_active: false,
+          rejection_reason: "outside the allowed range",
+          source_is_enabled: false,
+        },
+        true,
+        readings,
+      ),
+    ).toEqual({ inUse: "rejected", reading: null });
+  });
+
+  /** PL-068. In use, and the method could not place it: not "Scored". */
+  it("says an active figure the pass could not place is not placed", () => {
+    const unplaced = scoresByAttribute([
+      { attribute: "country.rent", normalised_score: null, weight: 10, effective_weight: 0 },
+    ]);
+    expect(figureInUse(active, true, unplaced).inUse).toBe("unplaced");
   });
 
   it("still gives no reading to a superseded figure when only the pass has spoken", () => {
