@@ -16,6 +16,8 @@ export function ConfigurationSessionProvider({ children }: { children: ReactNode
   const ruleAnswers = useAnswers<RuleState>();
   const [sourcesVersion, setSourcesVersion] = useState(0);
   const noteSourcesChanged = useCallback(() => setSourcesVersion((version) => version + 1), []);
+  const [recordsVersion, setRecordsVersion] = useState(0);
+  const noteRecordsChanged = useCallback(() => setRecordsVersion((version) => version + 1), []);
   const session = useMemo(
     () => ({
       history,
@@ -24,8 +26,19 @@ export function ConfigurationSessionProvider({ children }: { children: ReactNode
       ruleAnswers,
       sourcesVersion,
       noteSourcesChanged,
+      recordsVersion,
+      noteRecordsChanged,
     }),
-    [history, pillarAnswers, criteriaAnswers, ruleAnswers, sourcesVersion, noteSourcesChanged],
+    [
+      history,
+      pillarAnswers,
+      criteriaAnswers,
+      ruleAnswers,
+      sourcesVersion,
+      noteSourcesChanged,
+      recordsVersion,
+      noteRecordsChanged,
+    ],
   );
   return (
     <ConfigurationSessionContext.Provider value={session}>

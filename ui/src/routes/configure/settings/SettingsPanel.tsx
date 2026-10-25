@@ -1,6 +1,7 @@
 import { type ReactNode, useCallback } from "react";
 import { fetchSettings, type Settings } from "../../../api/endpoints";
 import { useRead } from "../../../api/useRead";
+import { useConfigurationSession } from "../useConfigurationSession";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { COMPARATOR_LIMIT, REFETCH_AGE, SCORE_RANGE } from "../../../navigation/highlight";
@@ -27,8 +28,11 @@ import { useSettingsForm, type SettingsForm } from "./useSettingsForm";
  * `useSettingsForm.ts`.
  */
 export function SettingsPanel() {
+  // Read again when an undo writes the record back (PL-138).
+  const { recordsVersion } = useConfigurationSession();
   const { read, reload } = useRead(
     useCallback((signal: AbortSignal) => fetchSettings({ signal }), []),
+    { freshness: recordsVersion },
   );
 
   return (
@@ -157,7 +161,7 @@ function SettingsFields({ settings }: { settings: Settings }) {
           type="submit"
           className="button button--primary"
           disabled={form.invalid.length > 0}
-          aria-disabled={form.saving || undefined}
+          aria-disabled={form.held || undefined}
         >
           {form.saving ? "Saving…" : "Save settings"}
         </button>

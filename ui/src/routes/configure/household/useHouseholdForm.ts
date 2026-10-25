@@ -6,6 +6,7 @@
  */
 
 import { replaceHousehold, type Household } from "../../../api/endpoints";
+import { HOUSEHOLD_LABELS } from "../../../format/vocabulary";
 import { useRecordForm, type RecordForm } from "../useRecordForm";
 import {
   HOUSEHOLD_RANGES,
@@ -31,6 +32,15 @@ export function useHouseholdForm(household: Household): HouseholdForm {
     invalid: invalidHouseholdFields,
     ranges: HOUSEHOLD_RANGES,
     send: (draft) => replaceHousehold(householdFrom(draft)),
+    recorded: {
+      stage: "Household",
+      // Where the household lives and which passports it holds are identifiers: said to have
+      // changed, never printed (NEW-07).
+      wording: {
+        labels: HOUSEHOLD_LABELS,
+        opaque: ["home_country_candidate", "home_city_candidate", "citizenships"],
+      },
+    },
   });
   return { ...form, incomplete: isIncomplete(form.draft) };
 }

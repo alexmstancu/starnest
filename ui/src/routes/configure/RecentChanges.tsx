@@ -2,7 +2,15 @@ import { useEffect, useId, useRef, useState } from "react";
 import { ActRefusal } from "../../shell/ActRefusal";
 import { refocusIfLost } from "../../shell/focusReturn";
 import { useSelection } from "../../shell/SelectionContext";
-import { describeUndoAll, describeWhen, heldByLater, reachOf, stranded } from "./changeHistory";
+import {
+  UNDO_CANNOT_RESTORE_THE_PILLAR,
+  UNDO_CANNOT_RESTORE_THE_PILLARS,
+  describeUndoAll,
+  describeWhen,
+  heldByLater,
+  reachOf,
+  stranded,
+} from "./changeHistory";
 import type { ChangeHistory, RecordedChange } from "./useChangeHistory";
 import { useFocusAfterUndo } from "./useFocusAfterUndo";
 
@@ -19,6 +27,12 @@ import { useFocusAfterUndo } from "./useFocusAfterUndo";
  * here would be a second account of the truth the server cannot confirm.
  */
 const NOTHING_PREVIEWED: ReadonlySet<number> = new Set();
+
+/** The caveats that are about weights, which "Back to where I started" sums up in one line. */
+const WEIGHT_CAVEATS: ReadonlySet<string> = new Set([
+  UNDO_CANNOT_RESTORE_THE_PILLAR,
+  UNDO_CANNOT_RESTORE_THE_PILLARS,
+]);
 
 /** Why "Undo this" is held, in the design's words. */
 const HELD_BY = {
@@ -43,10 +57,18 @@ export function RecentChanges({
   const headingId = useId();
   const resetCaveatId = `${headingId}-reset-caveat`;
   const caveatIdOf = (id: number) => `${headingId}-caveat-${String(id)}`;
-  // Going back undoes everything, so it inherits every change's caveat.
+  // Going back undoes everything, so it inherits every change's caveat: the weights' said once
+  // beside it, any other -- a setting it would unset -- by the entry that carries it.
   const resetIsInexact = history.changes.some(
-    (change) => change.caveat !== undefined,
+    (change) => change.caveat !== undefined && WEIGHT_CAVEATS.has(change.caveat),
   );
+  const resetDescribedBy =
+    [
+      ...(resetIsInexact ? [resetCaveatId] : []),
+      ...history.changes
+        .filter((change) => change.caveat !== undefined && !WEIGHT_CAVEATS.has(change.caveat))
+        .map((change) => caveatIdOf(change.id)),
+    ].join(" ") || undefined;
   // **Held, never disabled, while a write is in flight** (NEW-34). Chromium throws focus off a
   // button the moment it is disabled, so an undo pressed from the keyboard put the reader back
   // on the page. Held, a button keeps focus and says so, and pressing it does nothing.
@@ -162,7 +184,7 @@ export function RecentChanges({
             type="button"
             className="action"
             aria-disabled={resetHeld || undefined}
-            aria-describedby={resetIsInexact ? resetCaveatId : undefined}
+            aria-describedby={resetDescribedBy}
             onClick={reset}
           >
             Back to where I started

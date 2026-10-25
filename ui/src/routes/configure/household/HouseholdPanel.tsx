@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { hasErrorCode } from "../../../api/ApiError";
 import { fetchHousehold, type Household } from "../../../api/endpoints";
 import { useRead } from "../../../api/useRead";
+import { useConfigurationSession } from "../useConfigurationSession";
 import type { Read } from "../../../api/read";
 import { CandidateField } from "./CandidateField";
 import { CitizenshipField } from "./CitizenshipField";
@@ -35,8 +36,11 @@ import { useHouseholdForm, type HouseholdForm } from "./useHouseholdForm";
  * `useHouseholdForm.ts` and `householdForm.ts`; this file renders and nothing else.
  */
 export function HouseholdPanel() {
+  // Read again when an undo writes the record back (PL-138).
+  const { recordsVersion } = useConfigurationSession();
   const { read, reload } = useRead(
     useCallback((signal: AbortSignal) => fetchHousehold({ signal }), []),
+    { freshness: recordsVersion },
   );
 
   return (
@@ -206,7 +210,7 @@ function HouseholdFields({
           type="submit"
           className="button button--primary"
           disabled={form.incomplete || form.invalid.length > 0}
-          aria-disabled={form.saving || undefined}
+          aria-disabled={form.held || undefined}
         >
           {form.saving ? "Saving…" : "Save household"}
         </button>

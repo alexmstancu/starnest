@@ -29,6 +29,12 @@ export interface ConfigurationSession {
    */
   sourcesVersion: number;
   noteSourcesChanged: () => void;
+  /**
+   * Moves whenever an undo wrote the household or the settings back (PL-138): their forms read
+   * the record again, whichever of them is on screen then.
+   */
+  recordsVersion: number;
+  noteRecordsChanged: () => void;
 }
 
 export const ConfigurationSessionContext = createContext<ConfigurationSession | null>(null);

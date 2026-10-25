@@ -1248,6 +1248,76 @@ describe("the Configure edits Recent changes records", () => {
     ).not.toContain("country.eu_free_movement");
   });
 
+  /** PL-138 part B: the household and the settings are Configure edits too. */
+  it("records the household, and its undo sends the household as it was", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+    const household = within(screen.getByRole("region", { name: "Household" }));
+    const income = household.getByRole("textbox", { name: "Net income" });
+    await user.clear(income);
+    await user.type(income, "8000");
+    await user.click(household.getByRole("button", { name: "Save household" }));
+
+    const panel = await historyPanel();
+    const entry = within(
+      (await panel.findByText("Net income 7400 to 8000")).closest("li") as HTMLElement,
+    );
+    expect(entry.getByText("Household")).toBeInTheDocument();
+
+    await user.click(entry.getByRole("button", { name: "Undo this" }));
+
+    await waitFor(() => expect(panel.getByText("No changes yet.")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(household.getByRole("textbox", { name: "Net income" })).toHaveValue("7400"),
+    );
+  });
+
+  it("records a setting, warns before an undo that would unset one, and undoes it", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+    const limits = within(screen.getByRole("region", { name: "Acquisition limits" }));
+    const refetch = limits.getByRole("textbox", { name: "Refetch data older than" });
+    await user.type(refetch, "30");
+    await user.click(limits.getByRole("button", { name: "Save settings" }));
+
+    const panel = await historyPanel();
+    const entry = within(
+      (await panel.findByText("Refetch data older than unset to 30")).closest("li") as HTMLElement,
+    );
+    expect(entry.getByText("Acquisition limits")).toBeInTheDocument();
+    const undo = entry.getByRole("button", { name: "Undo this" });
+    expect(undo).toHaveAccessibleDescription(
+      /Undoing this unsets Refetch data older than: every run re-fetches everything/i,
+    );
+    // Going back says so too, and says nothing of weights it does not touch.
+    const back = panel.getByRole("button", { name: "Back to where I started" });
+    expect(back).toHaveAccessibleDescription(/Undoing this unsets Refetch data older than/);
+    expect(back).not.toHaveAccessibleDescription(/weight/);
+
+    await user.click(undo);
+
+    await waitFor(() => expect(panel.getByText("No changes yet.")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(limits.getByRole("textbox", { name: "Refetch data older than" })).toHaveValue(""),
+    );
+  });
+
+  it("holds the household's Save while another Configure write is in flight", async () => {
+    renderShell("/configure");
+    await settled();
+    const writes = holdCriterionWrites();
+
+    await saveWeight(COST_OF_LIVING, "40");
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+
+    expectHeld(screen.getByRole("button", { name: "Save household" }));
+    expectHeld(screen.getByRole("button", { name: "Save settings" }));
+    writes.release();
+    await waitFor(() => expectNotHeld(screen.getByRole("button", { name: "Save household" })));
+  });
+
   it("holds the sources while another Configure write is in flight", async () => {
     renderShell("/configure");
     await settled();

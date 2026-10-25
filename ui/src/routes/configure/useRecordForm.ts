@@ -13,7 +13,9 @@ import { noteRankingInputsChanged } from "../../api/rankingInputs";
 import type { NumberRule } from "../../format/typedNumber";
 import { isRecord } from "../../shell/sessionState";
 import { useDraftSlot } from "../../shell/SessionProvider";
+import { describeRecordChange, undoUnsets, type RecordWording } from "./recordChange";
 import { sameDrafts, saveStatusOf, type SaveStatus } from "./saveState";
+import { useConfigurationSession } from "./useConfigurationSession";
 
 /** A form as text, field by field. */
 type Draft<D> = Record<keyof D, string>;
@@ -39,6 +41,13 @@ export interface RecordFormSpec<R, D extends Draft<D>> {
   ranges: Readonly<Record<string, string>>;
   /** Stores the draft, and answers with the record stored. */
   send: (draft: D) => Promise<R>;
+  /** How a save is listed in Recent changes (PL-138): its stage, its words, what undoing stops. */
+  recorded: {
+    stage: string;
+    wording: RecordWording<D>;
+    /** What each field left unset stops, so an undo that would unset it says so first (D37). */
+    consequences?: Readonly<Partial<Record<keyof D, string>>>;
+  };
 }
 
 export interface RecordForm<R, D extends Draft<D>> {
@@ -55,6 +64,8 @@ export interface RecordForm<R, D extends Draft<D>> {
   dirty: boolean;
   /** A save is in flight, so another may not start. */
   saving: boolean;
+  /** A save may not start now: this form's, or any other Configure write or undo, is in flight. */
+  held: boolean;
   /** The stored record changed under an unsaved draft: an undo, another tab. */
   staleBase: boolean;
   change: (field: keyof D, value: string) => void;
@@ -69,7 +80,8 @@ export interface RecordForm<R, D extends Draft<D>> {
  * newer than what was stored, and stays, and the save is not called "Saved." (UI-06).
  */
 export function useRecordForm<R, D extends Draft<D>>(spec: RecordFormSpec<R, D>): RecordForm<R, D> {
-  const { key, draftOf, rules } = spec;
+  const { key, draftOf, rules, recorded } = spec;
+  const { history, noteRecordsChanged } = useConfigurationSession();
   const [slot, setSlot] = useDraftSlot<DraftSlot<D>>(key, parseDraftSlot as ParseSlot<D>);
   // The last save's answer, for as long as the read it was made against is the one shown.
   const [answered, setAnswered] = useState<{ to: R; record: R } | null>(null);
@@ -112,10 +124,14 @@ export function useRecordForm<R, D extends Draft<D>>(spec: RecordFormSpec<R, D>)
 
   async function send(): Promise<void> {
     if (inFlight.current || invalid.length > 0) return;
+    // **Configure's one write in flight** (PL-138): a save waits for any other write or undo.
+    const done = history.begin();
+    if (done === null) return;
     inFlight.current = true;
     const sentAt = revision.current;
     const sent = draft;
     const against = spec.stored;
+    const was = stored;
     setSaving(true);
     setFailure(null);
     setProblems({});
@@ -124,6 +140,27 @@ export function useRecordForm<R, D extends Draft<D>>(spec: RecordFormSpec<R, D>)
       const record = await spec.send(sent);
       noteRankingInputsChanged();
       const recordDraft = draftOf(record);
+      // **Listed with the request that reverses it**: the record as it was, sent again, and the
+      // form read again wherever it is shown then.
+      history.note({
+        target: key,
+        stage: recorded.stage,
+        describe: ({ before, after }) =>
+          describeRecordChange(draftOf(before as R), draftOf(after as R), recorded.wording),
+        before: was,
+        after: record,
+        caveat: undoUnsets(
+          draftOf(was),
+          recordDraft,
+          recorded.wording.labels,
+          recorded.consequences ?? NO_CONSEQUENCES,
+        ),
+        reverse: async (back) => {
+          await spec.send(draftOf(back as R));
+          noteRankingInputsChanged();
+          noteRecordsChanged();
+        },
+      });
       setAnswered({ to: against, record });
       // Through the store, so it lands even when the form has gone meanwhile (T25-10).
       setSlot((current) =>
@@ -145,6 +182,7 @@ export function useRecordForm<R, D extends Draft<D>>(spec: RecordFormSpec<R, D>)
     } finally {
       inFlight.current = false;
       setSaving(false);
+      done();
     }
   }
 
@@ -158,6 +196,7 @@ export function useRecordForm<R, D extends Draft<D>>(spec: RecordFormSpec<R, D>)
     status: saveStatusOf({ saving, refused, dirty, savedSinceEdit }),
     dirty,
     saving,
+    held: saving || history.busy,
     staleBase,
     change,
     discard: () => {
@@ -174,6 +213,8 @@ export function useRecordForm<R, D extends Draft<D>>(spec: RecordFormSpec<R, D>)
     },
   };
 }
+
+const NO_CONSEQUENCES: Readonly<Partial<Record<never, string>>> = {};
 
 type ParseSlot<D extends Draft<D>> = (stored: unknown) => DraftSlot<D> | undefined;
 
