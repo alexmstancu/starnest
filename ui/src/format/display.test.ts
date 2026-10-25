@@ -5,6 +5,7 @@ import {
   formatCount,
   formatDate,
   formatDateTime,
+  formatTime,
   formatIdentifier,
   formatMatchStatus,
   formatMoney,
@@ -114,6 +115,8 @@ describe("formatDateTime and formatDate", () => {
    */
   it("prints an instant to the minute on the reader's clock", () => {
     expect(formatDateTime("2026-08-29T18:02:00Z")).toBe("29 Aug 2026, 21:02");
+    expect(formatTime("2026-08-29T18:02:00Z")).toBe("21:02");
+    expect(formatTime(null)).toBe(formatDateTime(null));
   });
 
   it("prints an instant past the reader's midnight as the reader's day", () => {

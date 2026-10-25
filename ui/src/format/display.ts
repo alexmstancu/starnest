@@ -148,6 +148,13 @@ export function formatDateTime(value: string | null | undefined): string {
   }).format(parsed);
 }
 
+/** An instant's time of day on the reader's clock, "HH:MM", for a moment within the run on screen. */
+export function formatTime(value: string | null | undefined): string {
+  const parsed = parseDate(value);
+  if (!parsed) return ABSENT;
+  return new Intl.DateTimeFormat(DISPLAY_LOCALE, { timeStyle: "short" }).format(parsed);
+}
+
 /**
  * A day: the one a bare date names, or the reader's day for an instant.
  *

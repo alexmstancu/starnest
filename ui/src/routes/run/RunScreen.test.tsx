@@ -3489,6 +3489,52 @@ describe("stopping a run", () => {
   });
 
   /**
+   * UF-084 (PL-123): between Stop and the halt only the pill changed. **The stopping state is
+   * drawn**: an amber card, a heading that says what happens next, and when the stop was asked.
+   */
+  it("draws the stopping state: amber, what happens next, and when it was asked", async () => {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: Number(params["runId"]),
+          run_status: "running",
+          finished_at: null,
+          stop_requested_at: "2026-08-29T18:02:00Z",
+        }),
+      ),
+    );
+    renderShell("/acquire");
+    const region = await screen.findByRole("region", { name: /acquisition 7/i });
+    const card = within(region);
+
+    expect(region).toHaveClass("acquisition--stopping");
+    expect(
+      card.getByRole("heading", { name: "Stopping after the source in flight" }),
+    ).toBeInTheDocument();
+    expect(card.getByText(/^Stop asked at 21:02\./)).toBeInTheDocument();
+  });
+
+  it("draws a running run nobody has asked to stop as running, not stopping", async () => {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: Number(params["runId"]),
+          run_status: "running",
+          finished_at: null,
+          stop_requested_at: null,
+        }),
+      ),
+    );
+    renderShell("/acquire");
+    const region = await screen.findByRole("region", { name: /acquisition 7/i });
+
+    expect(region).not.toHaveClass("acquisition--stopping");
+    expect(within(region).queryByText(/stop asked at/i)).toBeNull();
+  });
+
+  /**
    * NEW-52. **A stop the server recorded stays asked, though its read-back failed.** The card
    * still shows the run as read before the stop; offering Stop there would say it was never
    * pressed, when the run is already stopping.

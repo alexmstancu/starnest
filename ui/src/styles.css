@@ -5132,3 +5132,16 @@ select.field__control {
   border-color: var(--colour-border);
   color: var(--colour-text-strong);
 }
+
+/* ── The stopping card (PL-123) ───────────────────────────────────────────────
+   Stop asked, the run not yet halted: amber, as the design draws it, so the card no longer
+   reads as a run going on as before. */
+.acquisition--stopping {
+  border-color: var(--colour-warning-border);
+  background: var(--colour-warning-surface);
+}
+
+.acquisition__stopping {
+  color: var(--colour-warning);
+  font-size: var(--font-size-small);
+}

@@ -10,6 +10,7 @@ import {
   formatCount,
   formatDateTime,
   formatMoney,
+  formatTime,
   sourceName,
 } from "../../format/display";
 import type { RouteDefinition } from "../../navigation/routes";
@@ -776,7 +777,13 @@ function RunReport({
     // can address, rather than the nearest box that happens to contain the heading.
     <section
       ref={card}
-      className={going ? "acquisition acquisition--going" : "acquisition"}
+      className={
+        state === "stopping"
+          ? "acquisition acquisition--stopping"
+          : going
+            ? "acquisition acquisition--going"
+            : "acquisition"
+      }
       // **Labelled by the acquisition, headed by its state.** The design heads the card with
       // the state because its prototype only ever has the run it just started; this screen can
       // open any run in the history, so the region a reader -- or a test, or a screen reader --
@@ -800,6 +807,15 @@ function RunReport({
         {run.finished_at !== null &&
           `, finished ${formatDateTime(run.finished_at)}`}
       </p>
+
+      {/* **The stopping state is drawn** (PL-123): Stop has withdrawn, so the card says what
+          happens next and when it was asked, from the stop time the run carries. */}
+      {state === "stopping" && (
+        <p className="acquisition__stopping">
+          Stop asked at {formatTime(run.stop_requested_at)}. The source in flight finishes,
+          nothing new starts, and everything completed is kept.
+        </p>
+      )}
 
       <RunProgress progress={run.progress} />
 
