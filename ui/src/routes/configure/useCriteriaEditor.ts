@@ -85,10 +85,9 @@ export interface CriteriaEditor {
    * rebalances its pillar and a rule moves nothing -- and because the refusals differ: a
    * weight is refused by locks, a rule by the ontology (`reqs.md` 3.4).
    *
-   * Resolves to the refusal for the rule form to report, or null: stored, nothing sent while
-   * another write is in flight, or answered for a set no longer on screen.
+   * Resolves to what became of it, for the rule form to say (PL-138).
    */
-  setRule: (attribute: string, rule: CriterionRule) => Promise<unknown>;
+  setRule: (attribute: string, rule: CriterionRule) => Promise<RuleSaveOutcome>;
   reload: () => Promise<void>;
 }
 
@@ -318,11 +317,13 @@ export function useCriteriaEditor(
   );
 
   const setRule = useCallback(
-    (attribute: string, rule: CriterionRule): Promise<unknown> => {
-      if (criteriaSetId === null || inFlight.current || undoing) return Promise.resolve(null);
+    (attribute: string, rule: CriterionRule): Promise<RuleSaveOutcome> => {
+      if (criteriaSetId === null || inFlight.current || undoing) {
+        return Promise.resolve(NOTHING_TO_SAY);
+      }
       // The one write in flight, or a wait while another is (PL-033).
       const done = history?.begin(criteriaSetId);
-      if (done === null) return Promise.resolve(null);
+      if (done === null) return Promise.resolve(NOTHING_TO_SAY);
       inFlight.current = true;
       const sentFor = criteriaSetId;
 
@@ -367,18 +368,19 @@ export function useCriteriaEditor(
             // shows what the server decided rather than what was typed at it.
             deliver(sentFor, changed.criteria);
             history?.note(entry);
-            return null;
+            return { kind: "stored" } as const;
           },
-          (error: unknown) => {
-            // Unknown, it is listed unconfirmed with Check again, never reported as refused.
+          (error: unknown): RuleSaveOutcome => {
+            // Unknown, it is listed unconfirmed with Check again, never reported as refused --
+            // nor as stored.
             if (error instanceof UnconfirmedWrite) {
               const show = (read: RebalancedPillar) => deliver(sentFor, read.criteria);
               history?.note({ ...entry, ...pendingEntry(error, show) });
-              return null;
+              return { kind: "unconfirmed" };
             }
             // **A refused rule is the rule form's to report** (PL-026), field by field inside
             // it, never the pillar's weight refusal -- and only while its set is on screen.
-            return shownSet.current === sentFor ? error : null;
+            return shownSet.current === sentFor ? { kind: "refused", error } : NOTHING_TO_SAY;
           },
         )
         .finally(() => {
@@ -456,6 +458,20 @@ async function criteriaIf(
     criteria: criteria.filter((each) => each.pillar === written.pillar),
   };
 }
+
+/**
+ * What became of a rule's save, as the rule form says it: stored; refused, with why; sent but
+ * whether it was stored is not known (its answer lost, listed unconfirmed in Recent changes); or
+ * nothing to say -- not sent while another write held the set, or answered for a set no longer
+ * on screen.
+ */
+export type RuleSaveOutcome =
+  | { kind: "stored" }
+  | { kind: "refused"; error: unknown }
+  | { kind: "unconfirmed" }
+  | { kind: "none" };
+
+const NOTHING_TO_SAY: RuleSaveOutcome = { kind: "none" };
 
 /** A change as the history is given it, before it stamps the id and the time. */
 type ChangeEntry = Omit<RecordedChange, "id" | "at">;

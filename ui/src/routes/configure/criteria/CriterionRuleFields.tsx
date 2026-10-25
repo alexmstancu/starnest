@@ -294,7 +294,11 @@ export function CriterionRuleFields({
             "Saved." is, mounted empty so its word is announced (NEW-42, UF-054). */}
         {form.changed && !form.saving && <span className="unsaved-mark">Not saved yet</span>}
         <p className="panel__hint" role="status">
-          {form.saved ? "Saved." : null}
+          {form.saved
+            ? "Saved."
+            : form.unconfirmed
+              ? "Not confirmed: the server did not answer, so whether this rule was stored is not known yet. Recent changes can check it."
+              : null}
         </p>
       </div>
     </form>

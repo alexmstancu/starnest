@@ -948,6 +948,34 @@ describe("a rule's save state", () => {
     expect(form.getByText("Not saved yet")).toBeInTheDocument();
   });
 
+  // PL-138: a lost answer that cannot be read back is neither stored nor refused.
+  it("says a save whose answer was lost is not confirmed, and points to Recent changes", async () => {
+    const user = userEvent.setup();
+    await openTheRuleFor(PLAIN);
+    const form = within(ruleForm(PLAIN));
+    mockServer.use(
+      http.patch(
+        "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId",
+        () => HttpResponse.error(),
+        { once: true },
+      ),
+      http.get(
+        "/v1/criteria-sets/:criteriaSetId",
+        () => HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 }),
+        { once: true },
+      ),
+    );
+
+    await user.selectOptions(goalSelect(), "maximise");
+    await user.click(form.getByRole("button", { name: "Save rule" }));
+
+    const status = form.getByRole("status");
+    await waitFor(() => expect(status).toHaveTextContent(/not confirmed/i));
+    expect(status).toHaveTextContent(/Recent changes/);
+    expect(status).not.toHaveTextContent("Saved.");
+    expect(form.queryByRole("alert")).toBeNull();
+  });
+
   // T25-6 (D8, R1).
   it("keeps an unsaved goal through closing the pillar, and marks it on the closed editor", async () => {
     const user = userEvent.setup();

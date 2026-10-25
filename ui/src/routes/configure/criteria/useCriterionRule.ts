@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { CriterionRule, Criterion } from "../../../api/endpoints";
+import type { RuleSaveOutcome } from "../useCriteriaEditor";
 import { useSelection } from "../../../shell/SelectionContext";
 import { useDraftSlot } from "../../../shell/SessionProvider";
 import { ruleDraftKey } from "../../../shell/sessionState";
@@ -57,6 +58,11 @@ export interface RuleForm {
   changed: boolean;
   /** The last save landed and nothing has been typed since (PL-025, UF-054). */
   saved: boolean;
+  /**
+   * The last save was sent and its answer lost, so whether it was stored is not known (PL-138):
+   * neither saved nor refused, and Recent changes is where it is checked.
+   */
+  unconfirmed: boolean;
   /** The stored rule changed under an unsaved draft: another save, an undo (C02-S3). */
   staleBase: boolean;
   /**
@@ -95,8 +101,8 @@ export interface RuleWrites {
  */
 export function useCriterionRule(
   criterion: Criterion,
-  /** Resolves to the refusal to report, or null when the rule was stored or is no longer shown. */
-  onSave: (attribute: string, rule: CriterionRule) => Promise<unknown>,
+  /** Resolves to what became of the save, for the form to say. */
+  onSave: (attribute: string, rule: CriterionRule) => Promise<RuleSaveOutcome>,
   { saving, busy }: RuleWrites,
   /** What the attribute measures and what the form calls it, from the catalog. */
   { valueType, title }: { valueType?: string; title: string },
@@ -127,6 +133,7 @@ export function useCriterionRule(
   // restore leaves the reader to act on.
   const [refused, setRefused] = useState<RuleRefusal | null>(null);
   const [saved, setSaved] = useState(false);
+  const [unconfirmed, setUnconfirmed] = useState(false);
   // Whether the save asked for was taken: a rule's save is not sent while another write holds
   // the set, and then it answers as a stored one does.
   const sent = useRef(false);
@@ -153,6 +160,7 @@ export function useCriterionRule(
     if (saving) return;
     setDraft(change);
     setSaved(false);
+    setUnconfirmed(false);
     setRefused((current) =>
       current === null ? null : { ...current, marks: withoutMarks(current.marks, answers) },
     );
@@ -185,6 +193,7 @@ export function useCriterionRule(
     },
     changed,
     saved,
+    unconfirmed,
     staleBase: !saving && slot !== null && changed && JSON.stringify(slot.base) !== asJson,
     saving,
     held,
@@ -226,22 +235,25 @@ export function useCriterionRule(
       const asked = draft;
       setRefused(null);
       setSaved(false);
+      setUnconfirmed(false);
       sent.current = false;
-      void onSave(criterion.attribute, parsed.rule).then((error) => {
-        const answered = (error !== null && error !== undefined) || sent.current;
+      void onSave(criterion.attribute, parsed.rule).then((outcome) => {
         // **Through the store, so it lands though the row has gone** -- a pillar closed while
         // the save was in flight left the draft asking before every reload. Stored or refused,
-        // the stored rule is what the fields show now (P55); a draft typed since is kept.
-        if (answered) {
+        // the stored rule is what the fields show now (P55); a draft typed since is kept. An
+        // unconfirmed save keeps its draft, because whether it took effect is not known yet.
+        if (outcome.kind === "refused" || (outcome.kind === "stored" && sent.current)) {
           setSlot((current) =>
             current !== null && JSON.stringify(current.draft) === JSON.stringify(asked)
               ? null
               : current,
           );
         }
-        if (error !== null && error !== undefined) {
-          setRefused(refusalOf(error, asked, { attribute: criterion.attribute, title }));
-        } else if (sent.current) {
+        if (outcome.kind === "refused") {
+          setRefused(refusalOf(outcome.error, asked, { attribute: criterion.attribute, title }));
+        } else if (outcome.kind === "unconfirmed") {
+          setUnconfirmed(true);
+        } else if (outcome.kind === "stored" && sent.current) {
           setSaved(true);
         }
       });

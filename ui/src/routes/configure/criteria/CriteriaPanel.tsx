@@ -5,7 +5,7 @@ import type { Criterion, CriterionRule } from "../../../api/endpoints";
 import { formatPercentage, pillarName } from "../../../format/display";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { useEffect, useRef, useState } from "react";
-import type { CriteriaEditor } from "../useCriteriaEditor";
+import type { CriteriaEditor, RuleSaveOutcome } from "../useCriteriaEditor";
 import { useWeightDrag } from "../useWeightDrag";
 import {
   CRITERION_CEILING_FLOOR,
@@ -237,7 +237,7 @@ function CriterionRow({
   onDragEnd: () => void;
   onSave: (attribute: string, weight: number) => void;
   onSetLock: (attribute: string, weightLocked: boolean) => void;
-  onSaveRule: (attribute: string, rule: CriterionRule) => Promise<unknown>;
+  onSaveRule: (attribute: string, rule: CriterionRule) => Promise<RuleSaveOutcome>;
 }) {
   // Zero where the server sent no weight at all, which it never does -- `weight` is required
   // on `Criterion` and optional only in the generated type. A slider has no way to show
