@@ -90,9 +90,11 @@ was decided by the household: **1280px, mobile post-MVP**, with `Δ home` giving
 `Pillars` at 1280, and the sidebar narrowing to 200px rather than collapsing, because the
 active criteria set is what every number on screen is relative to.
 
-**What would still help**, if the design is revised again: loading, empty and error states.
-`useResource` distinguishes idle, loading, ready and error on every screen, and the mockup
-draws only the last.
+**Loading, empty and error states are drawn and built** (2026-10-25). The design's Round 4
+additions draw them for every tab, and round 3 built them: one read state for every panel,
+whose error card offers Try again and never shows a default value as a fact (PL-001), the
+designed empty cards with their one action (PL-011), and skeletons with `aria-busy` and the page
+title drawn at once (PL-012). `useResource`, which this paragraph used to cite, is retired.
 
 ---
 
@@ -114,10 +116,13 @@ or is a divergence with a reason.
 column is left out rather than a country-to-ISO table being written into the client -- which
 would be exactly the hardcoding `reqs.md` bars, for decoration.
 
-**Source rows have arrows and no drag grip.** The design has both. The arrows are implemented
-and are what a keyboard reaches; dragging would need an operation the contract does not have
-("place this source at that position" rather than "swap it with its neighbour"). Worth adding
-to the contract if the gesture matters.
+**Source rows have the design's grip and its arrows** (updated 2026-10-25). This entry once
+recorded the grip as missing because the contract had no operation to place a source at a
+position. It has one now, `reorderDataSources` (PL-136, D36): every move sends the whole order
+in one atomic request that keeps the stored priority tiers instead of renumbering them 1 to n,
+and the arrows swap two sources that share a priority (PL-137). A row is dragged
+(`useSourceDrag.ts`), and the arrows stay as the route for a keyboard. Nothing here diverges
+from the design any more.
 
 **Adults and children are the design's segments, 1-4 and none-3, plus a "More" segment.** The
 segments are one click for almost every household; "More" opens a whole-number field for the
@@ -130,10 +135,11 @@ it at 40, which is four and a half times an even share of eleven pillars -- righ
 wrong for three, where it silently clamps a weight the server would accept. The floor is still
 40, so the eleven-pillar case is drawn exactly as designed.
 
-**Cell tints in the comparison matrix are three bands rather than a continuous alpha ramp.** A
-background colour is design, and design lives in `styles.css` (the lint rule says so); a
-continuous alpha would have to be an inline style. The bands are the design's own thresholds --
-nothing below 5%, full at 30%.
+**Cell tints in the comparison matrix are the design's continuous ramp** (updated 2026-10-25).
+This entry once recorded three bands, because a continuous alpha seemed to need an inline style.
+Since 2026-09-23 the tint is an SVG layer: its hue is a class in `styles.css` and its alpha is
+the `fill-opacity` attribute (`divergingBar.ts`), ramping from 0.09 at 5% to 0.42 at 30%, as
+the design draws it. Nothing here diverges from the design any more.
 
 **A level is offered as soon as it holds a candidate.** The design disables City outright.
 Which levels exist and which hold candidates are catalog rows, so the condition is read off
@@ -146,18 +152,24 @@ in the sidebar while the act of saving lives on Rank.
 **A deleted criteria set is one undo away for the session** (PL-033, P1-27, D-C03-7). Delete
 acts at once with no confirmation, as in the design; on the set in use it is titled "Delete and
 fall back to another set" and the selection moves to another set. Recent changes lists "Deleted
-<name>", and undoing it restores the set exactly, back in use if it was. The history is session state, as the design's is: leaving Configure or reloading loses
-the way back in the interface, while the set stays stored and `POST /criteria-sets/{id}/restore`
-still brings it back. The design records "Switched to X"; switching is not a stored change, so
-it is not listed here.
+<name>", and undoing it restores the set exactly, back in use if it was and nobody has chosen
+another set since. The history is session state, as the design's is, but it now lives above the
+routes (PL-033): leaving Configure keeps it, and a write still in flight keeps its place and its
+entry while another screen is showing. A reload still loses the way back in the interface,
+while the set stays stored and `POST /criteria-sets/{id}/restore` still brings it back.
+Configure sends one write at a time, so Delete is held while another change is being saved; a
+deletion whose answer was lost is listed "Not confirmed" with Check again, never dropped, so its
+restore is always kept; and an older entry for a deleted set says "Its set was deleted: restore
+it to undo this." The design records "Switched to X"; switching is not a stored change, so it
+is not listed here.
 
 ## What would still help
 
 The mockup's numbers are a full database: twelve failures, sixty-two unanswered values, a month
 of spend. The application's cards are the same cards, and currently read zero -- which is the
 truth about the last acquisition rather than a rendering fault. **Loading, empty and error
-states remain undrawn**, as noted above, and are now the largest remaining gap between the file
-and what a reader actually meets.
+states are no longer undrawn** (2026-10-25): the design's Round 4 additions draw them, and
+round 3 built them (PL-001, PL-011, PL-012), as recorded at the top of this file.
 
 ## A fourth pass, and two gaps that are the contract's rather than the screen's (2026-09-23)
 
@@ -276,7 +288,15 @@ inside *"Attributes with no data source at all"*. Against the real catalog those
 no attribute with zero sources permits hand entry. So the card's remedy column honestly reads
 "hand entry is not permitted for this attribute", and the form lives in a second card,
 *"Figures you can enter by hand"*. **The design's intent is kept and its placement is not** --
-if the prototype's seeded data had matched the catalog, item H would have found this too. It is built in the design's own idiom — its `.field` markup, its tokens, its notice shapes
+if the prototype's seeded data had matched the catalog, item H would have found this too.
+
+**The two lists overlap now** (updated 2026-10-25, PL-088). `residency_admin_ease` is permitted
+hand entry and no adapter can fetch it, so it is honestly in both cards: the "no data source"
+card's remedy reads "Enter a value by hand" and links to its row in *"Figures you can enter by
+hand"*, which opens the form there. The form still lives in one card only, because it is the one
+that lists every attribute a person may answer, including those a source can also fetch.
+
+It is built in the design's own idiom — its `.field` markup, its tokens, its notice shapes
 — and what follows is the request for the next sync. **Nothing here should be taken as the
 design's decision; it is ours, and it is reversible.**
 
@@ -310,6 +330,11 @@ comma-separated text field and four numeric fields are very different shapes), w
 confidence picker belongs in the form or should default silently, and whether the success line
 should link to the value in the Rank drill-down.
 
+**Answered 2026-10-25.** The design's Round 4 additions drew the form, the confidence picker
+and "See it in the Rank drill-down", and round 3 built the link (PL-084). The label editor is
+one label per line rather than the drawn comma-separated field (D22), recorded with round 3's
+other divergences at the end of this file.
+
 ## A sixth pass: the return channel for the next sync (2026-10-12)
 
 A review read the running application and the UI code against this file (the live `.dc.html` was
@@ -333,6 +358,10 @@ through the passes above.
   diff has three verdicts; the implementation splits "refreshed" into *moved* and *unchanged* and
   prints the two figures in an Earlier and a Later column so the verdict is checkable.
 
+**All three are drawn now** (2026-10-25): the design's Round 4 additions draw the hand-entry
+form, Stop with both halt outcomes, and the four-count diff. The comma field named above has
+since become one label per line (D22).
+
 **One divergence to rule on:** the **country-code chip**. The design draws a flag (a 24x17 chip
 carrying an ISO code from `ui/flags/*.svg`). The catalog holds no ISO code and writing a
 country-to-ISO table into the client is the hardcoding `reqs.md` bars, so the earlier passes left
@@ -341,10 +370,12 @@ the Rank table renders it as a bordered two-letter chip in the design's own plac
 MT, CY). **Please decide** whether that two-letter chip is the official treatment, or whether the
 flag stays the intent for the day an ISO/flag source is added to the catalog. (This supersedes
 the "No flag beside a candidate" note in the third pass, which recorded the column as omitted.)
+The design's Round 4 additions answered: the flag remains the intent, and the two-letter chip
+stands in until the catalog carries flag images.
 
-**Still owed by the design, unchanged and now the only standing ask:** the **loading, empty and
-error states**. `useResource` distinguishes idle, loading, ready and error on every screen and
-the mockup draws only the last -- still the largest gap between the file and what a reader meets.
+**The loading, empty and error states are no longer owed** (2026-10-25). This was the standing
+ask; the design's Round 4 additions draw them for every tab, and round 3 built them (PL-001,
+PL-011, PL-012).
 
 **Two notes above are now stale (implementation caught up, nothing to add):** the Acquire history
 list now carries the per-row *Stored* and *Failed* counts the fourth pass flagged as a contract
@@ -403,3 +434,173 @@ draw the padlock in the design file**: a later sync that brings the disc back wo
 not-allowed cursor, faded only after 120ms so a quick save does not make twenty controls blink.
 This now covers the weight sliders, both locks, the "Missing figure blocks scoring" box and the
 acquisition numbers in Acquire's history, which looked unchanged while held.
+
+## Round 3: what was built against the design, and why (2026-10-25)
+
+**Every decision round 3 took against `Starnest Product.dc.html` and its README, in one place**
+(PL-180, UF-022). Each entry was checked against the code at `738a3ec` before it was written,
+and names the plan item or decision behind it (`docs/copilot-round3-plan.md`). Where the README
+and the live file disagree, the file wins, as it always has. **Nothing here is the design's
+decision; each is ours and reversible**, and the next sync should rule on it rather than undo
+it by accident.
+
+### Configure
+
+**Edits write straight to the set; there is no working copy** (D2, `reqs.md` Q168). The design
+keeps working weights apart from the stored set, with an "unsaved changes" pill, Save and
+Discard, and a guard on every route that would replace them. Q168 and `arch.md` decided the
+other way: a weight moved is stored, Recent changes undoes it, and Duplicate is the way to
+experiment on a copy. Building the design's model would make a second representation of every
+criteria set.
+
+**A number field takes digits and at most one point, and nothing else** (D7, PL-024). The design
+shows `7,400` in the box. A comma is refused with a sentence saying what to type, because the
+sidebar prints "€72,000.00" while "1,5" is a decimal in much of Europe, and any reading of a
+comma is a guess; a filter that once read "72,000" as 72 and said "Saved." is why. Money takes at
+most two decimals, so "72.000" cannot become 72 through the point either (`format/typedNumber.ts`).
+
+**Forms keep an explicit Save** (D8, PL-025). The design saves each field as it changes; doing
+that would move Rank and the sidebar on every keystroke. What is built: Save, "Saving…",
+"Saved." only after a save the reader has not typed past, and a field's refusal cleared when
+that field is edited. D8's "Not saved yet" line and a prompt before leaving with a draft are not
+built at `738a3ec`, so they are not recorded here as done.
+
+**The rule editor has a layout the design never drew** (PL-026, PL-027). It sits on the stage
+grid (`.rule-form__row`, `minmax(190px, 1fr)` like stage 6), with legends in the field-label
+style, Save rule and Discard changes held, never disabled, while nothing has changed. A refused
+rule is reported inside its own form: the fields marked, the stored rule back in them (P55), and
+"You asked for: …" with "Put my values back".
+
+**The comparator limit's 1–20 is a contract bound** (PL-028, PL-030, D-C02-A). The design's
+DECISIONS called twenty "not a contract one". It is now stated in `openapi.yaml`, enforced by the
+server and held by a database check, and every numeric field's bounds are read from the contract
+(a test holds them to it). Leaving the limit unset says that Compare refuses every comparison,
+rather than the design's "default 5" (UI-31).
+
+**A criterion that is not scored reads "Not scored, matching only"** (D31, PL-111). The design
+has no control for exclusion, so how such a row reads was ours to choose: the chip, the slider
+held, and "Required" only where a criterion is scored and blocks.
+
+**An enforced gate's cost line is the live ranking's** (PL-164, PL-156). The design's prototype
+derives it from its own data. Here it lists the candidates whose reasons for not matching, or
+warnings, name the gate in the ranking the server computed, because a citizenship that clears a
+gate removes a recorded refusal and free movement rules out without one, so the recorded
+answers alone would contradict the ranking. It may therefore read "Applies to no country right
+now." while answers are recorded.
+
+**A switched-off gate's "would remove" comes from the recorded answers** (PL-164). A gate that is
+off is not evaluated, so its line reads the confirmed answers, with "— not while this is off."
+as the design has it; where one of the household's citizenships clears the gate, it reads
+"Removes nobody: your citizenship clears it." instead.
+
+**A switched-off compound rule reads "Not applied, so it flags nobody."** (PL-156), or "removes
+nobody" when the set holds it as a gate, without the design's "— not while this is off." A
+compound rule reads figures rather than recorded answers, and a rule that is off is not
+evaluated, so there is nothing to say it would do.
+
+**A compound rule's description reads "Applies when …" whatever its outcome** (PL-155, PL-158).
+The design's descriptions are prose ("Comfortable today, projected heat days above 35 °C by
+2050."). Ours is written by the server from the rule's own conditions, naming attributes and
+bands, so it cannot disagree with them; and each set holds a rule as a gate or a warning, so a
+description that said what the rule does would contradict every set that holds it the other
+way. The row's select says which it is.
+
+**A gate row reads "Cleared by citizenship of Ireland or United Kingdom."** (PL-164). The
+design says "a British or Irish passport". The catalog names countries and has no nationality
+adjectives, and an adjective table in the client would be the hardcoding `reqs.md` bars.
+
+**The gate proposals' heading is an `h3`** (PL-162). The proposals review is not designed; the
+panel sits inside stage 4, whose heading is the `h2`, beside the Gates and Compound rules `h3`s.
+
+**Gate answers have an area the design does not draw** (PL-152, PL-153, D52, D53). Below the
+rules in stage 4, keyed by level and outside the set's rules panel, because an answer is
+objective and belongs to no set: a form to record, override, correct or rule out an answer, and
+the recorded answers with their period and age, an ended period said as "Ended, still applied"
+rather than expired. Each recorded row has Change and Re-check; a proposal has Take the proposal
+and "Answer … differently", which fills the form. None of these has a design.
+
+**Recent changes saves one change at a time** (PL-033, D41). While a write is in flight every
+other change and undo waits, and the rail says "A change is being saved; the next waits until it
+is stored." A change whose answer was lost on the way is listed with "Not confirmed: the server
+did not answer, so whether this took effect is not known yet." and Check again, never dropped.
+The design draws neither state.
+
+**An undo after a move that left the rest at 0 says so before it is pressed** (D38). The design's
+undo restores the whole snapshot. Ours re-sends the real request, and the server cannot put back
+weights a move left at 0, so the entry reads "Undo cannot restore the rest of this pillar: this
+change left them all at 0, so undoing it shares their weight out evenly."
+
+### Acquire
+
+**The acquisition diff keeps a Source column** (C04-N8, PL-060). The design's table is Country ·
+Attribute · Earlier · Later · What happened, because its prototype has one source per pair. The
+real data has two for the total tax rate, so the unit compared is the pair and its source, and
+two sources answering one pair are two rows. A rejected figure is no usable figure: its cell
+reads "rejected", so a later rejection over a stored figure "went missing".
+
+**Two holdings tiles are labelled differently** (PL-051). "Candidates scored", not "Countries
+scored", because the panel is drawn for whichever level is chosen and no code may assume the
+level is countries (`reqs.md` 3.1); it is counted from the ranking the sidebar tallies, "under"
+the set's name (C04-N4). "Past their allowed age", not the file's "Older than 365 days" (C04-N3):
+the design labels the tile by the refetch setting and explains it by the attribute's maximum
+age; the tile counts the latter, the fact Rank lowers confidence on, and the refetch count moved
+to the refresh card.
+
+**A fourth remedy card, "not reached"** (C04-N7, PL-050). The design has three, and a stopped
+run's never-asked items fit none of them; calling them "unanswered" was UF-074's defect. Drawn
+only when there are any, "No source was asked yet. Worth asking.", with "Ask N not reached"
+through the same estimate and strip as the others.
+
+**The cap caption reads "the cap is €X per acquisition and per research pass"** (C04-N9,
+PL-057). The file says "cap is €5.00 per acquisition", under a monthly total that includes
+research; the position is kept and the sentence completed, in stage 6's words (PL-031).
+
+**The run card's spend line adds the cap after a run ends** (PL-056). The design reads "Charged
+€X of the €Y ceiling."; ours adds ", held to the €Z cap." or ", with no cap.", from the ceiling
+and cap the run started with, because a cap edited later did not change that run's meter.
+
+**The halted headings are "Stopped by you" and "Halted at the spend cap"** (PL-122), from the
+file's Round 4 state, in place of the README's single "Stopped early", which cannot tell a stop
+somebody asked for from a halt at the cap. A failed run reads "Acquisition did not finish",
+which neither draws.
+
+**The refresh card keeps its heading and puts its counts in the lead** (PL-121). Its heading
+names what it starts, "An acquisition over every country candidate", where the design has a
+26px count beside "refresh everything". The lead says how many values it re-asks, worded from
+the refetch setting, and how many in use are past their allowed age.
+
+**A retry that spans several runs becomes a run scoped to its exact pairs** (PL-124, D32). The
+design's "Retry 2 selected" assumes one retry, and the server's retry belongs to one run. A
+selection from one run is retried through it and asks only the sources that failed; one spanning
+several runs, or pairs no run asked about, is a scoped run over exactly those pairs, which asks
+every switched-on source. The strip names the sources it asks before anything is agreed to.
+
+**Hand entry takes one label per line** (D22, PL-090). The design draws one comma-separated
+field. An employer's name can contain a comma ("Booking Holdings, Inc."), so a comma stays part
+of the name, and the chips preview the labels that will be stored.
+
+**The read-back names the source "Manual entry"** (C06 N6, RB-4). The design reads "under
+manual."; ours is the catalog's name for the source, never its id.
+
+**The form takes focus when it opens** (C06 N8). Focus moves to Candidate, departing from the
+disclosure pattern, and Close returns it to the row's toggle. A stored figure clears the form
+(C06 N5, UI-06), where the prototype keeps it, so a second identical row is not one click away.
+
+**The hand-entry and no-source cards overlap** (PL-088). Recorded under the 2026-09-30 pass:
+an attribute only a person can answer is in both, and the no-source card links to its form.
+
+### Rank
+
+**An address that names what cannot be opened says so** (PL-084, C06 N4). The design's
+"See it in the Rank drill-down" opens a candidate and pillar. Ours adds that row and keeps the
+reader's other open rows, where the prototype replaces them; and when the address names a
+level that does not exist, a candidate the ranking does not hold, or a pillar the candidate is
+not scored on, a notice says what was not opened rather than opening nothing silently.
+
+**The candidate detail has a Gates block** (PL-154, `reqs.md` 8.4). Gate · Answer · Holds for ·
+Recorded · Source and pages, with an override's date and reason, and an override mark in the
+reason cell. The design draws no gate answers in the drill-down.
+
+**Outside opinions are grouped by publisher and series** (PL-171, D64). The design lists them
+one row per figure. Two indices from one publisher are two groups, and an earlier edition is
+labelled "Earlier edition, kept as history", only where the server marks it not current.
