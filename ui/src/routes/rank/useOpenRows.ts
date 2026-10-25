@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { isRecord } from "../../shell/sessionState";
 import { useSessionState } from "../../shell/SessionProvider";
-import { type OpenCandidate, type OpenRow, choosePillar, toggleRow } from "./openRows";
+import { type OpenCandidate, type OpenRow, choosePillar, openAt, toggleRow } from "./openRows";
 
 /**
  * Which candidates' evidence is open, and the pillar chosen in each (PL-016).
@@ -25,7 +25,13 @@ export function useOpenRows() {
       setOpen((already) => choosePillar(already, row, pillar)),
     [setOpen],
   );
-  return { open, toggle, choose };
+  // An address's request (PL-084): opens, and never closes, so applying it twice is harmless.
+  const openAtPillar = useCallback(
+    (candidate: string, pillar: string | null) =>
+      setOpen((already) => openAt(already, candidate, pillar)),
+    [setOpen],
+  );
+  return { open, toggle, choose, openAt: openAtPillar };
 }
 
 const NONE: readonly OpenRow[] = [];

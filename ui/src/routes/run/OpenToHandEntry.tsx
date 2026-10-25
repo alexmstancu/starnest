@@ -240,7 +240,7 @@ function Row({
           <span className="hand-entry__type">{attribute.type}</span>
         </th>
         {/* The catalog's name, as the card beside this one prints it -- never the id (NEW-09). */}
-        <td>{pillarName(pillars, attribute.pillar)}</td>
+        <td>{attribute.pillar === null ? "No pillar" : pillarName(pillars, attribute.pillar)}</td>
         <td>{attribute.otherwise}</td>
         <td>
           {attribute.kind === null ? (
@@ -268,6 +268,7 @@ function Row({
               attributeName={attribute.name}
               kind={attribute.kind}
               level={level}
+              pillar={attribute.pillar}
               onClose={() => {
                 onToggle();
                 // Back to the control that opened it, which stays: never to the page.

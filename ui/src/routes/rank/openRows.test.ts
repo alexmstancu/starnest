@@ -5,6 +5,7 @@ import {
   choosePillar,
   chosenPillarOf,
   isOpen,
+  openAt,
   toggleRow,
 } from "./openRows";
 
@@ -151,5 +152,25 @@ describe("the pillar a reader is reading, within an open row", () => {
     choosePillar(before, PORTUGAL, "safety");
 
     expect(chosenPillarOf(before, "country.portugal")).toBeNull();
+  });
+});
+
+describe("a row an address opens (PL-084)", () => {
+  const SPAIN: OpenRow = { candidate: "country.spain", chosenPillar: null };
+
+  it("adds the candidate at the pillar, keeping the rows already open", () => {
+    expect(openAt([SPAIN], "country.portugal", "safety")).toEqual([
+      SPAIN,
+      { candidate: "country.portugal", chosenPillar: "safety" },
+    ]);
+  });
+
+  it("chooses the pillar on a row already open, and never closes it", () => {
+    const open = [{ candidate: "country.portugal", chosenPillar: "safety" }];
+
+    expect(openAt(open, "country.portugal", "safety")).toEqual(open);
+    expect(openAt(open, "country.portugal", null)).toEqual([
+      { candidate: "country.portugal", chosenPillar: null },
+    ]);
   });
 });

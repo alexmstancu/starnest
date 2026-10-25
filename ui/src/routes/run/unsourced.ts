@@ -169,7 +169,8 @@ function nothingCanFetch(attribute: CatalogAttribute): boolean {
 export interface HandEnterable {
   id: string;
   name: string;
-  pillar: string;
+  /** The catalog's pillar, or null where it files the attribute under none. */
+  pillar: string | null;
   /** Its value type in words, under its name. */
   type: string;
   /** Which editor opens, or null where the catalog permits entry and no form exists yet. */
@@ -209,7 +210,7 @@ export function handEnterable(
     .map((attribute) => ({
       id: attribute.id,
       name: attribute.name,
-      pillar: attribute.pillar ?? NO_PILLAR,
+      pillar: attribute.pillar ?? null,
       type: typeOf(attribute),
       kind: editorFor(attribute),
       noForm: noFormFor(attribute),

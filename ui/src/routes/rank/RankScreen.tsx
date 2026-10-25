@@ -15,6 +15,7 @@ import { codesByCandidate, type HomeRead } from "./rankTable";
 import { useHome } from "./useHome";
 import { SaveControl } from "./SaveControl";
 import { useOpenRows } from "./useOpenRows";
+import { addressNoticeWords, useAddressedRow } from "./useAddressedRow";
 import { SavedRankingsPanel } from "./SavedRankingsPanel";
 import { useSelection } from "../../shell/SelectionContext";
 
@@ -112,7 +113,7 @@ function TheRanking({
   const candidates = roster.read.state === "ready" ? roster.read.data.items : null;
   const codes = codesByCandidate(candidates);
   const setNames = new Map(criteriaSets.map((set) => [set.id, set.name]));
-  const { open, toggle, choose } = useOpenRows();
+  const { open, toggle, choose, openAt } = useOpenRows();
 
   // **A setting nobody has decided is not a fault, and it is the whole screen** (PL-005): a
   // score has no meaning without a top of the range, so a fresh installation ranks nothing --
@@ -125,6 +126,9 @@ function TheRanking({
   // did not answer (PL-002) -- a loop.
   const [answeredOnce, setAnsweredOnce] = useState(false);
   if (!answeredOnce && ranking.read.state !== "pending") setAnsweredOnce(true);
+  // A candidate and pillar the address names (PL-084), opened once this ranking holds them.
+  const addressed = useAddressedRow(drawn, openAt);
+  const rosterNames = new Map((candidates ?? []).map((each) => [each.id, each.name]));
 
   return (
     <>
@@ -167,6 +171,9 @@ function TheRanking({
         <NoRanking error={unset} region={focusRegion} />
       ) : (
         <>
+          <p className="rank-address" role="status">
+            {addressed.notice !== null && addressNoticeWords(addressed.notice, rosterNames)}
+          </p>
           <LoadedRegion
             read={ranking.read}
             what="The ranking"
@@ -183,6 +190,8 @@ function TheRanking({
                 codes={codes}
                 household={home}
                 onChoosePillar={choose}
+                arrivedAt={addressed.arrivedAt}
+                onArrived={addressed.arrived}
                 detail={(row) => (
                   <CandidateDetail
                     candidate={row.candidate}

@@ -19,6 +19,7 @@ import {
   type ManualKind,
 } from "./manualEntry";
 import { HeldButton } from "../../shell/HeldButton";
+import { drillDownPath } from "../../navigation/drillDown";
 import { useManualEntry, type ManualEntryState } from "./useManualEntry";
 
 /** The source a typed figure is stored under: a catalog row, named by the catalog. */
@@ -41,12 +42,15 @@ export function ManualEntryPanel({
   attributeName,
   kind,
   level,
+  pillar,
   onClose,
 }: {
   attribute: string;
   attributeName: string;
   kind: ManualKind;
   level: string;
+  /** The attribute's pillar in the catalog, where the read-back's link opens Rank; null for none. */
+  pillar: string | null;
   /** Closes the form, from a button beside Store. */
   onClose?: () => void;
 }) {
@@ -223,7 +227,13 @@ export function ManualEntryPanel({
         role="status"
       >
         {entry.saved !== null && (
-          <ReadBack saved={entry.saved} candidate={candidateName(named, entry.saved.candidate)} source={sourceName(sources, entry.saved.data_source)} />
+          <>
+            <ReadBack saved={entry.saved} candidate={candidateName(named, entry.saved.candidate)} source={sourceName(sources, entry.saved.data_source)} />{" "}
+            {/* The stored figure's candidate, never the draft's (PL-084). */}
+            <Link to={drillDownPath({ candidate: entry.saved.candidate, pillar, level })}>
+              See it in the Rank drill-down
+            </Link>
+          </>
         )}
       </p>
 

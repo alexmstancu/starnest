@@ -110,3 +110,18 @@ export function choosePillar(
       : each,
   );
 }
+
+/**
+ * Open a candidate at one pillar, or at every pillar with null, whatever was open before: what
+ * an address asks for (PL-084). **Never closes anything**, unlike the two toggles above, so the
+ * same address reloaded opens the same thing; the rows already open stay open.
+ */
+export function openAt(
+  open: readonly OpenRow[],
+  candidate: string,
+  pillar: string | null,
+): OpenRow[] {
+  return isOpen(open, candidate)
+    ? open.map((each) => (each.candidate === candidate ? { candidate, chosenPillar: pillar } : each))
+    : [...open, { candidate, chosenPillar: pillar }];
+}

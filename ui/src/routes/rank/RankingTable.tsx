@@ -57,6 +57,8 @@ export function RankingTable({
   detail,
   codes,
   household = { state: "unknown" },
+  arrivedAt = null,
+  onArrived,
 }: {
   ranking: Ranking;
   open?: readonly OpenRow[];
@@ -88,6 +90,12 @@ export function RankingTable({
    * taken against.
    */
   household?: HomeRead;
+  /**
+   * The candidate an address just opened (PL-084): its row is brought into sight with the
+   * keyboard on its toggle, once, and then `onArrived` is told.
+   */
+  arrivedAt?: string | null;
+  onArrived?: () => void;
 }) {
   const names = usePillarNames();
   const ruleNames: RuleNames = { gates: useMatchRuleNames(), candidates: useCandidateNames() };
@@ -166,6 +174,8 @@ export function RankingTable({
                 code={codes?.get(result.candidate)}
                 atHome={home.has(result.candidate)}
                 ruleNames={ruleNames}
+                arrived={arrivedAt === result.candidate}
+                onArrived={onArrived}
               />
             </Fragment>
           ))}
@@ -275,6 +285,8 @@ function CandidateRow({
   code,
   atHome,
   ruleNames,
+  arrived = false,
+  onArrived,
 }: {
   names: PillarNames;
   result: CandidateResult;
@@ -292,7 +304,17 @@ function CandidateRow({
   atHome: boolean;
   /** What a gate and a citizenship are called, for a reason said from its codes. */
   ruleNames: RuleNames;
+  /** An address just opened this row: bring it into sight, with the keyboard on its toggle. */
+  arrived?: boolean;
+  onArrived?: () => void;
 }) {
+  const toggleButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!arrived) return;
+    toggleButton.current?.scrollIntoView?.({ block: "center" });
+    toggleButton.current?.focus();
+    onArrived?.();
+  }, [arrived, onArrived]);
   const matching = result.match_status === "matching";
   // **The chosen pillar travels on the row**, because this object is what `detail(row)` hands
   // to the panel underneath. Left off, the chart marked itself chosen and the panel it was
@@ -360,7 +382,12 @@ function CandidateRow({
             path are the same path. Giving the button its own handler toggled the row twice
             and left it exactly as it was. */}
         {toggle ? (
-          <button type="button" className="name-cell__toggle" aria-expanded={open}>
+          <button
+            ref={toggleButton}
+            type="button"
+            className="name-cell__toggle"
+            aria-expanded={open}
+          >
             {result.name}
           </button>
         ) : (

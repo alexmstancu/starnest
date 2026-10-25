@@ -5176,3 +5176,14 @@ select.field__control {
   background: var(--colour-warning-surface);
   color: var(--colour-warning-deep);
 }
+
+/* What an address asked Rank to open and could not (PL-084). Always mounted, so it is
+   announced when it speaks; it takes no room while it says nothing. */
+.rank-address {
+  margin: 0 0 var(--space-single);
+  color: var(--colour-text-muted);
+}
+
+.rank-address:empty {
+  margin: 0;
+}

@@ -197,6 +197,14 @@ describe("attributes a person may answer", () => {
     ["world_bank", "World Bank"],
   ]);
 
+  /** PL-084. Its pillar is the catalog's, so a link to Rank never carries a made-up one. */
+  it("keeps the catalog's pillar, and none where the catalog files it under none", () => {
+    const { pillar: _pillar, ...unfiled } = employers;
+
+    expect(handEnterable([employers], NAMES)[0]?.pillar).toBe("career");
+    expect(handEnterable([unfiled], NAMES)[0]?.pillar).toBeNull();
+  });
+
   it("names what can fetch it, not the whole priority order", () => {
     expect(handEnterable([employers], NAMES)[0]?.otherwise).toBe(
       "Otherwise: LLM with web search",

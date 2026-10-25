@@ -24,7 +24,7 @@ import { ManualEntryPanel } from "./ManualEntryPanel";
 /** The one attribute in the mock's catalog that takes a list typed by hand. */
 const EMPLOYERS = "country.international_employers";
 
-function renderEntry() {
+function renderEntry(pillar: string | null = "career") {
   // In the provider because a read that failed names the product when it says why.
   return render(
     <AppConfigProvider config={TEST_CONFIG}>
@@ -34,6 +34,7 @@ function renderEntry() {
           attributeName="International employers"
           kind="LabelSet"
           level="country"
+          pillar={pillar}
         />
       </MemoryRouter>
     </AppConfigProvider>,
@@ -134,6 +135,40 @@ describe("storing a figure typed by hand", () => {
 
     const stored = await readBack("Stored Siemens for Portugal, under Manual entry.");
     expect(stored).not.toHaveTextContent(/\bmanual\b/);
+  });
+
+  /**
+   * PL-084 (UF-087). **One click from the read-back to the figure in Rank**: the candidate the
+   * figure was stored for -- never the one the form has moved on to -- at the attribute's pillar.
+   */
+  it("links the stored figure to its candidate and pillar in Rank", async () => {
+    const user = userEvent.setup();
+    const writes = holdManualWrites();
+    renderEntry();
+    await fillAFigure();
+    await user.click(screen.getByRole("button", { name: "Store this figure" }));
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Candidate" }), "country.spain");
+
+    writes.release();
+
+    const stored = await readBack(/Stored Siemens for Portugal/);
+    expect(
+      within(stored).getByRole("link", { name: "See it in the Rank drill-down" }),
+    ).toHaveAttribute("href", "/rank?candidate=country.portugal&pillar=career&level=country");
+  });
+
+  it("links to the candidate alone where the attribute has no pillar", async () => {
+    const user = userEvent.setup();
+    renderEntry(null);
+    await fillAFigure();
+
+    await user.click(screen.getByRole("button", { name: "Store this figure" }));
+
+    const stored = await readBack(/for Portugal/);
+    expect(
+      within(stored).getByRole("link", { name: "See it in the Rank drill-down" }),
+    ).toHaveAttribute("href", "/rank?candidate=country.portugal&level=country");
   });
 
   it("keeps the figure when the server refuses it", async () => {
@@ -321,6 +356,7 @@ describe("the hand-entry form as designed", () => {
             attributeName="Residency admin ease"
             kind="AssignedScore"
             level="country"
+            pillar="governance"
           />
         </MemoryRouter>
       </AppConfigProvider>,
