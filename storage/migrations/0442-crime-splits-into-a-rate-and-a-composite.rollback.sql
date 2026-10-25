@@ -7,9 +7,10 @@ LOCK TABLE attribute, criterion IN SHARE ROW EXCLUSIVE MODE;
 UPDATE attribute SET lifecycle_status = 'active' WHERE id = 'country.crime_safety_index';
 
 INSERT INTO criterion (
-    criteria_set, attribute, pillar, value_type, is_scored, weight, goal, normalisation_method,
-    blocks_if_missing)
-SELECT 'local_employment', a.id, a.pillar, a.value_type, true, old.weight, 'maximise',
+    criteria_set, attribute, pillar, value_type, is_scored, weight, weight_locked, goal,
+    normalisation_method, blocks_if_missing)
+SELECT 'local_employment', a.id, a.pillar, a.value_type, old.is_scored, old.weight,
+       old.weight_locked, 'maximise',
        old.normalisation_method, old.blocks_if_missing
 FROM   attribute AS a
 JOIN   criterion AS old

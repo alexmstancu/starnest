@@ -12,19 +12,14 @@ what the migration does to the schema it was written for. So this builds a priva
 to the migration before, puts rules on the criterion, and applies and rolls back `0444` for real.
 """
 
-import hashlib
-import subprocess
 from collections.abc import Iterator
-from pathlib import Path
-from urllib.parse import urlparse, urlunparse
 
 import psycopg
 import pytest
 
-pytestmark = pytest.mark.storage
+from .private_database import private_database, yoyo
 
-BACKEND_ROOT = Path(__file__).resolve().parents[2]
-MIGRATIONS = BACKEND_ROOT.parent / "storage" / "migrations"
+pytestmark = pytest.mark.storage
 
 BEFORE = "0443-cost-of-living-becomes-a-quantity"
 RETYPE = "0444-house-price-ratio-stops-blocking"
@@ -49,43 +44,10 @@ RULES = (
 )
 
 
-def on(url: str, database: str) -> str:
-    return urlunparse(urlparse(url)._replace(path=f"/{database}"))
-
-
-def yoyo(*arguments: str, database: str) -> None:
-    done = subprocess.run(
-        [
-            "uv",
-            "run",
-            "yoyo",
-            *arguments,
-            "--batch",
-            "--database",
-            database.replace("postgresql://", "postgresql+psycopg://", 1),
-            str(MIGRATIONS),
-        ],
-        cwd=BACKEND_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert done.returncode == 0, done.stdout + done.stderr
-
-
 @pytest.fixture
 def database_before_the_retype(database_url: str) -> Iterator[str]:
-    # Its own namespace and a bounded length: never another workstream's database (RE-8).
-    name = "starnest_retype_" + hashlib.sha256(database_url.encode()).hexdigest()[:16]
-    with psycopg.connect(on(database_url, "postgres"), autocommit=True) as admin:
-        admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
-        admin.execute(f'CREATE DATABASE "{name}"')
-    try:
-        yoyo("apply", "--revision", BEFORE, database=on(database_url, name))
-        yield on(database_url, name)
-    finally:
-        with psycopg.connect(on(database_url, "postgres"), autocommit=True) as admin:
-            admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+    with private_database(database_url, "retype", revision=BEFORE) as url:
+        yield url
 
 
 def rules_on_the_house_price(url: str) -> list[tuple[object, ...]]:

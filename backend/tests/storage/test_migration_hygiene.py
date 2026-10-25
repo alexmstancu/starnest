@@ -873,3 +873,140 @@ def test_no_literal_hides_the_statement_after_it(literal: str) -> None:
     refused = [shape.name for shape in unreadable_in(f"SELECT {literal};\n" + WITH_COPY)]
 
     assert refused == ["a statement starting with WITH"]
+
+
+#: What a person sets on a criterion, beside its weight, that a replacement must carry (P97).
+CHOSEN_ON_A_CRITERION = ("weight_locked", "is_scored")
+
+CRITERION_COPY = re.compile(
+    r"insert\s+into\s+criterion\s*\(([^)]*)\)\s*select\b(.*?)\bfrom\b", re.I | re.S
+)
+
+
+def split_at_top_level_commas(text: str) -> list[str]:
+    pieces, depth, start = [], 0, 0
+    for at, character in enumerate(text):
+        depth += {"(": 1, ")": -1}.get(character, 0)
+        if character == "," and depth == 0:
+            pieces.append(text[start:at])
+            start = at + 1
+    return [piece.strip() for piece in [*pieces, text[start:]]]
+
+
+def a_column(expression: str, named: str) -> bool:
+    return re.fullmatch(rf"(?:\w+\.)?{named}", expression, re.I) is not None
+
+
+def uncarried_choices(sql: str) -> list[str]:
+    """What each replacement in `sql` fails to carry: one entry per statement and column.
+
+    A replacement copies criterion rows onto another attribute -- it reads `criterion` and the
+    attribute it inserts is not the one it read. It must name each column a person chose, and
+    take it from the row it copies: a literal there is the lock dropped all over again. A
+    replacement whose select list this cannot pair with its columns is refused as unreadable.
+    """
+    missing = []
+    for statement in statements_in(code_of(sql)):
+        copy = CRITERION_COPY.match(statement)
+        if copy is None or "criterion" not in tables_read_by(statement):
+            continue
+        columns = [column.lower() for column in split_at_top_level_commas(copy.group(1))]
+        expressions = split_at_top_level_commas(copy.group(2))
+        if len(columns) != len(expressions):
+            missing.append("a select list that does not pair with its columns")
+            continue
+        carried = dict(zip(columns, expressions, strict=True))
+        if a_column(carried.get("attribute", ""), "attribute"):
+            continue
+        missing += [
+            column
+            for column in CHOSEN_ON_A_CRITERION
+            if not a_column(carried.get(column, ""), column)
+        ]
+    return missing
+
+
+def replacements() -> list[Path]:
+    return sorted(
+        p
+        for p in MIGRATIONS.glob("*.sql")
+        if any(
+            CRITERION_COPY.match(statement) and "criterion" in tables_read_by(statement)
+            for statement in statements_in(code_of(p.read_text()))
+        )
+    )
+
+
+def test_there_are_replacements_to_check() -> None:
+    """`0442`, `0445` and `0488`, both ways, and `0469`'s set copy that the rule passes over."""
+    assert len(replacements()) >= 7
+
+
+@pytest.mark.parametrize("script", replacements(), ids=lambda p: p.stem)
+def test_a_replacement_carries_the_lock_and_the_exclusion(script: Path) -> None:
+    """**A criterion moved onto another attribute keeps what a person chose on it** (P97).
+
+    `0442` and `0445` listed the columns to carry by hand, for the weight, and a locked weight
+    arrived unlocked; `0442` and `0488` wrote `is_scored` as `true`, so a criterion a person had
+    excluded came back scored. Both ways: the rollbacks did the same in reverse.
+    """
+    missing = uncarried_choices(script.read_text())
+
+    assert missing == [], (
+        f"{script.name} moves criteria onto another attribute without carrying {missing} from "
+        "the rows it copies: name each column and select it from the old row, never a literal"
+    )
+
+
+REPLACING = (
+    "INSERT INTO criterion (criteria_set, attribute, weight{columns})\n"
+    "SELECT old.criteria_set, 'b', old.weight{values} FROM criterion AS old "
+    "WHERE old.attribute = 'a';\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("sql", "missing"),
+    [
+        pytest.param(
+            REPLACING.format(
+                columns=", weight_locked, is_scored", values=", old.weight_locked, old.is_scored"
+            ),
+            [],
+            id="both carried",
+        ),
+        pytest.param(
+            REPLACING.format(columns=", is_scored", values=", old.is_scored"),
+            ["weight_locked"],
+            id="the lock left out",
+        ),
+        pytest.param(
+            REPLACING.format(columns=", weight_locked, is_scored", values=", false, true"),
+            ["weight_locked", "is_scored"],
+            id="both written as literals",
+        ),
+        pytest.param(
+            REPLACING.format(
+                columns=", weight_locked, is_scored", values=", coalesce(old.weight_locked, x)"
+            ),
+            ["a select list that does not pair with its columns"],
+            id="a select list that does not pair",
+        ),
+        pytest.param(
+            "INSERT INTO criterion (criteria_set, attribute, weight)\n"
+            "SELECT 'copy', c.attribute, c.weight FROM criterion AS c;\n",
+            [],
+            id="a set copy, same attribute",
+        ),
+        pytest.param(
+            "INSERT INTO criterion (criteria_set, attribute, is_scored, weight_locked)\n"
+            "SELECT 'minimal', a.id, true, false FROM attribute AS a;\n",
+            [],
+            id="a new criterion, nothing copied",
+        ),
+    ],
+)
+def test_the_replacement_rule_reads_sql_as_a_migration_writes_it(
+    sql: str, missing: list[str]
+) -> None:
+    assert uncarried_choices(sql) == missing

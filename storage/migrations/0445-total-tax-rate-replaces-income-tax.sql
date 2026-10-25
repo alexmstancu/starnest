@@ -60,10 +60,10 @@ ON CONFLICT (attribute, data_source) DO UPDATE SET rank = EXCLUDED.rank;
 -- The shipped set's criterion moves across unchanged: same weight, same goal, same method, still
 -- blocking. Only what it measures is different.
 INSERT INTO criterion (
-    criteria_set, attribute, pillar, value_type, is_scored, weight, goal, normalisation_method,
-    blocks_if_missing)
+    criteria_set, attribute, pillar, value_type, is_scored, weight, weight_locked, goal,
+    normalisation_method, blocks_if_missing)
 SELECT old.criteria_set, 'country.total_tax_rate_effective', old.pillar, 'Ratio', old.is_scored,
-       old.weight, old.goal, old.normalisation_method, old.blocks_if_missing
+       old.weight, old.weight_locked, old.goal, old.normalisation_method, old.blocks_if_missing
 FROM   criterion AS old
 WHERE  old.attribute = 'country.income_tax_effective';
 

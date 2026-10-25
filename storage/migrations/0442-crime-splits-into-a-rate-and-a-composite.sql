@@ -61,9 +61,10 @@ ON CONFLICT (attribute, data_source) DO UPDATE SET rank = EXCLUDED.rank;
 -- better and a homicide *rate* goes down, and getting this backwards would have ranked Europe
 -- exactly upside down on this criterion.
 INSERT INTO criterion (
-    criteria_set, attribute, pillar, value_type, is_scored, weight, goal, normalisation_method,
-    blocks_if_missing)
-SELECT 'local_employment', a.id, a.pillar, a.value_type, true, old.weight, 'minimise',
+    criteria_set, attribute, pillar, value_type, is_scored, weight, weight_locked, goal,
+    normalisation_method, blocks_if_missing)
+SELECT 'local_employment', a.id, a.pillar, a.value_type, old.is_scored, old.weight,
+       old.weight_locked, 'minimise',
        old.normalisation_method, old.blocks_if_missing
 FROM   attribute AS a
 JOIN   criterion AS old
@@ -72,6 +73,8 @@ JOIN   criterion AS old
 WHERE  a.id = 'country.homicide_rate'
 ON CONFLICT (criteria_set, attribute) DO UPDATE
 SET weight = EXCLUDED.weight,
+    weight_locked = EXCLUDED.weight_locked,
+    is_scored = EXCLUDED.is_scored,
     goal = EXCLUDED.goal,
     blocks_if_missing = EXCLUDED.blocks_if_missing;
 

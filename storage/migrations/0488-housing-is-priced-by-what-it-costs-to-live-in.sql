@@ -67,10 +67,13 @@ VALUES ('country.liechtenstein', 'country.housing_price_level', 'country.switzer
 -- so the live catalog drifts from what the migrations seed. Selecting the weight transfers
 -- whatever each set actually holds, in every set that holds one, and the pillar still sums to
 -- 100 wherever this runs. Found by the suite, which builds its database from these files.
+-- **The lock and the exclusion are carried for the same reason** (P97): a person chose them,
+-- and a criterion that arrived unlocked, or scored where it had been excluded, undid that.
 INSERT INTO criterion (criteria_set, attribute, value_type, pillar, weight, goal,
                        normalisation_method, is_scored, weight_locked, blocks_if_missing)
 SELECT retiring.criteria_set, 'country.housing_price_level', 'Quantity', 'housing',
-       retiring.weight, 'minimise', 'percentile', true, false, false
+       retiring.weight, 'minimise', 'percentile', retiring.is_scored, retiring.weight_locked,
+       false
 FROM   criterion AS retiring
 WHERE  retiring.attribute = 'country.house_price_to_income_ratio';
 
