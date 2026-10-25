@@ -40,6 +40,11 @@ const KNOWN_CODES: Record<string, { message: string; retryable: boolean }> = {
     message: "The backend did not answer. Check that it is running, then try again.",
     retryable: true,
   },
+  // Never the server's own words: a fault's text is for its log, not for the screen (P1-11).
+  [CLIENT_ERROR_CODES.serverFault]: {
+    message: "The server failed while answering.",
+    retryable: true,
+  },
   [CLIENT_ERROR_CODES.malformedError]: {
     message: "The backend reported an error in a shape this interface does not recognise.",
     retryable: false,

@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { fetchRun, fetchRuns, type RunDetail } from "../api/endpoints";
+import { isUnreachable } from "../api/reachability";
 import { acquisitionEnded, announcementFor, runningRunOf } from "./acquiringProgress";
 
 /**
@@ -19,6 +20,9 @@ import { acquisitionEnded, announcementFor, runningRunOf } from "./acquiringProg
  * **And it says when the run it saw running stops** (UI-11), through `onEnded`: this is the
  * one place in the shell that watches a run, and what the sidebar read about the runs and the
  * ranking is stale from that moment. Never on the first look -- see `acquisitionEnded`.
+ *
+ * **Two seconds again while the server does not answer** (PL-002): this is the request most
+ * likely to see it come back, and its answer is what reads every failed read again.
  */
 export interface Acquiring {
   run: RunDetail | null;
@@ -62,6 +66,7 @@ export function useAcquiring(onEnded: () => void, started: number): AcquiringSta
     let seenRunning: number | null = null;
     let quickLooksLeft = 0;
     let looking = false;
+    let unanswered = false;
 
     async function look(): Promise<void> {
       looking = true;
@@ -86,7 +91,9 @@ export function useAcquiring(onEnded: () => void, started: number): AcquiringSta
             stopping: Boolean(detail.stop_requested_at),
           });
         }
-      } catch {
+        unanswered = false;
+      } catch (error: unknown) {
+        unanswered = isUnreachable(error);
         // **Silent.** A banner that cannot be read is not worth an error message on every
         // screen; the Acquire tab is where a failure to read a run belongs, and it reports
         // one there.
@@ -97,7 +104,7 @@ export function useAcquiring(onEnded: () => void, started: number): AcquiringSta
     }
 
     function scheduleNext(): void {
-      const quick = seenRunning !== null || quickLooksLeft > 0;
+      const quick = seenRunning !== null || quickLooksLeft > 0 || unanswered;
       if (quickLooksLeft > 0) quickLooksLeft -= 1;
       timer = setTimeout(() => void look(), quick ? WHILE_RUNNING : WHILE_IDLE);
     }

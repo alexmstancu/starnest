@@ -530,13 +530,15 @@ describe("what the sidebar reads again", () => {
 });
 
 describe("when the API fails", () => {
-  it("shows the error code beside the message, and offers a retry it can honour", async () => {
+  it("says the server did not answer, without the code, and offers a retry it can honour", async () => {
     mockServer.use(http.get("/v1/rankings", () => HttpResponse.error()));
     renderShell("/rank");
 
-    const alerts = await screen.findAllByRole("alert");
-    expect(alerts[0]).toHaveTextContent("client.unreachable");
-    expect(alerts[0]).toHaveTextContent(/backend did not answer/i);
+    // One card for the screen (P1-06), once the failed read has said why it failed.
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(/backend did not answer/i),
+    );
+    expect(screen.getByRole("alert")).not.toHaveTextContent("client.unreachable");
 
     // The sidebar says it once, quietly and without the code, and its own Try again re-reads.
     const counts = within(await screen.findByRole("region", { name: /candidates/i }));
@@ -563,8 +565,8 @@ describe("when the API fails", () => {
 
     // PL-009: said in words, never as the code and never as "no criteria sets".
     expect(
-      await screen.findByText(/criteria sets and levels could not be loaded/i),
-    ).toBeInTheDocument();
+      (await screen.findAllByText(/criteria sets and levels could not be loaded/i)).length,
+    ).toBeGreaterThan(0);
     expect(screen.queryByText("catalog_unavailable")).toBeNull();
     expect(screen.queryByText("No criteria sets")).toBeNull();
     expect(screen.getByRole("link", { name: "Compare" })).toBeInTheDocument();

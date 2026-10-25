@@ -95,26 +95,30 @@ describe("error handling", () => {
     expect((error as ApiError).details).toEqual({ locked: ["a"] });
   });
 
-  it("names a non-2xx body that is not the documented error shape", async () => {
-    mockServer.use(
-      http.get("/v1/levels", () => HttpResponse.json({ oops: true }, { status: 500 })),
-    );
+  /**
+   * **The status is read before the body is judged** (PL-002). A proxy answering for a backend
+   * that is not there -- Vite's empty 500, nginx's HTML 502 -- is "the server did not answer",
+   * never "an answer in a shape this interface does not recognise".
+   */
+  it.each([
+    ["a 502 page from a proxy", 502, "<html>Bad Gateway</html>", CLIENT_ERROR_CODES.unreachable],
+    ["an empty 503", 503, "", CLIENT_ERROR_CODES.unreachable],
+    ["an empty 504", 504, "", CLIENT_ERROR_CODES.unreachable],
+    ["Vite's empty 500 for a backend it cannot reach", 500, "", CLIENT_ERROR_CODES.unreachable],
+    ["a 500 in plain text", 500, "Internal Server Error", CLIENT_ERROR_CODES.serverFault],
+    ["a 500 not in the documented shape", 500, '{"oops":true}', CLIENT_ERROR_CODES.serverFault],
+    ["a 500 in the documented shape", 500, '{"code":"database_down","message":"x"}', "database_down"],
+    ["a 503 in the documented shape", 503, '{"code":"database_down","message":"x"}', "database_down"],
+    ["a 409 in the documented shape", 409, '{"code":"weights_all_locked","message":"x"}', "weights_all_locked"],
+    ["a 404 from the framework", 404, '{"detail":"Not Found"}', CLIENT_ERROR_CODES.malformedError],
+    ["a 400 that is not JSON", 400, "bad", CLIENT_ERROR_CODES.malformedError],
+  ])("classifies %s", async (_case, status, body, code) => {
+    mockServer.use(http.get("/v1/levels", () => new HttpResponse(body, { status })));
 
     const error = (await fetchLevels().catch((thrown: unknown) => thrown)) as ApiError;
 
-    expect(error.code).toBe(CLIENT_ERROR_CODES.malformedError);
-    expect(error.status).toBe(500);
-  });
-
-  it("names a non-2xx body that is not JSON at all", async () => {
-    mockServer.use(
-      http.get("/v1/levels", () => new HttpResponse("<html>gateway</html>", { status: 502 })),
-    );
-
-    const error = (await fetchLevels().catch((thrown: unknown) => thrown)) as ApiError;
-
-    expect(error.code).toBe(CLIENT_ERROR_CODES.malformedError);
-    expect(error.status).toBe(502);
+    expect(error.code).toBe(code);
+    expect(error.status).toBe(status);
   });
 
   it("names a 2xx body that is not JSON", async () => {

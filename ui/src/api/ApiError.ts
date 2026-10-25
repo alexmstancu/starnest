@@ -15,9 +15,14 @@ export type ErrorBody = components["schemas"]["Error"];
  * code, so `code` stays a single flat vocabulary a caller can switch on.
  */
 export const CLIENT_ERROR_CODES = {
-  /** The request never completed: the backend is down, or the network is gone. */
+  /**
+   * The server did not answer: the request never completed, or a proxy answered for a backend
+   * it could not reach (a 502, 503 or 504 not in the documented shape, or an empty 500).
+   */
   unreachable: "client.unreachable",
-  /** A non-2xx response whose body was not the documented error shape. */
+  /** The server answered a 5xx that is not the documented shape: it failed while answering. */
+  serverFault: "client.server_fault",
+  /** Any other non-2xx response whose body was not the documented error shape. */
   malformedError: "client.malformed_error_body",
   /** A 2xx response whose body was not JSON. */
   malformedBody: "client.malformed_response_body",
@@ -60,39 +65,52 @@ export function hasErrorCode(error: unknown, code: ErrorCode): boolean {
 }
 
 /**
- * Turns an unsuccessful response into an `ApiError`.
+ * Turns an unsuccessful response into an `ApiError` (PL-002).
  *
- * A backend that answers with something other than the documented shape is itself an error
- * worth naming, rather than one to paper over -- hence `client.malformed_error_body` instead
- * of a generic "something went wrong".
+ * **A body in the documented shape is the server's own word, whatever the status.** Otherwise
+ * the status decides, because what answered may not have been the backend at all: a proxy's
+ * 502, 503 or 504, and the empty 500 Vite's proxy sends for a backend it cannot reach, mean the
+ * server did not answer. Any other 5xx is the server failing while it answered, and only what
+ * is left -- a 4xx in a shape nobody documented -- is named as malformed.
  */
 export async function apiErrorFromResponse(response: Response): Promise<ApiError> {
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
+  const text = await response.text().catch(() => "");
+  const body = parsed(text);
+  const status = response.status;
+
+  if (isErrorBody(body)) {
+    return new ApiError({ code: body.code, message: body.message, status, details: body.details });
+  }
+  if (PROXY_STATUSES.has(status) || (status === 500 && text.trim() === "")) {
     return new ApiError({
-      code: CLIENT_ERROR_CODES.malformedError,
-      message: `The API answered HTTP ${response.status} with a body that is not JSON.`,
-      status: response.status,
+      code: CLIENT_ERROR_CODES.unreachable,
+      message: `HTTP ${status} came from something answering for the API, not from the API.`,
+      status,
     });
   }
-
-  if (!isErrorBody(body)) {
+  if (status >= 500) {
     return new ApiError({
-      code: CLIENT_ERROR_CODES.malformedError,
-      message: `The API answered HTTP ${response.status} without a code and message.`,
-      status: response.status,
-      details: { body },
+      code: CLIENT_ERROR_CODES.serverFault,
+      message: `The API answered HTTP ${status} without a code and message.`,
+      status,
     });
   }
-
   return new ApiError({
-    code: body.code,
-    message: body.message,
-    status: response.status,
-    details: body.details,
+    code: CLIENT_ERROR_CODES.malformedError,
+    message: `The API answered HTTP ${status} without a code and message.`,
+    status,
+    details: body === undefined ? undefined : { body },
   });
+}
+
+const PROXY_STATUSES = new Set([502, 503, 504]);
+
+function parsed(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
 }
 
 function isErrorBody(body: unknown): body is ErrorBody {

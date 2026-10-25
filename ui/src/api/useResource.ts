@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { isUnreachable, whenAnswered } from "./reachability";
 
 /**
  * One GET, with its loading, error and reload states.
@@ -73,6 +74,14 @@ export function useResource<Data>(
   }, [fetcher, enabled, attempt, freshness]);
 
   const reload = useCallback(() => setAttempt((previous) => previous + 1), []);
+
+  // **The server did not answer: ask again, once, when it next answers anything** (PL-002).
+  const unanswered = resource.status === "error" && isUnreachable(resource.error) ? resource.error : null;
+  // Before paint, so the region's own full card never flashes before the screen's (P1-06).
+  useLayoutEffect(() => {
+    if (unanswered === null) return;
+    return whenAnswered(reload);
+  }, [unanswered, reload]);
 
   return { resource, reload };
 }

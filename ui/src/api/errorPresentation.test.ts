@@ -43,6 +43,31 @@ describe("presentError", () => {
     expect(presentError(unreachable).retryable).toBe(true);
   });
 
+  it("offers a retry when the server failed while answering, without its words", () => {
+    const fault = new ApiError({
+      code: CLIENT_ERROR_CODES.serverFault,
+      message: "The API answered HTTP 500 without a code and message.",
+      status: 500,
+    });
+
+    expect(presentError(fault)).toEqual({
+      code: CLIENT_ERROR_CODES.serverFault,
+      message: "The server failed while answering.",
+      retryable: true,
+    });
+  });
+
+  it("does not say the server is down when it answered in a shape nobody documented", () => {
+    const malformed = new ApiError({
+      code: CLIENT_ERROR_CODES.malformedError,
+      message: "The API answered HTTP 404 without a code and message.",
+      status: 404,
+    });
+
+    expect(presentError(malformed).retryable).toBe(false);
+    expect(presentError(malformed).message).not.toMatch(/did not answer/);
+  });
+
   it("does not offer a retry for a malformed response", () => {
     const malformed = new ApiError({
       code: CLIENT_ERROR_CODES.malformedBody,

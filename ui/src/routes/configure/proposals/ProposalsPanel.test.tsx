@@ -1030,9 +1030,7 @@ describe("a research pass after an earlier one", () => {
         }),
     );
 
-    expect(
-      await screen.findByText(/in a shape this interface does not recognise/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/backend did not answer/i)).toBeInTheDocument();
     expect(screen.queryByText(ALL_ASKED)).toBeNull();
     await passSays(NOT_KNOWN);
   });

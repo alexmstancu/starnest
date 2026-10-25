@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { isUnreachable, whenAnswered } from "./reachability";
 import type { Idle, Read } from "./read";
 
 /**
@@ -99,7 +100,26 @@ export function useRead<T>(
     [],
   );
 
+  // **The server did not answer: read again, once, when it next answers anything** (PL-002).
+  const unanswered = unansweredError(read);
+  // Before paint, so the region's own full card never flashes before the screen's (P1-06).
+  useLayoutEffect(() => {
+    if (unanswered === null) return;
+    return whenAnswered(() => void reload());
+  }, [unanswered, reload]);
+
   return { read, reload };
+}
+
+/** The failure, first or on refresh, if it was the server not answering. */
+function unansweredError(read: Read<unknown> | Idle): unknown {
+  const error =
+    read.state === "failed"
+      ? read.error
+      : read.state === "ready" && typeof read.refresh === "object"
+        ? read.refresh.failed
+        : null;
+  return isUnreachable(error) ? error : null;
 }
 
 /** Settles every reload waiting on a read begun before `request` began. */

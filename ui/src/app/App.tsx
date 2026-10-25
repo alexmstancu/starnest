@@ -7,6 +7,7 @@ import { RankScreen } from "../routes/rank/RankScreen";
 import { RunScreen } from "../routes/run/RunScreen";
 import { Sidebar } from "../shell/Sidebar";
 import { AcquiringBar } from "../shell/AcquiringBar";
+import { ServerDownCard } from "../shell/ServerDownCard";
 import { TabBar } from "../shell/TabBar";
 import { SelectionProvider } from "../shell/SelectionContext";
 import {
@@ -49,6 +50,7 @@ export function App() {
               and the reason to start one is usually to go and look at something else. */}
           <AcquiringBar />
           <div className="content">
+            <ServerDownCard />
             <Routes>
               <Route
                 path="/"

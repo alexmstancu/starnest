@@ -224,9 +224,12 @@ describe("saved rankings", () => {
     renderShell("/rank");
 
     // The sidebar's card says it in words, quietly (N4), and never prints the code.
+    // Read again as the rest of the page is answered (PL-002), so asked of the settled page.
     const list = within(await savedList());
-    expect(await list.findByText(/saved rankings could not be loaded/i)).toBeInTheDocument();
-    expect(list.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(list.getByText(/saved rankings could not be loaded/i)).toBeInTheDocument();
+      expect(list.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+    });
     expect(list.queryByText("client.unreachable")).toBeNull();
   });
 });

@@ -14,6 +14,7 @@
 
 import { ApiError, CLIENT_ERROR_CODES, apiErrorFromResponse } from "./ApiError";
 import type { paths } from "./schema";
+import { isUnreachable, noteAnswered } from "./reachability";
 import { noteAnsweredWrite } from "./setWrites";
 
 /** Matches the `/v1` prefix that nginx and the Vite dev server both proxy. */
@@ -342,7 +343,12 @@ async function request<Result>(
     });
   }
 
-  if (!response.ok) throw await apiErrorFromResponse(response);
+  if (!response.ok) {
+    const error = await apiErrorFromResponse(response);
+    if (!isUnreachable(error)) noteAnswered();
+    throw error;
+  }
+  noteAnswered();
 
   if (response.status === 204) return undefined as Result;
 

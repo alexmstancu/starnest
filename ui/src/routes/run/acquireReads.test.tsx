@@ -176,7 +176,7 @@ describe.each(READS)("Acquire while $what is read", (read) => {
   });
 
   it("says each region could not be loaded when it failed", async () => {
-    answerWith(read.path, () => new HttpResponse(null, { status: 500 }));
+    answerWith(read.path, () => new HttpResponse("Internal Server Error", { status: 500 }));
     renderShell("/acquire");
 
     for (const owner of read.owners) {

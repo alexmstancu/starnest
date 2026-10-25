@@ -7,6 +7,7 @@ import {
 } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
 import type { RouteDefinition } from "../../navigation/routes";
+import { NothingSelected } from "../../shell/NothingSelected";
 import { UnsetSetting } from "../../shell/UnsetSetting";
 import { AttributeDrillDown } from "./AttributeDrillDown";
 import { CandidateDetail } from "./CandidateDetail";
@@ -156,11 +157,7 @@ function TheRanking({
         </div>
       </header>
 
-      {resource.status === "idle" && (
-        <p className="screen__note">
-          Choose a criteria set and a level to see the ranking.
-        </p>
-      )}
+      {resource.status === "idle" && <NothingSelected toSee="to see the ranking" />}
       {resource.status === "loading" && (
         <p className="screen__note">Loading…</p>
       )}

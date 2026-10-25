@@ -1,6 +1,8 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { useCallback } from "react";
 import { describe, expect, it } from "vitest";
+import { ApiError, CLIENT_ERROR_CODES } from "./ApiError";
+import { hasFailedReads, noteAnswered } from "./reachability";
 import { useResource } from "./useResource";
 
 /**
@@ -313,5 +315,39 @@ describe("the two switches a caller holds", () => {
     rerender({ freshness: 7 });
 
     expect(asked).toBe(1);
+  });
+});
+
+describe("a request the server did not answer (PL-002, D3)", () => {
+  it("is asked again, unasked, once anything is answered, and forgotten when unmounted", async () => {
+    let calls = 0;
+    const unreachable = new ApiError({ code: CLIENT_ERROR_CODES.unreachable, message: "" });
+    const { result, unmount } = renderHook(() => {
+      const fetcher = useCallback(() => {
+        calls += 1;
+        return calls === 1 ? Promise.reject(unreachable) : Promise.resolve("figures");
+      }, []);
+      return useResource(fetcher);
+    });
+    await waitFor(() => expect(result.current.resource.status).toBe("error"));
+    expect(hasFailedReads()).toBe(true);
+
+    act(() => noteAnswered());
+
+    await waitFor(() => expect(result.current.resource.data).toBe("figures"));
+    unmount();
+    expect(calls).toBe(2);
+  });
+
+  it("stops waiting when unmounted", async () => {
+    const unreachable = new ApiError({ code: CLIENT_ERROR_CODES.unreachable, message: "" });
+    const { result, unmount } = renderHook(() =>
+      useResource(useCallback(() => Promise.reject(unreachable), [])),
+    );
+    await waitFor(() => expect(result.current.resource.status).toBe("error"));
+
+    unmount();
+
+    expect(hasFailedReads()).toBe(false);
   });
 });

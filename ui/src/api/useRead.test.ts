@@ -1,6 +1,8 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { StrictMode, useCallback } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError, CLIENT_ERROR_CODES } from "./ApiError";
+import { hasFailedReads, noteAnswered } from "./reachability";
 import type { Idle, Read } from "./read";
 import { useRead } from "./useRead";
 
@@ -369,5 +371,55 @@ describe("letting go", () => {
 
     rerender({ enabled: true });
     expect(result.current.read).toEqual({ state: "pending" });
+  });
+});
+
+describe("a read the server did not answer (PL-002, D3)", () => {
+  const UNREACHABLE = new ApiError({ code: CLIENT_ERROR_CODES.unreachable, message: "" });
+
+  it("is read again, unasked, once anything is answered", async () => {
+    const requests = requestQueue(2);
+    const { result } = renderOn(requests);
+    await act(async () => requests.request(0).fail(UNREACHABLE));
+    expect(hasFailedReads()).toBe(true);
+
+    act(() => noteAnswered());
+    await act(async () => requests.request(1).settle("figures"));
+
+    expect(dataOf(result.current.read)).toBe("figures");
+    expect(hasFailedReads()).toBe(false);
+  });
+
+  it("is read again when only its refresh failed, keeping the figures meanwhile", async () => {
+    const requests = requestQueue(3);
+    const { result } = renderOn(requests);
+    await act(async () => requests.request(0).settle("figures"));
+    act(() => void result.current.reload());
+    await act(async () => requests.request(1).fail(UNREACHABLE));
+
+    act(() => noteAnswered());
+
+    expect(result.current.read).toMatchObject({ data: "figures", refresh: "running" });
+    await act(async () => requests.request(2).settle("new figures"));
+    expect(dataOf(result.current.read)).toBe("new figures");
+  });
+
+  it("waits for nothing when it failed for another reason", async () => {
+    const requests = requestQueue(1);
+    renderOn(requests);
+
+    await act(async () => requests.request(0).fail(BOOM));
+
+    expect(hasFailedReads()).toBe(false);
+  });
+
+  it("stops waiting when unmounted, so no stale read fires", async () => {
+    const requests = requestQueue(1);
+    const { unmount } = renderOn(requests);
+    await act(async () => requests.request(0).fail(UNREACHABLE));
+
+    unmount();
+
+    expect(hasFailedReads()).toBe(false);
   });
 });

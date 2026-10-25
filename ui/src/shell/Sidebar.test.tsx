@@ -99,7 +99,9 @@ describe("PL-008: the household card tells not recorded from not read", () => {
   });
 
   it("reports a failure it cannot read as a failure, with Try again", async () => {
-    mockServer.use(http.get(`${BASE}/household`, () => new HttpResponse(null, { status: 500 })));
+    mockServer.use(
+      http.get(`${BASE}/household`, () => new HttpResponse("Internal Server Error", { status: 500 })),
+    );
     renderShell("/acquire");
 
     const household = within(

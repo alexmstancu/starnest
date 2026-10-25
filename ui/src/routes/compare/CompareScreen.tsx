@@ -19,6 +19,7 @@ import { useResource } from "../../api/useResource";
 import { usePillarNames } from "../../api/usePillarNames";
 import type { RouteDefinition } from "../../navigation/routes";
 import { deltaTone, formatSigned, pillarName } from "../../format/display";
+import { NothingSelected } from "../../shell/NothingSelected";
 import { UnsetSetting } from "../../shell/UnsetSetting";
 import { useSelection } from "../../shell/SelectionContext";
 
@@ -137,9 +138,7 @@ function TheComparison({
   return (
     <>
       {criteriaSetId === null || levelId === null ? (
-        <p className="screen__note">
-          Choose a criteria set and a level to compare candidates.
-        </p>
+        <NothingSelected toSee="to compare candidates" />
       ) : (
         <ComparisonPicker
           roster={roster}

@@ -12,12 +12,15 @@ import { useAcquiring } from "./useAcquiring";
 const BASE = "/v1";
 const RUN = { id: 42, triggered_by: "user", started_at: "2026-09-21T09:00:00Z", cost_eur: 0 };
 
-function runsAre(status: "running" | "completed" | "failing"): { looks: number } {
+function runsAre(
+  status: "running" | "completed" | "failing" | "unanswered",
+): { looks: number } {
   const counter = { looks: 0 };
   mockServer.use(
     http.get(`${BASE}/data-acquisition-runs`, () => {
       counter.looks += 1;
-      if (status === "failing") return new HttpResponse(null, { status: 500 });
+      if (status === "failing") return new HttpResponse("Internal Server Error", { status: 500 });
+      if (status === "unanswered") return HttpResponse.error();
       return HttpResponse.json({ items: [{ ...RUN, run_status: status }], total: 1 });
     }),
     http.get(`${BASE}/data-acquisition-runs/:runId`, () =>
@@ -106,6 +109,16 @@ describe("how often the shell looks at the runs", () => {
     await wait(2_500);
     expect(runs.looks).toBe(1);
     await wait(28_000);
+    expect(runs.looks).toBe(2);
+  });
+
+  it("looks every 2 seconds while the server does not answer, to see it come back (PL-002)", async () => {
+    const runs = runsAre("unanswered");
+    renderHook(() => useAcquiring(() => {}, 0));
+    await wait(0);
+    expect(runs.looks).toBe(1);
+
+    await wait(2_100);
     expect(runs.looks).toBe(2);
   });
 

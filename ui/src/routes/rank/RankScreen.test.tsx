@@ -402,13 +402,15 @@ describe("a candidate with insufficient data", () => {
 });
 
 describe("when the ranking cannot be shown", () => {
-  it("reports the failure with its code, and retries when asked", async () => {
+  it("says the server did not answer, without its code, and retries when asked", async () => {
     mockServer.use(http.get("/v1/rankings", () => HttpResponse.error()));
     renderShell("/rank");
 
-    const rank = within(await screen.findByRole("region", { name: "Rank" }));
-    const alert = await rank.findByRole("alert");
-    expect(alert).toHaveTextContent("client.unreachable");
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("The ranking could not be loaded"),
+    );
+    const alert = screen.getByRole("alert");
+    expect(alert).not.toHaveTextContent("client.unreachable");
 
     mockServer.resetHandlers();
     await userEvent
