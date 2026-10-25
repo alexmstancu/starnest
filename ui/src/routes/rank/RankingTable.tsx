@@ -749,6 +749,15 @@ function ReasonCell({ result, names }: { result: CandidateResult; names: RuleNam
           {decidedByCitizenship(reason)
             ? citizenshipVerdict(reason, names)
             : reason.reason_detail}
+          {/* `reqs.md` 8.4: which rule was not met, "and any override marker" (PL-154). */}
+          {reason.gate_answer?.override_reason != null && (
+            <span
+              className="chip chip--override"
+              title={`Overridden: ${reason.gate_answer.override_reason}`}
+            >
+              overridden by hand
+            </span>
+          )}
         </p>
       ))}
       {result.insufficient_reason ? (

@@ -54,6 +54,7 @@ import {
 } from "./attributeScores";
 import { howScored } from "./howScored";
 import { groupedByIndex, isEarlierEdition } from "./outsideEditions";
+import { CandidateGatesPanel } from "./CandidateGatesPanel";
 
 /**
  * One candidate's evidence: every stored value, and the outside indices beside them.
@@ -226,6 +227,8 @@ export function CandidateDetail({
           />
         )}
       </LoadedRegion>
+
+      <CandidateGatesPanel candidate={candidate} name={name} sources={sourceNames} />
 
       <h3 className="panel__heading">Outside opinions</h3>
       <p className="panel__hint">

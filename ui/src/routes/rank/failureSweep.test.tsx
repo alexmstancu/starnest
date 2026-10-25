@@ -46,6 +46,7 @@ const READS: Record<string, SweptRead> = {
   "GET /external-scores": {
     matches: (url) => url.pathname.startsWith("/v1/external-scores"),
   },
+  "GET /match-rule-results": { matches: path("/v1/match-rule-results") },
   "GET /criteria-sets/{id}": { matches: path("/v1/criteria-sets/default") },
   "GET /attributes?level": {
     matches: (url) => url.pathname === "/v1/attributes" && url.searchParams.has("level"),
@@ -76,6 +77,7 @@ const NAME_READS: readonly ((url: URL) => boolean)[] = [
   path("/v1/pillars"),
   (url) => url.pathname === "/v1/attributes" && !url.searchParams.has("level"),
   path("/v1/data-sources"),
+  path("/v1/match-rules"),
 ];
 
 /** Sentences that are only true of a read that succeeded, and so are never drawn otherwise. */
@@ -86,6 +88,7 @@ const NEVER_INFERRED = [
   "No figure has been stored",
   "has a value in use",
   "No outside index has been stored",
+  "No gate has been answered",
   "No candidate has a figure for this attribute",
   "Kept without a note",
   "No figure was scored for this candidate",

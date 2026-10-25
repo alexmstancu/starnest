@@ -5168,3 +5168,11 @@ select.field__control {
 .table__row--history {
   color: var(--colour-text-muted);
 }
+
+/* A gate answer a person overrode, marked beside the reason it gave (PL-154). */
+.chip--override {
+  margin-left: var(--space-half);
+  border-color: var(--colour-warning-border);
+  background: var(--colour-warning-surface);
+  color: var(--colour-warning-deep);
+}
