@@ -1,5 +1,5 @@
 import type { Attribute, Candidate, RunPair } from "../../api/endpoints";
-import { formatCount, pillarName } from "../../format/display";
+import { pillarName } from "../../format/display";
 
 /**
  * What a picker acquires (PL-125, `reqs.md` 5.6): one candidate across every attribute, one
@@ -61,8 +61,3 @@ export function pairsPicked(kind: PickKind, picked: string, catalog: PickCatalog
   );
 }
 
-/** The picker's action, naming how many items its estimate covers. */
-export function pickedLabel(pairs: number): string {
-  if (pairs === 0) return "Estimate";
-  return `Estimate ${formatCount(pairs)} ${pairs === 1 ? "item" : "items"}`;
-}

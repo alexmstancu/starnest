@@ -134,29 +134,79 @@ function nothingToFetch(reason: string, more: Record<string, unknown> = {}): Res
 }
 
 /**
- * The refusal a scope with nothing to ask meets, in the server's order: an empty scope first,
- * then no source to ask. **Still fresh is not modelled**: the mock keeps no retrieval dates to
- * judge freshness by, so a test that needs that refusal serves it.
+ * The sources that would answer one attribute in a scope naming it, as `settle_scope` asks: the
+ * switched-on sources that declare it. **A source the mock's list does not hold counts as a
+ * structured source switched on** -- the list is shorter than the server's catalog (OECD) --
+ * and so does every asked source for an attribute the mock's catalog does not list.
+ */
+function answerersOf(attribute: string, asked: readonly DataSource[]): string[] {
+  const declared = ATTRIBUTES.find((each) => each.id === attribute)?.answerable_by;
+  if (declared === undefined) return asked.map((source) => source.id);
+  return declared.filter((id) => {
+    const listed = dataSources.find((source) => source.id === id);
+    return listed === undefined || asked.includes(listed);
+  });
+}
+
+/** Exact pairs settled as the server settles them: a pair no asked source declares is dropped. */
+function settledPairs(scope: ScopeAsked): { pair: string; answerers: string[] }[] {
+  const asked = sourcesAsked(scope);
+  const pairs = new Map<string, string>();
+  for (const { candidate, attribute } of scope.pairs ?? []) pairs.set(`${candidate}|${attribute}`, attribute);
+  return [...pairs].flatMap(([pair, attribute]) => {
+    const answerers = answerersOf(attribute, asked);
+    return answerers.length === 0 ? [] : [{ pair, answerers }];
+  });
+}
+
+/**
+ * The refusal a scope with nothing to ask meets, in the server's order: an empty scope, then no
+ * source to ask, then nothing the sources on can answer. **Still fresh is not modelled**: the
+ * mock keeps no retrieval dates to judge freshness by, so a test that needs that refusal serves it.
  */
 function nothingToFetchIn(scope: ScopeAsked): Response | null {
   if (scope.pairs?.length === 0 || scope.candidates?.length === 0 || scope.attributes?.length === 0) {
     return nothingToFetch("empty_scope");
   }
-  if (sourcesAsked(scope).length === 0) return nothingToFetch("no_source_switched_on");
-  return null;
+  if (scope.pairs == null) {
+    return sourcesAsked(scope).length === 0 ? nothingToFetch("no_source_switched_on") : null;
+  }
+  if (settledPairs(scope).length > 0) return null;
+  const unlisted = scope.pairs.some(({ attribute }) =>
+    (ATTRIBUTES.find((each) => each.id === attribute)?.answerable_by ?? []).some(
+      (id) => !dataSources.some((source) => source.id === id),
+    ),
+  );
+  if (sourcesAsked(scope).length === 0 && !unlisted) return nothingToFetch("no_source_switched_on");
+  return nothingToFetch("nothing_answerable", {
+    candidates: new Set(scope.pairs.map((pair) => pair.candidate)).size,
+    attributes: new Set(scope.pairs.map((pair) => pair.attribute)).size,
+  });
 }
 
 /** What the paid fixture prices one call at, so a mock plan's ceiling derives from it. */
 const EUR_PER_PAID_CALL = PAID_RUN_PLAN.estimated_cost_eur / PAID_RUN_PLAN.llm_call_count;
 
 /**
- * The estimate of a scope. **Exact pairs are counted**, one item each, asked of every source the
- * run would ask; a rectangle or the whole level is the shipped plan.
+ * The estimate of a scope. **Exact pairs are settled first**: each is counted once, and asked
+ * only of the sources that declare its attribute; a rectangle or the whole level is the shipped
+ * plan.
  */
 function planOf(scope: ScopeAsked): components["schemas"]["RunPlan"] {
   if (scope.pairs == null) return RUN_PLAN;
-  const items = new Set(scope.pairs.map((pair) => `${pair.candidate}|${pair.attribute}`)).size;
-  return planOver(items, sourcesAsked(scope));
+  const settled = settledPairs(scope);
+  const perSource = new Map<string, number>();
+  for (const { answerers } of settled) {
+    for (const id of answerers) perSource.set(id, (perSource.get(id) ?? 0) + 1);
+  }
+  const paidCalls = perSource.get("llm") ?? 0;
+  return {
+    items_total: settled.length,
+    llm_call_count: paidCalls,
+    estimated_cost_eur: paidCalls * EUR_PER_PAID_CALL,
+    by_source: [...perSource].map(([data_source, items]) => ({ data_source, items })),
+    ...(paidCalls > 0 ? { estimate_basis: PAID_RUN_PLAN.estimate_basis } : {}),
+  };
 }
 
 function planOver(items: number, sources: readonly DataSource[]): components["schemas"]["RunPlan"] {

@@ -214,7 +214,7 @@ describe("an estimate with nothing to ask", () => {
     await everySourceOff();
     serveGaps({
       not_reached: [
-        { candidate: "country.spain", attribute: "country.total_tax_rate_effective", data_acquisition_run: null },
+        { candidate: "country.spain", attribute: "country.cost_of_living_index", data_acquisition_run: null },
       ],
     });
     renderShell("/acquire");
@@ -1372,6 +1372,7 @@ describe("re-asking about part of a run", () => {
         { ...malta, data_acquisition_run: 6, failures: [{ data_source: "eurostat", error_message: "late" }] },
       ],
     });
+    serveSourceNames({ oecd: "OECD", eurostat: "Eurostat" });
     renderShell("/acquire");
     const sent = recordPlans();
 
@@ -1380,7 +1381,8 @@ describe("re-asking about part of a run", () => {
     const strip = await screen.findByRole("alert");
     expect(sent.scoped).toEqual([{ level: "country", pairs: [TAX_PAIR, malta] }]);
     expect(sent.retries).toEqual([]);
-    expect(strip).toHaveTextContent("It asks Eurostat about 2 items.");
+    // Each pair asked only of the sources declaring its attribute, as the server settles it.
+    expect(strip).toHaveTextContent("It asks OECD about 1 item and Eurostat about 1 item.");
   });
 
   it("says a selection the run does not hold was not retried, and offers only Dismiss", async () => {
@@ -1517,16 +1519,20 @@ describe("acquiring one candidate, attribute or pillar", () => {
   it("estimates one candidate over every attribute, and starts nothing until agreed", async () => {
     const planned = recordScopedPlans();
     const started = recordStartsOf();
+    serveSourceNames({ oecd: "OECD", eurostat: "Eurostat" });
     await pick("One candidate", "Spain");
     const pairs = COUNTRY_ATTRIBUTES.map((attribute) => ({ candidate: "country.spain", attribute: attribute.id }));
 
-    await userEvent.click(thePicker().getByRole("button", { name: `Estimate ${pairs.length} items` }));
+    // **No count of the client's own on the button** (review): the server settles the scope,
+    // dropping what no source on declares, and its count is the one shown.
+    await userEvent.click(thePicker().getByRole("button", { name: "Estimate" }));
 
     const strip = await thePicker().findByRole("alert");
     expect(planned).toEqual([{ level: "country", pairs }]);
     expect(started).toEqual([]);
-    expect(strip).toHaveTextContent(`over ${pairs.length} values`);
-    expect(strip).toHaveTextContent(/It asks Eurostat about/);
+    expect(strip).toHaveTextContent("over 2 values");
+    expect(thePicker().getByText("Items").nextElementSibling).toHaveTextContent("2");
+    expect(strip).toHaveTextContent("It asks OECD about 1 item and Eurostat about 1 item.");
 
     await userEvent.click(within(strip).getByRole("button", { name: /yes, start it/i }));
 
@@ -1537,7 +1543,7 @@ describe("acquiring one candidate, attribute or pillar", () => {
     const planned = recordScopedPlans();
     await pick("One attribute", "Total effective tax rate");
 
-    await userEvent.click(thePicker().getByRole("button", { name: /^Estimate \d+ items?$/ }));
+    await userEvent.click(thePicker().getByRole("button", { name: "Estimate" }));
 
     await thePicker().findByRole("alert");
     expect(planned).toEqual([
@@ -1556,7 +1562,7 @@ describe("acquiring one candidate, attribute or pillar", () => {
     await pick("One pillar", "Economy");
     const economics = COUNTRY_ATTRIBUTES.filter((attribute) => attribute.pillar === "economics");
 
-    await userEvent.click(thePicker().getByRole("button", { name: /^Estimate \d+ items?$/ }));
+    await userEvent.click(thePicker().getByRole("button", { name: "Estimate" }));
 
     await thePicker().findByRole("alert");
     expect(planned).toEqual([
@@ -1588,7 +1594,7 @@ describe("acquiring one candidate, attribute or pillar", () => {
   ])("is disarmed when the pick changes: %s", async (_, field, choice) => {
     const started = recordStartsOf();
     await pick("One candidate", "Spain");
-    await userEvent.click(thePicker().getByRole("button", { name: /^Estimate \d+ items?$/ }));
+    await userEvent.click(thePicker().getByRole("button", { name: "Estimate" }));
     await thePicker().findByRole("alert");
 
     await userEvent.selectOptions(thePicker().getByRole("combobox", { name: field }), choice);
@@ -1597,11 +1603,22 @@ describe("acquiring one candidate, attribute or pillar", () => {
     expect(started).toEqual([]);
   });
 
+  it("is refused at the estimate when no source on declares what was picked", async () => {
+    await pick("One attribute", "Nobody measures this");
+
+    await userEvent.click(thePicker().getByRole("button", { name: "Estimate" }));
+
+    expect(
+      await screen.findByText(/no switched-on source can answer anything in it/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();
+  });
+
   it("is refused at the estimate with every source switched off", async () => {
     for (const source of ["eurostat", "llm"]) await updateDataSource(source, { is_enabled: false });
-    await pick("One candidate", "Spain");
+    await pick("One attribute", "Cost of living index");
 
-    await userEvent.click(thePicker().getByRole("button", { name: /^Estimate \d+ items?$/ }));
+    await userEvent.click(thePicker().getByRole("button", { name: "Estimate" }));
 
     expect(await screen.findByText(/every data source it may ask is switched off/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();

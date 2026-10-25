@@ -1,7 +1,7 @@
 import { useId } from "react";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { HeldButton } from "../../shell/HeldButton";
-import { type PickKind, pickedLabel } from "./scopePicker";
+import type { PickKind } from "./scopePicker";
 import type { ScopePickerState } from "./useScopePicker";
 
 const KINDS: { value: PickKind; label: string }[] = [
@@ -79,7 +79,8 @@ export function ScopePickerPanel({
         disabled={picker.pairs.length === 0}
         onClick={onEstimate}
       >
-        {pickedLabel(picker.pairs.length)}
+        {/* No count here: the server settles the pick, and its count is shown once it answers. */}
+        Estimate
       </HeldButton>
     </div>
   );

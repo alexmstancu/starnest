@@ -992,6 +992,39 @@ describe("the mock's estimate with nothing to ask", () => {
   });
 });
 
+/** Review: exact pairs are settled as the server settles them, never counted as sent. */
+describe("the mock's settling of exact pairs", () => {
+  const SPAIN = "country.spain";
+
+  it("drops a pair no switched-on source declares, and asks each pair only of its own sources", async () => {
+    const plan = await planRun({
+      level: "country",
+      pairs: [
+        { candidate: SPAIN, attribute: "country.cost_of_living_index" },
+        { candidate: SPAIN, attribute: "country.nobody_measures_this" },
+      ],
+    });
+
+    expect([plan.items_total, plan.by_source]).toEqual([1, [{ data_source: "eurostat", items: 1 }]]);
+  });
+
+  it("refuses pairs nothing on can answer as nothing answerable, with the counts", async () => {
+    const error = (await planRun({
+      level: "country",
+      pairs: [
+        { candidate: SPAIN, attribute: "country.nobody_measures_this" },
+        { candidate: "country.portugal", attribute: "country.nobody_measures_this" },
+      ],
+    }).catch((thrown: unknown) => thrown)) as ApiError;
+
+    expect([error.status, error.code, error.details]).toEqual([
+      409,
+      "nothing_to_fetch",
+      { reason: "nothing_answerable", candidates: 2, attributes: 1 },
+    ]);
+  });
+});
+
 /** PL-124. A retry and its estimate go back alike, refusing in the server's order. */
 describe("the mock's retry of exact pairs", () => {
   const TAX = { candidate: "country.liechtenstein", attribute: "country.total_tax_rate_effective" };

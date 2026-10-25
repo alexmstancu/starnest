@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { optionsFor, pairsPicked, pickedLabel } from "./scopePicker";
+import { optionsFor, pairsPicked } from "./scopePicker";
 
 describe("what a picker acquires (PL-125)", () => {
   const CATALOG = {
@@ -41,7 +41,5 @@ describe("what a picker acquires (PL-125)", () => {
 
   it("asks nothing, never the whole level, while nothing is picked", () => {
     expect(pairsPicked("attribute", "", CATALOG)).toEqual([]);
-    expect(pickedLabel(0)).toBe("Estimate");
-    expect(pickedLabel(1)).toBe("Estimate 1 item");
   });
 });
