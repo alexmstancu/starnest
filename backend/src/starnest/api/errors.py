@@ -273,12 +273,10 @@ def _details_of(error: Exception) -> dict[str, Any] | None:
     """What the refusal is about, in fields a client can word without parsing the sentence.
 
     One convention for any domain error: an optional `details` mapping, passed through as it is
-    (PL-006, PL-007). `WeightsAllLockedError` predates it and carries the locks in the way, which
-    the screen names (`reqs.md` 5.2). A message a user cannot act on is barely better than none.
+    (PL-006, PL-007), which `WeightsAllLockedError` follows too -- its reason and the locks in
+    the way, which the screen names (`reqs.md` 5.2, PL-112). A message a user cannot act on is
+    barely better than none.
     """
-    locked = getattr(error, "locked", None)
-    if locked:
-        return {"locked": [str(attribute) for attribute in locked]}
     details = getattr(error, "details", None)
     if isinstance(details, Mapping) and details:
         return dict(details)

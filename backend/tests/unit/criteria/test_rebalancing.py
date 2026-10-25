@@ -97,6 +97,7 @@ def test_it_refuses_when_every_other_weight_is_locked() -> None:
     assert refused.value.locked == ("b", "c")
     assert "b, c" in str(refused.value)
     assert "unlock" in str(refused.value).lower()
+    assert refused.value.details == {"reason": "others_all_locked", "locked": ["b", "c"]}
 
 
 def test_moving_a_weight_that_is_itself_locked_is_refused() -> None:
@@ -110,6 +111,7 @@ def test_moving_a_weight_that_is_itself_locked_is_refused() -> None:
 
     assert refused.value.locked == ("a",), "the lock in the way is the one on the moved weight"
     assert "itself locked" in str(refused.value)
+    assert refused.value.details == {"reason": "moved_is_locked", "locked": ["a"]}
 
 
 def test_it_refuses_when_the_locks_leave_no_room() -> None:
@@ -130,6 +132,13 @@ def test_it_refuses_when_the_locks_leave_no_room() -> None:
     assert refused.value.locked == ("b",)
     assert "every other weight" not in str(refused.value)
     assert "b" in str(refused.value) and "80" in str(refused.value)
+    # What the screen needs to say "the locks hold 80, so ask for at most 20".
+    assert refused.value.details == {
+        "reason": "locks_leave_no_room",
+        "locked": ["b"],
+        "held": 80.0,
+        "at_most": 20.0,
+    }
 
 
 def test_a_single_weight_pillar_cannot_be_rebalanced() -> None:
@@ -144,6 +153,8 @@ def test_a_single_weight_pillar_cannot_be_rebalanced() -> None:
     assert refused.value.locked == ()
     assert "only weight in the pillar" in str(refused.value)
     assert "unlock" not in str(refused.value).lower()
+    # No lock to name, but still a reason: without one the screen could only guess.
+    assert refused.value.details == {"reason": "only_weight", "locked": []}
 
 
 @pytest.mark.parametrize("weight", ["-1", "101", "1000"])

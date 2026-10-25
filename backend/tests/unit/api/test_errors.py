@@ -31,7 +31,7 @@ from starnest.api.errors import (
     request_validation_handler,
 )
 from starnest.candidates import MalformedIdentifierError
-from starnest.criteria import ScaleAnchor, ThresholdShapeError
+from starnest.criteria import ScaleAnchor, ThresholdShapeError, WeightedItem, rebalance
 from starnest.data import InvalidReferencePeriodError, ReferencePeriod
 from starnest.evaluation import RankingError
 from starnest.household import Household, HouseholdPlaceError
@@ -155,6 +155,26 @@ class TestTheDetailsARefusalCarries:
         response = await domain_error_handler(A_REQUEST, RankingError("nothing to rank"))
 
         assert "details" not in json.loads(bytes(response.body))
+
+    async def test_a_weight_with_nothing_to_absorb_it_says_why_though_no_lock_is_named(
+        self,
+    ) -> None:
+        """PL-112: a pillar of one has no lock in the way, so its refusal used to carry no
+        `details` at all, and the screen could only guess -- wrongly -- that a lock was to blame."""
+        with pytest.raises(ValueError) as refused:
+            rebalance(
+                [WeightedItem("only", Decimal(100), locked=False)],
+                moved="only",
+                to=Decimal(60),
+            )
+
+        response = await domain_error_handler(A_REQUEST, refused.value)
+
+        assert response.status_code == 409
+        assert json.loads(bytes(response.body))["details"] == {
+            "reason": "only_weight",
+            "locked": [],
+        }
 
 
 def _paging(page: int = 1, page_size: Annotated[int, Query(alias="page-size")] = 10) -> int:

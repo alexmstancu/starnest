@@ -28,13 +28,28 @@ class WeightsAllLockedError(ValueError):
     sent looking for something that is not there (`reqs.md` 3.4).
 
     One type for all of them, because `openapi.yaml` surfaces every one as
-    `409 weights_all_locked` and the remedy is always to unlock something.
+    `409 weights_all_locked`. **`details.reason` says which situation it is** (PL-112), so a
+    screen words each from fields rather than from the sentence: `moved_is_locked`,
+    `only_weight`, `others_all_locked`, or `locks_leave_no_room` with the weight the locks
+    `held` and the most the moved weight may ask for (`at_most`).
     """
 
-    def __init__(self, moved: str, locked: tuple[str, ...], reason: str) -> None:
+    def __init__(
+        self,
+        moved: str,
+        locked: tuple[str, ...],
+        reason: str,
+        *,
+        kind: str,
+        held: Decimal | None = None,
+    ) -> None:
         self.moved = moved
         self.locked = locked
         super().__init__(f"cannot change the weight of {moved}: {reason}")
+        details: dict[str, object] = {"reason": kind, "locked": list(locked)}
+        if held is not None:
+            details |= {"held": float(held), "at_most": float(TOTAL - held)}
+        self.details = details
 
 
 class WeightedItem(NamedTuple):
@@ -108,6 +123,7 @@ def _refuse_unless_the_locks_allow_it(
             (moved,),
             f"{moved} is itself locked. A lock holds that weight where it is, so unlock it "
             "before moving it.",
+            kind="moved_is_locked",
         )
 
     siblings = [item for item in items if item.identifier != moved]
@@ -117,6 +133,7 @@ def _refuse_unless_the_locks_allow_it(
             (),
             f"{moved} is the only weight in the pillar, so it already holds all {TOTAL} of it "
             "and there is nothing to absorb a change.",
+            kind="only_weight",
         )
 
     locked = tuple(item.identifier for item in siblings if item.locked)
@@ -126,6 +143,7 @@ def _refuse_unless_the_locks_allow_it(
             locked,
             f"every other weight in the pillar is locked ({', '.join(locked)}). Unlock at "
             "least one, or change it instead.",
+            kind="others_all_locked",
         )
 
     held = sum((item.weight for item in siblings if item.locked), Decimal(0))
@@ -136,6 +154,8 @@ def _refuse_unless_the_locks_allow_it(
             f"the locked weights ({', '.join(locked)}) hold {held} between them, which leaves "
             f"{TOTAL - held} for everything else and {to} does not fit. Unlock one of them, or "
             f"ask for at most {TOTAL - held}.",
+            kind="locks_leave_no_room",
+            held=held,
         )
 
 

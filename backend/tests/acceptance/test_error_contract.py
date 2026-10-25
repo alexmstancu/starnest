@@ -72,10 +72,14 @@ class TestTheOneErrorShape:
             json={"weight": 70},
         )
 
-        if response.status_code == 409:
-            body = response.json()
-            assert body["code"] == "weights_all_locked"
-            assert body.get("details", {}).get("locked")
+        # Unconditional: under an `if`, a 200 here passed without asserting anything.
+        assert response.status_code == 409, response.text
+        body = response.json()
+        assert body["code"] == "weights_all_locked"
+        assert body["details"] == {
+            "reason": "others_all_locked",
+            "locked": ["country.overcrowding_rate"],
+        }
 
 
 class TestWhatIsNotThere:

@@ -511,9 +511,14 @@ paths:
                   pillar: { type: string }
                   criteria: { type: array, items: { $ref: "#/components/schemas/EvaluationCriterion" } }
         "409":
-          description: |
-            The change cannot be absorbed — every other weight in the pillar is locked.
-            `code: weights_all_locked`, with the blocking locks in `details`.
+          description: >-
+            `weights_all_locked`: the change cannot be made, and `details.reason` says why, with
+            `details.locked` listing the locks in the way (possibly none).
+            `moved_is_locked`: this weight is itself locked.
+            `only_weight`: it is the only weight in its pillar, so nothing can absorb a change.
+            `others_all_locked`: every other weight in the pillar is locked.
+            `locks_leave_no_room`: the locked weights hold `details.held` between them, so this
+            weight may ask for `details.at_most` and no more.
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
@@ -549,7 +554,14 @@ paths:
                 required: [items]
                 properties:
                   items: { type: array, items: { $ref: "#/components/schemas/PillarWeight" } }
-        "409": { $ref: "#/components/responses/Conflict" }
+        "409":
+          description: >-
+            `weights_all_locked`, worded from `details.reason` and `details.locked` exactly as a
+            criterion's weight is (`moved_is_locked`, `only_weight`, `others_all_locked`, or
+            `locks_leave_no_room` with `held` and `at_most`), the weights here being the level's
+            pillars.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
 
   /criteria-sets/{criteriaSetId}/match-rules/{matchRuleId}:
@@ -1262,7 +1274,7 @@ components:
         message: { type: string }
         details: { type: object, additionalProperties: true }
       examples:
-        - { code: weights_all_locked, message: "Every other weight in this pillar is locked.", details: { locked: ["country.total_tax_rate_effective"] } }
+        - { code: weights_all_locked, message: "Every other weight in this pillar is locked.", details: { reason: others_all_locked, locked: ["country.total_tax_rate_effective"] } }
 
     InvalidRequestError:
       description: >-
