@@ -6,7 +6,7 @@ import { forgetCandidateNames } from "./api/useCandidateNames";
 import { forgetMatchRuleNames } from "./api/useMatchRuleNames";
 import { forgetPillarNames } from "./api/usePillarNames";
 import { forgetSourceNames } from "./api/useSourceNames";
-import { forgetAnsweredWrites } from "./api/setWrites";
+import { forgetSetWrites } from "./api/setWrites";
 import { forgetFailedReads } from "./api/reachability";
 import { resetMockData } from "./mocks/handlers";
 import { forgetStoredSession } from "./shell/sessionState";
@@ -61,7 +61,7 @@ afterEach(() => {
   forgetCandidateNames();
   forgetSourceNames();
   forgetMatchRuleNames();
-  forgetAnsweredWrites();
+  forgetSetWrites();
   forgetFailedReads();
   // The session store mirrors to both browser stores (PL-016, PL-017), so one test's open rows
   // or chosen set would otherwise be the next test's reload. The provider's own state goes with

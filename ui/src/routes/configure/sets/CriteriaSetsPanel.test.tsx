@@ -1273,19 +1273,22 @@ describe("the one write in flight, above the screen", () => {
     await user.click(screen.getByRole("link", { name: "Rank" }));
     await screen.findByRole("heading", { name: "Rank", level: 1 });
     await user.click(screen.getByRole("link", { name: "Configure" }));
-    const again = await screen.findByRole("button", { name: "Lock Economy" });
     const history = await historyPanel();
+    const remove = (await row("Remote only")).getByRole("button", { name: "Delete" });
     writes = recordWrites();
 
-    expectHeld(again);
+    expectHeld(remove);
     expect(history.getByRole("status")).toHaveTextContent(
       "A change is being saved; the next waits until it is stored.",
     );
-    await user.click(again);
+    // PL-142: the set is not drawn from a read the write in flight could outdate.
+    expect(screen.queryByRole("button", { name: "Lock Economy" })).toBeNull();
+    await user.click(remove);
     expect(writes).toEqual([]);
     lock.release();
 
     await history.findByText("Locked the Economy pillar, in Default");
+    const again = await screen.findByRole("button", { name: "Lock Economy" });
     await waitFor(() => expect(again).toHaveAttribute("aria-pressed", "true"));
     await user.click(history.getByRole("button", { name: "Undo this" }));
     await waitFor(() => expect(again).toHaveAttribute("aria-pressed", "false"));
@@ -1421,7 +1424,6 @@ describe("the one write in flight, above the screen", () => {
     await waitFor(() => expect(sidebarSets()).toHaveValue("remote_only"));
     await user.click((await row("Default")).getByRole("button", { name: "Use" }));
     await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
-    await screen.findByRole("slider", { name: "Economy weight" });
 
     move.release();
     const history = await historyPanel();
@@ -1444,11 +1446,11 @@ describe("the one write in flight, above the screen", () => {
     await user.click(screen.getByRole("link", { name: "Rank" }));
     await screen.findByRole("heading", { name: "Rank", level: 1 });
     await user.click(screen.getByRole("link", { name: "Configure" }));
-    const shown = await criterionLockOf(user);
 
     lock.release();
 
     await (await historyPanel()).findByText("Locked Cost of living index, in Default");
+    const shown = await criterionLockOf(user);
     await waitFor(() => expect(shown).toHaveAttribute("aria-pressed", "true"));
   });
 });
@@ -1627,6 +1629,96 @@ describe("a write whose answer was lost", () => {
       expect(screen.queryByRole("listitem", { name: "Remote only" })).toBeNull(),
     );
     expectNotHeld((await historyPanel()).getByRole("button", { name: "Undo this" }));
+  });
+});
+
+/**
+ * PL-142. **A read of a set that a write overlapped is never shown.** Configure left and opened
+ * again reads its set afresh, and that read must not be one taken before a write still in flight
+ * committed -- whatever became of the write's answer.
+ */
+describe("a set read and a write it overlaps (PL-142)", () => {
+  function deferred(): { promise: Promise<void>; resolve: () => void } {
+    let resolve = (): void => undefined;
+    const promise = new Promise<void>((settle) => {
+      resolve = settle;
+    });
+    return { promise, resolve };
+  }
+
+  async function leaveAndReturn(user: UserEvent): Promise<void> {
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+    await screen.findByRole("heading", { name: "Rank", level: 1 });
+    await user.click(screen.getByRole("link", { name: "Configure" }));
+  }
+
+  it("shows a criterion's lock as stored when Configure is opened again while it is sent", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settledScreen();
+    const lock = await criterionLockOf(user);
+    const write = deferred();
+    const staleRead = deferred();
+    let committed = false;
+    let heldARead = false;
+    mockServer.use(
+      http.patch(
+        "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId",
+        async ({ request }) => {
+          await write.promise;
+          await getResponse(handlers, request);
+          committed = true;
+          return HttpResponse.error();
+        },
+        { once: true },
+      ),
+    );
+    await user.click(lock);
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+    await screen.findByRole("heading", { name: "Rank", level: 1 });
+    // Configure opened again reads its set before the write commits, and that read is answered
+    // only after the reconciliation has.
+    mockServer.use(
+      http.get("/v1/criteria-sets/default", async ({ request }) => {
+        if (committed || heldARead) return undefined;
+        heldARead = true;
+        const before = await getResponse(handlers, request);
+        await staleRead.promise;
+        return before;
+      }),
+    );
+    await user.click(screen.getByRole("link", { name: "Configure" }));
+    await screen.findByRole("heading", { name: "Configure", level: 1 });
+    // Long enough for the screen's read to have been sent, were it going to be.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    write.resolve();
+    await (await historyPanel()).findByText("Locked Cost of living index, in Default");
+    staleRead.resolve();
+
+    const shown = await criterionLockOf(user);
+    await waitFor(() => expect(shown).toHaveAttribute("aria-pressed", "true"));
+    const stored = (await fetchCriteriaSet("default")).criteria?.find(
+      (each) => each.attribute === "country.cost_of_living_index",
+    );
+    expect(stored?.weight_locked).toBe(true);
+  });
+
+  it("shows a rule as stored when Configure is opened again while its switch is sent", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settledScreen();
+    const enforce = holdRequests("put", "/v1/criteria-sets/:criteriaSetId/match-rules/:matchRuleId");
+    await user.click(await screen.findByRole("switch", { name: "Enforce Free movement applies" }));
+    await waitFor(() => expect(enforce.sent).toHaveLength(1));
+
+    await leaveAndReturn(user);
+    enforce.release();
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("switch", { name: "Enforce Free movement applies" }),
+      ).toHaveAttribute("aria-checked", "true"),
+    );
   });
 });
 

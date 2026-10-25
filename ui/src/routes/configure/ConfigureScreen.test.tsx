@@ -2,8 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { fetchCriteriaSet, fetchLevels, type Criterion } from "../../api/endpoints";
-import { answeredWrites } from "../../api/setWrites";
+import { fetchLevels, type Criterion } from "../../api/endpoints";
 import { makeCriteriaSetDetails } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import {
@@ -1112,7 +1111,7 @@ describe("while a change is being saved", () => {
    * committed but answered after it ended the screen on the old weights, though the save had been
    * confirmed -- and the next change's undo would have started from them.
    */
-  it("reads a set again when a save to it was answered while it was being read", async () => {
+  it("reads a set only once a save to it has been answered, so never the older set", async () => {
     renderShell("/configure");
     await settled();
     const copy = await duplicateDefault();
@@ -1121,39 +1120,29 @@ describe("while a change is being saved", () => {
     await waitFor(() =>
       expect(writes.sent).toEqual([`${copy}/country.cost_of_living_index`]),
     );
-    // The copy as a read taken before the save committed would see it.
-    const beforeTheSave = await fetchCriteriaSet(copy);
-    let release = (): void => undefined;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
     let reads = 0;
     mockServer.use(
-      http.get(`/v1/criteria-sets/${copy}`, async () => {
+      http.get(`/v1/criteria-sets/${copy}`, () => {
         reads += 1;
-        if (reads > 1) return;
-        await held;
-        return HttpResponse.json(beforeTheSave);
       }),
     );
     await chooseSet("default");
     await weightSlider(COST_OF_LIVING);
 
-    // Not `chooseSet`, which waits for the read this test is holding.
+    // Not `chooseSet`, which waits for the read this test is holding back.
     await userEvent.selectOptions(activeSet(), copy);
-    await waitFor(() => expect(reads).toBe(1));
+    // PL-142: no read of the copy is sent while the save to it is in flight.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(reads).toBe(0);
     writes.release();
     // The copy is listed too (D-C03-9), so the save makes two.
     await (await historyPanel()).findByText("2 in this session");
-    release();
 
-    // The stale read is answered by reading again; only the second read's answer is shown, and
-    // opening a pillar before it lands would act on a screen still loading (P13).
-    await waitFor(() => expect(reads).toBe(2));
+    await waitFor(() => expect(reads).toBe(1));
     await settled();
     await weightSlider(COST_OF_LIVING);
     expect(readingOf(COST_OF_LIVING)).toBe("40.0%");
-    expect(reads).toBe(2);
+    expect(reads).toBe(1);
   });
 
   /**
@@ -1207,7 +1196,7 @@ describe("while a change is being saved", () => {
         ).toBeChecked();
       },
     },
-  ])("reads a set again when a write to $what was answered while it was being read", async ({
+  ])("reads a set only once a write to $what has been answered", async ({
     path,
     write,
     shows,
@@ -1218,31 +1207,22 @@ describe("while a change is being saved", () => {
     const writes = holdSetWrites("put", path);
     await write();
     await waitFor(() => expect(writes.sent).toEqual([copy]));
-    // The copy as a read taken before the write committed would see it.
-    const beforeTheWrite = await fetchCriteriaSet(copy);
-    let release = (): void => undefined;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
     let reads = 0;
     mockServer.use(
-      http.get(`/v1/criteria-sets/${copy}`, async () => {
+      http.get(`/v1/criteria-sets/${copy}`, () => {
         reads += 1;
-        if (reads > 1) return;
-        await held;
-        return HttpResponse.json(beforeTheWrite);
       }),
     );
     await chooseSet("default");
 
-    // Not `chooseSet`, which waits for the read this test is holding.
+    // Not `chooseSet`, which waits for the read this test is holding back.
     await userEvent.selectOptions(activeSet(), copy);
-    await waitFor(() => expect(reads).toBe(1));
+    // PL-142: no read of the copy is sent while the write to it is in flight.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(reads).toBe(0);
     writes.release();
-    await waitFor(() => expect(answeredWrites(copy)).toBe(1));
-    release();
 
-    await waitFor(() => expect(reads).toBe(2));
+    await waitFor(() => expect(reads).toBe(1));
     await settled();
     shows();
   });

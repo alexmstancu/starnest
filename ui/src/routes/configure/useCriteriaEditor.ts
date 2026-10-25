@@ -9,7 +9,6 @@ import {
   type CriterionRule,
   type RebalancedPillar,
 } from "../../api/endpoints";
-import { answeredWrites } from "../../api/setWrites";
 import type { Idle, Read } from "../../api/read";
 import { useRead } from "../../api/useRead";
 import {
@@ -95,12 +94,8 @@ export function useCriteriaEditor(
     async (signal: AbortSignal): Promise<CriteriaSet> => {
       // Not reachable while disabled; the guard is here so the type is honest.
       if (!criteriaSetId) throw new Error("no criteria set selected");
-      // Read again while any writer's write to this set was answered mid-read (UIC-A3, RD-2).
-      for (;;) {
-        const begunAfter = answeredWrites(criteriaSetId);
-        const set = await fetchCriteriaSet(criteriaSetId, { signal });
-        if (answeredWrites(criteriaSetId) === begunAfter) return set;
-      }
+      // Never a read a write to this set overlapped: the client waits and reads again (PL-142).
+      return fetchCriteriaSet(criteriaSetId, { signal });
     },
     [criteriaSetId],
   );

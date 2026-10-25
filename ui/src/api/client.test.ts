@@ -1,5 +1,5 @@
 import { HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ApiError, CLIENT_ERROR_CODES, isApiError } from "./ApiError";
 import {
   API_PREFIX,
@@ -12,7 +12,6 @@ import {
 } from "./client";
 import { fetchCandidates, fetchLevels, fetchRanking, fetchRuns } from "./endpoints";
 import { mockServer } from "../mocks/server";
-import { answeredWrites } from "./setWrites";
 
 describe("buildUrl", () => {
   it("keeps every path relative and under /v1, so requests are same-origin", () => {
@@ -370,70 +369,163 @@ describe("a body holding a number JSON cannot carry", () => {
  * than at each endpoint: every write addressed under a set changes what a read of it returns, and
  * one added later must not be able to forget.
  */
-describe("a write addressed under a criteria set", () => {
-  it("is noted once it is answered, against the set it was addressed to", async () => {
-    mockServer.use(
-      http.put(
-        "/v1/criteria-sets/:criteriaSetId/match-rules/:matchRuleId",
-        () => new HttpResponse(null, { status: 204 }),
-      ),
-    );
+describe("a set read and the writes to its set (PL-142)", () => {
+  const MATCH_RULE = "/v1/criteria-sets/:criteriaSetId/match-rules/:matchRuleId";
 
-    await putJson(
+  function deferred(): { promise: Promise<void>; resolve: () => void } {
+    let resolve = (): void => undefined;
+    const promise = new Promise<void>((settle) => {
+      resolve = settle;
+    });
+    return { promise, resolve };
+  }
+
+  function enforce(criteriaSetId: string): Promise<unknown> {
+    return putJson(
       "/criteria-sets/{criteriaSetId}/match-rules/{matchRuleId}",
       { is_enforced: true },
-      { pathParams: { criteriaSetId: "default", matchRuleId: "country.visa_route_exists" } },
+      { pathParams: { criteriaSetId, matchRuleId: "country.visa_route_exists" } },
     );
+  }
 
-    expect(answeredWrites("default")).toBe(1);
-    expect(answeredWrites("remote_only")).toBe(0);
-  });
+  function readSet(criteriaSetId: string): Promise<unknown> {
+    return getJson("/criteria-sets/{criteriaSetId}", undefined, { pathParams: { criteriaSetId } });
+  }
 
-  it("is noted for every kind of write: a patch, a post and a delete as well", async () => {
+  /** Long enough for a request that is going to be sent to have been. */
+  const aMoment = () => new Promise((resolve) => setTimeout(resolve, 30));
+
+  it("sends no read of a set while a write to it is in flight, and reads once it settles", async () => {
+    const write = deferred();
+    let reads = 0;
     mockServer.use(
-      http.patch("/v1/criteria-sets/:criteriaSetId", () => HttpResponse.json({})),
-      http.post("/v1/criteria-sets/:criteriaSetId/duplicate", () => HttpResponse.json({})),
-      http.delete("/v1/criteria-sets/:criteriaSetId", () => new HttpResponse(null, { status: 204 })),
+      http.put(MATCH_RULE, async () => {
+        await write.promise;
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.get("/v1/criteria-sets/default", () => {
+        reads += 1;
+        return HttpResponse.json({ id: "default", name: "after" });
+      }),
     );
 
-    await patchJson(
-      "/criteria-sets/{criteriaSetId}",
-      { name: "Renamed" },
-      { pathParams: { criteriaSetId: "a" } },
-    );
-    await postJson(
-      "/criteria-sets/{criteriaSetId}/duplicate",
-      { id: "b_copy", name: "Copy" },
-      { pathParams: { criteriaSetId: "b" } },
-    );
-    await deleteResource("/criteria-sets/{criteriaSetId}", { pathParams: { criteriaSetId: "c" } });
+    const writing = enforce("default");
+    const reading = readSet("default");
+    await aMoment();
+    expect(reads).toBe(0);
+    write.resolve();
 
-    expect([answeredWrites("a"), answeredWrites("b"), answeredWrites("c")]).toEqual([1, 1, 1]);
+    await writing;
+    expect(await reading).toMatchObject({ name: "after" });
+    expect(reads).toBe(1);
   });
 
-  it("is not noted when it is refused, which changed nothing", async () => {
+  it("reads a set again when a write to it began while the read was in flight", async () => {
+    const firstRead = deferred();
+    let reads = 0;
     mockServer.use(
-      http.patch("/v1/criteria-sets/:criteriaSetId", () =>
-        HttpResponse.json({ code: "conflict", message: "no" }, { status: 409 }),
-      ),
+      http.get("/v1/criteria-sets/default", async () => {
+        reads += 1;
+        if (reads > 1) return HttpResponse.json({ id: "default", name: "after" });
+        await firstRead.promise;
+        return HttpResponse.json({ id: "default", name: "before" });
+      }),
+      http.put(MATCH_RULE, () => new HttpResponse(null, { status: 204 })),
     );
 
-    await expect(
-      patchJson(
-        "/criteria-sets/{criteriaSetId}",
-        { name: "Renamed" },
-        { pathParams: { criteriaSetId: "default" } },
-      ),
-    ).rejects.toBeInstanceOf(ApiError);
+    const reading = readSet("default");
+    await vi.waitFor(() => expect(reads).toBe(1));
+    await enforce("default");
+    firstRead.resolve();
 
-    expect(answeredWrites("default")).toBe(0);
+    expect(await reading).toMatchObject({ name: "after" });
+    expect(reads).toBe(2);
   });
 
-  it("is not noted for a read of the set", async () => {
-    await getJson("/criteria-sets/{criteriaSetId}", { level: undefined }, {
-      pathParams: { criteriaSetId: "default" },
-    });
+  it("counts a write whose answer was lost as settled, so the read goes ahead", async () => {
+    const write = deferred();
+    mockServer.use(
+      http.put(MATCH_RULE, async () => {
+        await write.promise;
+        return HttpResponse.error();
+      }),
+      http.get("/v1/criteria-sets/default", () => HttpResponse.json({ id: "default" })),
+    );
 
-    expect(answeredWrites("default")).toBe(0);
+    const writing = enforce("default").catch((error: unknown) => error);
+    const reading = readSet("default");
+    write.resolve();
+
+    expect(isApiError(await writing)).toBe(true);
+    expect(await reading).toMatchObject({ id: "default" });
+  });
+
+  it("does not hold a read of another set", async () => {
+    const write = deferred();
+    mockServer.use(
+      http.put(MATCH_RULE, async () => {
+        await write.promise;
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.get("/v1/criteria-sets/remote_only", () => HttpResponse.json({ id: "remote_only" })),
+    );
+
+    const writing = enforce("default");
+    expect(await readSet("remote_only")).toMatchObject({ id: "remote_only" });
+    write.resolve();
+    await writing;
+  });
+
+  it.each([
+    {
+      what: "a ranking of the set",
+      path: "/v1/rankings",
+      read: () => getJson("/rankings", { criteria_set: "default", level: "country" }),
+    },
+    {
+      what: "the list of sets, while a set is deleted",
+      path: "/v1/criteria-sets",
+      read: () => getJson("/criteria-sets"),
+      write: () =>
+        deleteResource("/criteria-sets/{criteriaSetId}", { pathParams: { criteriaSetId: "default" } }),
+      writePath: "/v1/criteria-sets/:criteriaSetId",
+      method: "delete" as const,
+    },
+    {
+      what: "a ranking being saved",
+      path: "/v1/evaluations",
+      read: () => postJson("/evaluations", { criteria_set: "default", level: "country" }),
+      asked: "post" as const,
+    },
+  ])("waits for a write in flight before asking for $what", async ({
+    path,
+    read,
+    write: writeOf = () => enforce("default"),
+    writePath = MATCH_RULE,
+    method = "put" as const,
+    asked = "get" as const,
+  }) => {
+    const write = deferred();
+    let asks = 0;
+    mockServer.use(
+      http[method](writePath, async () => {
+        await write.promise;
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http[asked](path, () => {
+        asks += 1;
+        return HttpResponse.json({});
+      }),
+    );
+
+    const writing = writeOf();
+    const asking = read();
+    await aMoment();
+    expect(asks).toBe(0);
+    write.resolve();
+
+    await writing;
+    await asking;
+    expect(asks).toBe(1);
   });
 });

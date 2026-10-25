@@ -15,7 +15,7 @@
 import { ApiError, CLIENT_ERROR_CODES, apiErrorFromResponse } from "./ApiError";
 import type { paths } from "./schema";
 import { isUnreachable, noteAnswered } from "./reachability";
-import { noteAnsweredWrite } from "./setWrites";
+import { beginSetWrite, EVERY_SET, readWhenSettled, untilSettled } from "./setWrites";
 
 /** Matches the `/v1` prefix that nginx and the Vite dev server both proxy. */
 export const API_PREFIX = "/v1";
@@ -213,17 +213,80 @@ export async function getJson<Path extends GetPath>(
   query?: GetQuery<Path> & QueryValues,
   options: CallOptions<PathValuesOf<GetOperation<Path>>> = {},
 ): Promise<GetResult<Path>> {
-  return request(
-    buildUrl(
-      path as string,
-      query,
-      options.pathParams as PathValues | undefined,
-    ),
-    {
-      method: "GET",
-      signal: options.signal,
-    },
-  );
+  const read = () =>
+    request<GetResult<Path>>(
+      buildUrl(
+        path,
+        query,
+        options.pathParams as PathValues | undefined,
+      ),
+      {
+        method: "GET",
+        signal: options.signal,
+      },
+    );
+  // **A read of a set is shown only if no write to it overlapped it** (PL-142): see `setWrites`.
+  const key = setReadKey(path, query, options.pathParams as PathValues | undefined);
+  return key === null ? read() : readWhenSettled(key, read, options.signal);
+}
+
+/**
+ * The set a read is of, if any: named in the path or, for a ranking or a comparison, in the
+ * query; the list of sets is read under every set at once.
+ */
+function setReadKey(
+  path: string,
+  query: QueryValues | undefined,
+  pathParams: PathValues | undefined,
+): string | null {
+  const named = pathParams?.["criteriaSetId"] ?? query?.["criteria_set"];
+  if (typeof named === "string" || typeof named === "number") return String(named);
+  return path === "/criteria-sets" ? EVERY_SET : null;
+}
+
+/** The set verbs, which change the list of sets as well as the set they name. */
+const SET_VERBS = new Set([
+  "/criteria-sets",
+  "/criteria-sets/{criteriaSetId}",
+  "/criteria-sets/{criteriaSetId}/restore",
+  "/criteria-sets/{criteriaSetId}/duplicate",
+]);
+
+/**
+ * The sets a write changes (PL-142): the one its path names, the one a create or a copy makes,
+ * and -- for a set verb -- the list of sets.
+ */
+function setWriteKeys(path: string, pathParams: PathValues | undefined, body?: unknown): string[] {
+  const keys: string[] = [];
+  const named = pathParams?.["criteriaSetId"];
+  if (named !== undefined) keys.push(String(named));
+  if (SET_VERBS.has(path)) {
+    keys.push(EVERY_SET);
+    const made = (body as { id?: unknown } | undefined)?.id;
+    if (typeof made === "string") keys.push(made);
+  }
+  return keys;
+}
+
+/**
+ * Sends a write, **counted as in flight under every set it changes until it settles**, however
+ * it settles (PL-142): a refused write changed nothing, but the read it overlapped is read again
+ * all the same, which costs one request and decides nothing.
+ */
+async function sendWrite<Result>(
+  path: string,
+  pathParams: PathValues | undefined,
+  body: unknown,
+  send: () => Promise<Result>,
+): Promise<Result> {
+  const keys = setWriteKeys(path, pathParams, body);
+  if (keys.length === 0) return send();
+  const settle = beginSetWrite(keys);
+  try {
+    return await send();
+  } finally {
+    settle();
+  }
 }
 
 export async function postJson<Path extends PostPath>(
@@ -234,21 +297,18 @@ export async function postJson<Path extends PostPath>(
   // Path parameters are filled here as they are for GET and PATCH. Until the Run tab needed
   // `/data-acquisition-runs/{runId}/retry`, no POST took one, and the placeholder went to the
   // server verbatim -- which fails as a request that was merely built wrong.
-  const answer = await request<PostResult<Path>>(
-    buildUrl(
-      path,
-      undefined,
-      options.pathParams as PathValues | undefined,
-    ),
-    {
+  // **A ranking is saved from the set as it stands once its writes have settled** (PL-142).
+  const savedFrom = (body as { criteria_set?: unknown } | undefined)?.criteria_set;
+  if (typeof savedFrom === "string") await untilSettled(savedFrom, options.signal);
+  const pathParams = options.pathParams as PathValues | undefined;
+  return sendWrite(path, pathParams, body, () =>
+    request<PostResult<Path>>(buildUrl(path, undefined, pathParams), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: serialise(body),
       signal: options.signal,
-    },
+    }),
   );
-  noteTheSetWrittenTo(options.pathParams as PathValues | undefined);
-  return answer;
 }
 
 /**
@@ -261,21 +321,15 @@ export async function patchJson<Path extends PatchPath>(
   body: PatchBody<Path>,
   options: CallOptions<PathValuesOf<PatchOperation<Path>>> = {},
 ): Promise<PatchResult<Path>> {
-  const answer = await request<PatchResult<Path>>(
-    buildUrl(
-      path,
-      undefined,
-      options.pathParams as PathValues | undefined,
-    ),
-    {
+  const pathParams = options.pathParams as PathValues | undefined;
+  return sendWrite(path, pathParams, body, () =>
+    request<PatchResult<Path>>(buildUrl(path, undefined, pathParams), {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: serialise(body),
       signal: options.signal,
-    },
+    }),
   );
-  noteTheSetWrittenTo(options.pathParams as PathValues | undefined);
-  return answer;
 }
 
 /**
@@ -311,17 +365,6 @@ function isAbort(cause: unknown): boolean {
     cause !== null &&
     (cause as { name?: unknown }).name === "AbortError"
   );
-}
-
-/**
- * **A write under a criteria set is noted once it is answered** (UIC-A3, RD-2): see `setWrites`.
- * Here, beside every write the client sends, rather than at each endpoint -- every write
- * addressed under a set changes what a read of it returns, and one added later must not be able
- * to forget. A refused write changed nothing, and throws before it gets here.
- */
-function noteTheSetWrittenTo(pathParams: PathValues | undefined): void {
-  const criteriaSetId = pathParams?.["criteriaSetId"];
-  if (criteriaSetId !== undefined) noteAnsweredWrite(String(criteriaSetId));
 }
 
 async function request<Result>(
@@ -381,21 +424,15 @@ export async function putJson<Path extends PutPath>(
   body: PutBody<Path>,
   options: CallOptions<PathValuesOf<PutOperation<Path>>> = {},
 ): Promise<PutResult<Path>> {
-  const answer = await request<PutResult<Path>>(
-    buildUrl(
-      path,
-      undefined,
-      options.pathParams as PathValues | undefined,
-    ),
-    {
+  const pathParams = options.pathParams as PathValues | undefined;
+  return sendWrite(path, pathParams, body, () =>
+    request<PutResult<Path>>(buildUrl(path, undefined, pathParams), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: serialise(body),
       signal: options.signal,
-    },
+    }),
   );
-  noteTheSetWrittenTo(options.pathParams as PathValues | undefined);
-  return answer;
 }
 
 /** A discard. Answers 204, so there is nothing to parse and nothing to return. */
@@ -403,13 +440,11 @@ export async function deleteResource<Path extends DeletePath>(
   path: Path,
   options: CallOptions<PathValuesOf<DeleteOperation<Path>>> = {},
 ): Promise<void> {
-  await request(
-    buildUrl(
-      path as string,
-      undefined,
-      options.pathParams as PathValues | undefined,
-    ),
-    { method: "DELETE", signal: options.signal },
+  const pathParams = options.pathParams as PathValues | undefined;
+  await sendWrite(path as string, pathParams, undefined, () =>
+    request(buildUrl(path as string, undefined, pathParams), {
+      method: "DELETE",
+      signal: options.signal,
+    }),
   );
-  noteTheSetWrittenTo(options.pathParams as PathValues | undefined);
 }
