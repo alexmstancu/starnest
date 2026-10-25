@@ -16,6 +16,7 @@ import {
   isIncomplete,
   type HouseholdDraft,
 } from "./householdForm";
+import { noteRankingInputsChanged } from "../../../api/rankingInputs";
 
 export interface HouseholdForm {
   draft: HouseholdDraft;
@@ -75,6 +76,7 @@ export function useHouseholdForm(household: Household): HouseholdForm {
     setSaved(false);
     try {
       const stored = await replaceHousehold(householdFrom(draft));
+      noteRankingInputsChanged();
       if (revision.current === sentAt) {
         setDraft(draftOf(stored));
         setSaved(true);

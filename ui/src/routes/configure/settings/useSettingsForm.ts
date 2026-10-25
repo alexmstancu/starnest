@@ -11,6 +11,7 @@ import {
   type SettingName,
   type SettingsDraft,
 } from "./settingsForm";
+import { noteRankingInputsChanged } from "../../../api/rankingInputs";
 
 export interface SettingsForm {
   draft: SettingsDraft;
@@ -59,6 +60,7 @@ export function useSettingsForm(settings: Settings): SettingsForm {
     setSaved(false);
     try {
       const stored = await replaceSettings(settingsFrom(draft));
+      noteRankingInputsChanged();
       if (revision.current === sentAt) {
         setDraft(draftOf(stored));
         setSaved(true);

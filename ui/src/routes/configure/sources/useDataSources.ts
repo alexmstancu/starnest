@@ -6,6 +6,7 @@ import {
 } from "../../../api/endpoints";
 import { useRead } from "../../../api/useRead";
 import { orderAfterDrop, orderAfterMove } from "./sourceOrder";
+import { noteRankingInputsChanged } from "../../../api/rankingInputs";
 
 /**
  * Switching a source on or off, and moving it in the order.
@@ -39,6 +40,7 @@ export function useDataSources() {
       setFailure(null);
       try {
         await write();
+        noteRankingInputsChanged();
       } catch (error) {
         setFailure(error);
       }
