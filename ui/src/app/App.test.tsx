@@ -443,8 +443,21 @@ describe("what the sidebar reads again", () => {
     mockServer.use(
       http.put("/v1/household", () =>
         HttpResponse.json(
-          { code: "invalid_field", message: "net_income must be positive." },
-          { status: 400 },
+          {
+            code: "invalid_request",
+            message: "The request does not match what this operation accepts.",
+            details: {
+              errors: [
+                {
+                  location: ["body", "net_income"],
+                  problem: "Input should be greater than or equal to 0",
+                  kind: "greater_than_equal",
+                  limit: 0,
+                },
+              ],
+            },
+          },
+          { status: 422 },
         ),
       ),
     );
@@ -458,7 +471,7 @@ describe("what the sidebar reads again", () => {
 
     await user.click(household.getByRole("button", { name: "Save household" }));
 
-    expect(await household.findByText(/net_income must be positive/)).toBeInTheDocument();
+    expect(await household.findByRole("alert")).toHaveTextContent(/Not saved/);
     expect(households.count).toBe(before.households);
     expect(rankings.count).toBe(before.rankings);
   });

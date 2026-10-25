@@ -398,15 +398,9 @@ export const handlers = [
 
   http.put(`${BASE}/household`, async ({ request }) => {
     const body = (await request.json()) as Household;
-    if ((body.citizenships ?? []).length === 0) {
-      return HttpResponse.json(
-        invalidRequest({
-          location: ["body", "citizenships"],
-          problem: "Tuple should have at least 1 item after validation, not 0",
-          kind: "too_short",
-        }),
-        { status: 422 },
-      );
+    const problems = refusedFields(body, HOUSEHOLD_BOUNDS);
+    if (problems.length > 0) {
+      return HttpResponse.json(invalidRequest(...problems), { status: 422 });
     }
     household = body;
     return HttpResponse.json(household);
@@ -416,20 +410,9 @@ export const handlers = [
 
   http.put(`${BASE}/settings`, async ({ request }) => {
     const body = (await request.json()) as Settings;
-    if (
-      body.score_scale_max !== null &&
-      body.score_scale_max !== undefined &&
-      body.score_scale_max < 1
-    ) {
-      return HttpResponse.json(
-        invalidRequest({
-          location: ["body", "score_scale_max"],
-          problem: "Input should be greater than or equal to 1",
-          kind: "greater_than_equal",
-          limit: 1,
-        }),
-        { status: 422 },
-      );
+    const problems = refusedFields(body, SETTINGS_BOUNDS);
+    if (problems.length > 0) {
+      return HttpResponse.json(invalidRequest(...problems), { status: 422 });
     }
     settings = body;
     return HttpResponse.json(settings);
@@ -874,7 +857,13 @@ function missingFrom(query: URLSearchParams, required: readonly string[]) {
       code: "invalid_request",
       message: "The request does not match what this operation accepts.",
       details: {
-        errors: missing.map((name) => ({ location: ["query", name], problem: "Field required" })),
+        errors: missing.map(
+          (name): FieldProblem => ({
+            location: ["query", name],
+            problem: "Field required",
+            kind: "missing",
+          }),
+        ),
       },
     },
     { status: 422 },
@@ -893,11 +882,108 @@ function scaleInForce(): number {
   return settings.score_scale_max ?? MOCK_SCORE_SCALE;
 }
 
+type FieldProblem = components["schemas"]["FieldProblem"];
+
+/** One body field as `api/household.py` and `api/settings.py` declare it, which is the contract's. */
+interface FieldBound {
+  name: string;
+  type: "number" | "integer" | "string" | "list";
+  required?: boolean;
+  /** `ge`. */
+  minimum?: number;
+  /** `le`. */
+  maximum?: number;
+}
+
+const HOUSEHOLD_BOUNDS: readonly FieldBound[] = [
+  { name: "net_income", type: "number", required: true, minimum: 0 },
+  { name: "number_adults", type: "integer", required: true, minimum: 1 },
+  { name: "number_children", type: "integer", required: true, minimum: 0 },
+  { name: "home_country_candidate", type: "string", required: true },
+  { name: "citizenships", type: "list", required: true },
+  { name: "target_monthly_spend", type: "number", minimum: 0 },
+  { name: "max_rent", type: "number", minimum: 0 },
+];
+
+const SETTINGS_BOUNDS: readonly FieldBound[] = [
+  { name: "min_coverage", type: "number", minimum: 0, maximum: 100 },
+  { name: "score_scale_max", type: "integer", minimum: 1 },
+  { name: "comparator_limit", type: "integer", minimum: 1, maximum: 20 },
+  { name: "run_spend_cap_eur", type: "number", minimum: 0 },
+  { name: "refetch_older_than_days", type: "integer", minimum: 1 },
+];
+
+/**
+ * **Every field the server would refuse, refused as Pydantic words it** (PL-028, C02-S2): all of
+ * them at once, each with its `kind` and, for a bound, its `limit`. The mock once refused one
+ * field with a code the server never sends, which certified a form the real refusal never
+ * reached.
+ */
+function refusedFields(body: object, bounds: readonly FieldBound[]): FieldProblem[] {
+  const values = body as Record<string, unknown>;
+  return bounds.flatMap((bound): FieldProblem[] => {
+    const value = values[bound.name];
+    const location = ["body", bound.name];
+    if (value === undefined || value === null) {
+      return bound.required === true
+        ? [{ location, problem: "Field required", kind: "missing" }]
+        : [];
+    }
+    if (bound.type === "list") {
+      return Array.isArray(value) && value.length === 0
+        ? [
+            {
+              location,
+              problem: "Tuple should have at least 1 item after validation, not 0",
+              kind: "too_short",
+            },
+          ]
+        : [];
+    }
+    if (bound.type === "string") {
+      return value === ""
+        ? [{ location, problem: "String should have at least 1 character", kind: "string_too_short" }]
+        : [];
+    }
+    if (typeof value !== "number") return [];
+    if (bound.type === "integer" && !Number.isInteger(value)) {
+      return [
+        {
+          location,
+          problem: "Input should be a valid integer, got a number with a fractional part",
+          kind: "int_from_float",
+        },
+      ];
+    }
+    if (bound.minimum !== undefined && value < bound.minimum) {
+      return [
+        {
+          location,
+          problem: `Input should be greater than or equal to ${String(bound.minimum)}`,
+          kind: "greater_than_equal",
+          limit: bound.minimum,
+        },
+      ];
+    }
+    if (bound.maximum !== undefined && value > bound.maximum) {
+      return [
+        {
+          location,
+          problem: `Input should be less than or equal to ${String(bound.maximum)}`,
+          kind: "less_than_equal",
+          limit: bound.maximum,
+        },
+      ];
+    }
+    return [];
+  });
+}
+
 /**
  * A body field refused at the boundary, as `errors.py` renders it: the one sentence for every
  * malformed request, and each offending field as a `FieldProblem` in `details.errors` (a list).
  */
-function invalidRequest(...errors: components["schemas"]["FieldProblem"][]) {
+function invalidRequest(...errors: FieldProblem[]) {
   return {
     code: "invalid_request",
     message: "The request does not match what this operation accepts.",

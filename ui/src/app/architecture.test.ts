@@ -391,9 +391,6 @@ describe("typed text becomes a number in one place", () => {
     "routes/configure/weights.ts": "permanent: a range slider's value is always a number in range",
     "routes/run/acquisitionDiff.ts": "permanent: a select's value, never typed",
     "routes/run/manualEntry.ts": "C06 (PL-085) moves hand entry onto readNumber",
-    "routes/configure/household/householdForm.ts": "C02 U2 (PL-024) moves it onto readNumber",
-    "routes/configure/settings/settingsForm.ts": "C02 U2 (PL-024) moves it onto readNumber",
-    "routes/configure/numericInput.ts": "C02 U2 and U3 (PL-024) delete it",
     "routes/configure/criteria/criterionForm.ts": "C02 U3 (PL-024) moves it onto readNumber",
   };
 

@@ -11,14 +11,14 @@ import { useCandidateRosterState } from "../../../api/useCandidateRoster";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { Stage } from "../Stage";
+import { NumberField } from "../../../shell/NumberField";
 import {
+  HOUSEHOLD_RULES,
   NOTHING_RECORDED,
-  onlyMoneyCharacters,
   type HouseholdDraft,
 } from "./householdForm";
-import { NOT_A_NUMBER } from "../numericInput";
 import { HOUSEHOLD_LABELS } from "../../../format/vocabulary";
-import { useHouseholdForm } from "./useHouseholdForm";
+import { useHouseholdForm, type HouseholdForm } from "./useHouseholdForm";
 
 /**
  * The one record describing the user (`reqs.md` 3.9). Configured first, because several gates
@@ -126,20 +126,14 @@ function HouseholdFields({
       <p className="panel__hint" role="status">
         {form.saved ? "Saved." : null}
       </p>
+      <RefusedFields problems={form.problems} />
 
       <form onSubmit={form.save}>
         {/* **Fields across, not down.** Eight of them in one column is a page of scrolling
             for what is, in substance, one short answer about a household. The track's 190px
             floor is what stops a figure and its currency ever being split across a wrap. */}
         <div className="field-grid">
-          <Field
-            label={HOUSEHOLD_LABELS.net_income}
-            name="net_income"
-            form={form}
-            numeric
-            prefix="€"
-            suffix="per month"
-          />
+          <MoneyField name="net_income" form={form} />
           {/* One click for almost every household, and the field for the rest. */}
           <CountField
             id="household-number_adults"
@@ -156,22 +150,8 @@ function HouseholdFields({
             value={form.draft.number_children}
             onChange={(value) => form.change("number_children", value)}
           />
-          <Field
-            label={HOUSEHOLD_LABELS.target_monthly_spend}
-            name="target_monthly_spend"
-            form={form}
-            numeric
-            prefix="€"
-            suffix="per month"
-          />
-          <Field
-            label={HOUSEHOLD_LABELS.max_rent}
-            name="max_rent"
-            form={form}
-            numeric
-            prefix="€"
-            suffix="per month"
-          />
+          <MoneyField name="target_monthly_spend" form={form} />
+          <MoneyField name="max_rent" form={form} />
           <CandidateField
             id="household-home_country_candidate"
             label={HOUSEHOLD_LABELS.home_country_candidate}
@@ -221,79 +201,61 @@ function HouseholdFields({
 }
 
 /**
- * One field, with the unit around it rather than inside it.
+ * A money field, with the unit around it rather than inside it.
  *
- * **The currency sits beside the box and the period under it**, which is how the design
- * draws a money field: what is typed is a number, so the box holds a number, and everything
- * that says what the number means is outside it. Putting "€" or "per month" in a placeholder
- * would make them disappear the moment anybody typed.
+ * **The currency sits beside the box and the period under it**, which is how the design draws
+ * a money field: what is typed is a number, so the box holds a number, and everything that says
+ * what the number means is outside it. Putting "€" or "per month" in a placeholder would make
+ * them disappear the moment anybody typed.
  */
-function Field({
-  label,
+function MoneyField({
   name,
   form,
-  hint,
-  prefix,
-  suffix,
-  numeric,
 }: {
-  label: string;
-  name: keyof HouseholdDraft;
-  form: ReturnType<typeof useHouseholdForm>;
-  hint?: string;
-  prefix?: string;
-  suffix?: string;
-  /** Digits and one decimal point only, filtered as it is typed. */
-  numeric?: boolean;
+  name: "net_income" | "target_monthly_spend" | "max_rent";
+  form: HouseholdForm;
 }) {
-  // The hint describes the field rather than naming it: wrapped inside the label it would be
-  // read out as part of the name, so "Citizenships" would become "Citizenships Country
-  // candidate ids, separated by commas".
-  const id = `household-${name}`;
-  const invalid = form.invalid.includes(name);
   return (
-    <div className="field">
-      <label className="field__label" htmlFor={id}>
-        {label}
-      </label>
-      <span className="field__row">
-        {prefix !== undefined && (
-          <span className="field__affix" aria-hidden="true">
-            {prefix}
-          </span>
-        )}
-        <input
-          id={id}
-          className="field__control"
-          value={form.draft[name]}
-          aria-describedby={
-            hint === undefined && suffix === undefined
-              ? undefined
-              : `${id}-hint`
-          }
-          aria-invalid={invalid}
-          inputMode={numeric === true ? "decimal" : undefined}
-          onChange={(event) =>
-            form.change(
-              name,
-              numeric === true
-                ? onlyMoneyCharacters(event.target.value)
-                : event.target.value,
-            )
-          }
-        />
-      </span>
-      {(hint ?? suffix) !== undefined && (
-        <span className="field__note" id={`${id}-hint`}>
-          {hint ?? suffix}
-          {/* In the description, so it is read with the field it is about. */}
-          {invalid && (
-            <span className="field__note field__note--warning">
-              {" "}
-              {NOT_A_NUMBER}
-            </span>
-          )}
-        </span>
+    <NumberField
+      id={`household-${name}`}
+      label={HOUSEHOLD_LABELS[name]}
+      value={form.draft[name]}
+      onChange={(text) => form.change(name, text)}
+      rule={HOUSEHOLD_RULES[name]}
+      problem={form.problems[name] ?? null}
+      prefix="€"
+      note="per month."
+    />
+  );
+}
+
+/** The fields drawn as number boxes carry their own refusal; the rest are named here. */
+const MARKED_ON_THE_FIELD: ReadonlySet<string> = new Set([
+  "net_income",
+  "target_monthly_spend",
+  "max_rent",
+]);
+
+/**
+ * **A refusal that names fields is said on them, and once above them** (PL-028): never as one
+ * sentence that names none. A field with no box of its own to mark -- a picker, a count -- is
+ * named here with its refusal.
+ */
+function RefusedFields({ problems }: { problems: HouseholdForm["problems"] }) {
+  const named = Object.entries(problems);
+  if (named.length === 0) return null;
+  const elsewhere = named.filter(([field]) => !MARKED_ON_THE_FIELD.has(field));
+  return (
+    <div className="notice notice--error" role="alert">
+      <p className="notice__message">Not saved: the marked fields were refused.</p>
+      {elsewhere.length > 0 && (
+        <ul className="notice__list">
+          {elsewhere.map(([field, sentence]) => (
+            <li key={field}>
+              {HOUSEHOLD_LABELS[field as keyof HouseholdDraft]}: {sentence}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../api/ApiError";
 import { getJson } from "../api/client";
-import { fetchRanking } from "../api/endpoints";
+import { fetchRanking, replaceHousehold, replaceSettings } from "../api/endpoints";
+import { HOUSEHOLD, SETTINGS } from "./fixtures";
 
 /**
  * The mock is a stand-in for the backend, so it has to fail the way the backend will: with the
@@ -19,8 +20,8 @@ describe("the mock server", () => {
     expect(error.status).toBe(422);
     expect(error.details).toEqual({
       errors: [
-        { location: ["query", "criteria_set"], problem: "Field required" },
-        { location: ["query", "level"], problem: "Field required" },
+        { location: ["query", "criteria_set"], problem: "Field required", kind: "missing" },
+        { location: ["query", "level"], problem: "Field required", kind: "missing" },
       ],
     });
   });
@@ -64,7 +65,7 @@ describe("the mock comparison", () => {
 
     expect([error.status, error.code]).toEqual([422, "invalid_request"]);
     expect(error.details).toEqual({
-      errors: [{ location: ["query", missing], problem: "Field required" }],
+      errors: [{ location: ["query", missing], problem: "Field required", kind: "missing" }],
     });
   });
 
@@ -114,5 +115,98 @@ describe("the mock comparison", () => {
 
     expect([error.status, error.code]).toEqual([409, "comparator_limit_exceeded"]);
     expect(error.details).toEqual({ limit: 5, asked: 6 });
+  });
+});
+
+/**
+ * T28-5 (PL-028, C02-S2). **The household and the settings are refused as the server refuses
+ * them**: 422 `invalid_request`, every offending field at once as a `FieldProblem` with its
+ * `kind` and, for a bound, its `limit` -- never `400 invalid_field`, which the server never
+ * sends.
+ */
+describe("the mock's refusal of a field", () => {
+  async function refusal(write: Promise<unknown>): Promise<ApiError> {
+    return (await write.catch((thrown: unknown) => thrown)) as ApiError;
+  }
+
+  it("refuses settings outside the contract's ranges, naming each with its kind and limit", async () => {
+    const error = await refusal(
+      replaceSettings({ ...SETTINGS, comparator_limit: 21, min_coverage: -1, score_scale_max: 2.5 }),
+    );
+
+    expect(error.status).toBe(422);
+    expect(error.code).toBe("invalid_request");
+    expect(error.details).toEqual({
+      errors: [
+        {
+          location: ["body", "min_coverage"],
+          problem: "Input should be greater than or equal to 0",
+          kind: "greater_than_equal",
+          limit: 0,
+        },
+        {
+          location: ["body", "score_scale_max"],
+          problem: "Input should be a valid integer, got a number with a fractional part",
+          kind: "int_from_float",
+        },
+        {
+          location: ["body", "comparator_limit"],
+          problem: "Input should be less than or equal to 20",
+          kind: "less_than_equal",
+          limit: 20,
+        },
+      ],
+    });
+  });
+
+  it.each([
+    ["min_coverage", 100],
+    ["comparator_limit", 20],
+    ["comparator_limit", 1],
+    ["run_spend_cap_eur", 0],
+    ["refetch_older_than_days", 1],
+  ])("accepts %s at its edge, %s", async (name, value) => {
+    await expect(replaceSettings({ ...SETTINGS, [name]: value })).resolves.toMatchObject({
+      [name]: value,
+    });
+  });
+
+  it("refuses a household with a negative income, no adult and no passport", async () => {
+    const error = await refusal(
+      replaceHousehold({ ...HOUSEHOLD, net_income: -1, number_adults: 0, citizenships: [] }),
+    );
+
+    expect(error.status).toBe(422);
+    expect(error.code).toBe("invalid_request");
+    expect(error.details).toEqual({
+      errors: [
+        {
+          location: ["body", "net_income"],
+          problem: "Input should be greater than or equal to 0",
+          kind: "greater_than_equal",
+          limit: 0,
+        },
+        {
+          location: ["body", "number_adults"],
+          problem: "Input should be greater than or equal to 1",
+          kind: "greater_than_equal",
+          limit: 1,
+        },
+        {
+          location: ["body", "citizenships"],
+          problem: "Tuple should have at least 1 item after validation, not 0",
+          kind: "too_short",
+        },
+      ],
+    });
+  });
+
+  it("refuses a household with a required figure left out", async () => {
+    const { net_income: _left, ...without } = HOUSEHOLD;
+    const error = await refusal(replaceHousehold(without as typeof HOUSEHOLD));
+
+    expect(error.details).toEqual({
+      errors: [{ location: ["body", "net_income"], problem: "Field required", kind: "missing" }],
+    });
   });
 });

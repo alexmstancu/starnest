@@ -35,7 +35,8 @@ describe("the settings panel", () => {
     expect(field("Minimum coverage to score")).toHaveValue("60");
     expect(field("Top of the score range")).toHaveValue("100");
     expect(field("Candidates you can compare at once")).toHaveValue("5");
-    expect(field("Spend cap per acquisition")).toHaveValue("10");
+    // Euros, with their cents, as the design shows a cap (PL-032).
+    expect(field("Spend cap per acquisition")).toHaveValue("10.00");
     // Empty in the shipped database, and empty here: an undecided setting shows as nothing.
     expect(field("Refetch data older than")).toHaveValue("");
   });
@@ -56,7 +57,7 @@ describe("the settings panel", () => {
     expect(field("Spend cap per acquisition")).toHaveAccessibleDescription(
       /^€/,
     );
-    expect(settings.getByText("candidates")).toBeInTheDocument();
+    expect(settings.getByText("candidates (1–20)")).toBeInTheDocument();
     expect(settings.getByText("points")).toBeInTheDocument();
     expect(settings.getByText("days")).toBeInTheDocument();
   });
@@ -86,18 +87,95 @@ describe("the settings panel", () => {
     await waitFor(() => expect(field("Top of the score range")).toHaveValue(""));
   });
 
-  it("shows a refusal, and does not claim to have saved", async () => {
+  /**
+   * T28-3 (PL-028). **The server's refusal is said on the field it names**, worded from its
+   * kind and limit -- not as one sentence naming no field, and never with its code.
+   */
+  it("marks the field the server refused, in words, and does not claim to have saved", async () => {
+    mockServer.use(
+      http.put("/v1/settings", () =>
+        HttpResponse.json(
+          {
+            code: "invalid_request",
+            message: "The request does not match what this operation accepts.",
+            details: {
+              errors: [
+                {
+                  location: ["body", "min_coverage"],
+                  problem: "Input should be less than or equal to 100",
+                  kind: "less_than_equal",
+                  limit: 100,
+                },
+              ],
+            },
+          },
+          { status: 422 },
+        ),
+      ),
+    );
     const user = userEvent.setup();
     renderShell("/configure");
     const settings = await panel();
 
-    await user.clear(field("Top of the score range"));
-    await user.type(field("Top of the score range"), "0");
     await user.click(settings.getByRole("button", { name: "Save settings" }));
 
-    expect(
-      await settings.findByText(/does not match what this operation accepts/i),
-    ).toBeInTheDocument();
+    expect(await settings.findByRole("alert")).toHaveTextContent(
+      "Not saved: the marked fields were refused.",
+    );
+    expect(field("Minimum coverage to score")).toHaveAttribute("aria-invalid", "true");
+    expect(field("Minimum coverage to score")).toHaveAccessibleDescription(/At most 100\./);
+    expect(field("Top of the score range")).toHaveAttribute("aria-invalid", "false");
+    expect(settings.queryByText(/invalid_request|does not match what this operation/)).toBeNull();
+    expect(settings.queryByText("Saved.")).not.toBeInTheDocument();
+  });
+
+  it("keeps the server's mark until that field is edited", async () => {
+    mockServer.use(
+      http.put("/v1/settings", () =>
+        HttpResponse.json(
+          {
+            code: "invalid_request",
+            message: "The request does not match what this operation accepts.",
+            details: {
+              errors: [
+                { location: ["body", "min_coverage"], problem: "x", kind: "less_than_equal", limit: 100 },
+                { location: ["body", "refetch_older_than_days"], problem: "y", kind: "missing" },
+              ],
+            },
+          },
+          { status: 422 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const settings = await panel();
+    await user.click(settings.getByRole("button", { name: "Save settings" }));
+    await settings.findByRole("alert");
+
+    await user.type(field("Minimum coverage to score"), "5");
+
+    expect(field("Minimum coverage to score")).not.toHaveAccessibleDescription(/At most 100/);
+    expect(field("Refetch data older than")).toHaveAccessibleDescription(/Required\./);
+  });
+
+  /** A refusal that names no field on the form is still said, as the server's own failure. */
+  it("shows a refusal that names no field as a notice", async () => {
+    mockServer.use(
+      http.put("/v1/settings", () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "the settings are locked" },
+          { status: 500 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const settings = await panel();
+
+    await user.click(settings.getByRole("button", { name: "Save settings" }));
+
+    expect(await settings.findByText(/the settings are locked/)).toBeInTheDocument();
     expect(settings.queryByText("Saved.")).not.toBeInTheDocument();
   });
 
@@ -409,7 +487,7 @@ describe("the settings panel while a save is in flight", () => {
       "true",
     );
     expect(field("Minimum coverage to score")).toHaveAccessibleDescription(
-      /not a number that can be saved/i,
+      /not a number/i,
     );
     expect(field("Top of the score range")).toHaveAttribute(
       "aria-invalid",
@@ -437,6 +515,124 @@ describe("an unset comparator limit", () => {
       /Compare refuses every comparison until this is set\./,
     );
     expect(settings.queryByText(/as many comparators as you pick/)).toBeNull();
+    // T30-3 (PL-030). The summary names what the blank stops, not a rule "not in force". The
+    // fixture leaves the refetch age unset too, so it is the other.
+    expect(
+      settings.getByText(
+        "2 settings are not set: Compare refuses every comparison until the comparator limit " +
+          "is set, and the rule behind the other is not in force.",
+      ),
+    ).toBeInTheDocument();
+  });
+});
+
+/** PL-028, PL-030. A figure outside its field's range is refused there, and nothing is sent. */
+describe("a setting outside its range", () => {
+  function recordSettingsWrites(): unknown[] {
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.put("/v1/settings", async ({ request }) => {
+        sent.push(await request.json());
+        return HttpResponse.json({});
+      }),
+    );
+    return sent;
+  }
+
+  it("states each field's range in its note", async () => {
+    renderShell("/configure");
+    await panel();
+
+    expect(field("Minimum coverage to score")).toHaveAccessibleDescription(/From 0 to 100\./);
+    expect(field("Candidates you can compare at once")).toHaveAccessibleDescription(
+      /From 1 to 20\./,
+    );
+    expect(field("Top of the score range")).toHaveAccessibleDescription(/At least 1\./);
+  });
+
+  /** T28-4. */
+  it("refuses a coverage floor of 150 in the form, and sends nothing", async () => {
+    const user = userEvent.setup();
+    const sent = recordSettingsWrites();
+    renderShell("/configure");
+    const settings = await panel();
+
+    await user.clear(field("Minimum coverage to score"));
+    await user.type(field("Minimum coverage to score"), "150");
+    fireEvent.submit(field("Minimum coverage to score").closest("form")!);
+
+    expect(field("Minimum coverage to score")).toHaveAttribute("aria-invalid", "true");
+    expect(settings.getByRole("button", { name: "Save settings" })).toBeDisabled();
+    expect(sent).toEqual([]);
+  });
+
+  /** T30-3. */
+  it("refuses a comparator limit of 25 in the form, and sends nothing", async () => {
+    const user = userEvent.setup();
+    const sent = recordSettingsWrites();
+    renderShell("/configure");
+    const settings = await panel();
+
+    await user.clear(field("Candidates you can compare at once"));
+    await user.type(field("Candidates you can compare at once"), "25");
+    fireEvent.submit(field("Candidates you can compare at once").closest("form")!);
+
+    expect(field("Candidates you can compare at once")).toHaveAttribute("aria-invalid", "true");
+    expect(settings.getByRole("button", { name: "Save settings" })).toBeDisabled();
+    expect(sent).toEqual([]);
+  });
+
+  it("marks a stored limit outside the range and holds Save until it is fixed", async () => {
+    const user = userEvent.setup();
+    mockServer.use(
+      http.get("/v1/settings", () =>
+        HttpResponse.json({
+          score_scale_max: 100,
+          min_coverage: 60,
+          comparator_limit: 25,
+          run_spend_cap_eur: 5,
+          refetch_older_than_days: 365,
+        }),
+      ),
+    );
+    const sent = recordSettingsWrites();
+    renderShell("/configure");
+    const settings = await panel();
+
+    expect(await settings.findByDisplayValue("25")).toHaveAttribute("aria-invalid", "true");
+    expect(settings.getByRole("button", { name: "Save settings" })).toBeDisabled();
+
+    await user.clear(field("Candidates you can compare at once"));
+    await user.type(field("Candidates you can compare at once"), "20");
+    await user.click(settings.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ comparator_limit: 20 });
+  });
+
+  /** T32-1 (PL-032). Shown as euros and cents, and saved unchanged as the same number. */
+  it("shows a stored cap of 5 as 5.00, and saves 5", async () => {
+    const user = userEvent.setup();
+    mockServer.use(
+      http.get("/v1/settings", () =>
+        HttpResponse.json({
+          score_scale_max: 100,
+          min_coverage: 60,
+          comparator_limit: 5,
+          run_spend_cap_eur: 5,
+          refetch_older_than_days: 365,
+        }),
+      ),
+    );
+    const sent = recordSettingsWrites();
+    renderShell("/configure");
+    const settings = await panel();
+
+    expect(await settings.findByDisplayValue("5.00")).toBe(field("Spend cap per acquisition"));
+    await user.click(settings.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ run_spend_cap_eur: 5 });
   });
 });
 
@@ -492,17 +688,29 @@ describe("the settings panel's confirmation", () => {
   });
 
   it("says nothing in the status line when the save is refused", async () => {
+    mockServer.use(
+      http.put("/v1/settings", () =>
+        HttpResponse.json(
+          {
+            code: "invalid_request",
+            message: "The request does not match what this operation accepts.",
+            details: {
+              errors: [
+                { location: ["body", "score_scale_max"], problem: "x", kind: "greater_than_equal", limit: 1 },
+              ],
+            },
+          },
+          { status: 422 },
+        ),
+      ),
+    );
     const user = userEvent.setup();
     renderShell("/configure");
     const settings = await panel();
 
-    await user.clear(field("Top of the score range"));
-    await user.type(field("Top of the score range"), "0");
     await user.click(settings.getByRole("button", { name: "Save settings" }));
 
-    expect(
-      await settings.findByText(/does not match what this operation accepts/i),
-    ).toBeInTheDocument();
+    expect(await settings.findByRole("alert")).toHaveTextContent(/Not saved/);
     expect(settings.getByRole("status")).toBeEmptyDOMElement();
   });
 });

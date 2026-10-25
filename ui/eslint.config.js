@@ -41,8 +41,6 @@ const NO_HAND_MADE_NUMBER_BOX = [
 
 /** Today's hand-made number boxes, and who moves each onto NumberField. */
 const NUMBER_BOX_LEDGER = {
-  "src/routes/configure/household/HouseholdPanel.tsx": "C02 U2 (PL-024)",
-  "src/routes/configure/settings/SettingsPanel.tsx": "C02 U2 (PL-024)",
   "src/routes/configure/criteria/CriterionRuleFields.tsx": "C02 U3 (PL-024)",
 };
 

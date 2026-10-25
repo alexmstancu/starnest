@@ -2,7 +2,9 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { replaceSettings, type Settings } from "../../../api/endpoints";
+import { fieldProblems } from "../../../api/fieldProblems";
 import {
+  SETTING_RANGES,
   draftOf,
   invalidSettings,
   settingsFrom,
@@ -14,7 +16,13 @@ export interface SettingsForm {
   draft: SettingsDraft;
   /** Fields holding text no number can be read from. Nothing is sent while there are any. */
   invalid: readonly SettingName[];
+  /** A refusal no field carries. One that names fields is said on them instead. */
   failure: unknown;
+  /**
+   * The server's refusal of each field it named, in words (PL-028). Kept on a field until that
+   * field is edited.
+   */
+  problems: Partial<Record<SettingName, string>>;
   saved: boolean;
   /** A save is in flight, so another may not start. */
   saving: boolean;
@@ -31,6 +39,7 @@ export interface SettingsForm {
 export function useSettingsForm(settings: Settings): SettingsForm {
   const [draft, setDraft] = useState(draftOf(settings));
   const [failure, setFailure] = useState<unknown>(null);
+  const [problems, setProblems] = useState<Partial<Record<SettingName, string>>>({});
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   // Refs, because both are read when a save starts and when it ends, and neither is drawn.
@@ -46,6 +55,7 @@ export function useSettingsForm(settings: Settings): SettingsForm {
     const sentAt = revision.current;
     setSaving(true);
     setFailure(null);
+    setProblems({});
     setSaved(false);
     try {
       const stored = await replaceSettings(settingsFrom(draft));
@@ -54,7 +64,9 @@ export function useSettingsForm(settings: Settings): SettingsForm {
         setSaved(true);
       }
     } catch (error) {
-      setFailure(error);
+      const named = onTheForm(fieldProblems(error, SETTING_RANGES), draft);
+      if (Object.keys(named).length > 0) setProblems(named);
+      else setFailure(error);
     } finally {
       inFlight.current = false;
       setSaving(false);
@@ -65,15 +77,27 @@ export function useSettingsForm(settings: Settings): SettingsForm {
     draft,
     invalid,
     failure,
+    problems,
     saved,
     saving,
     change: (name, value) => {
       revision.current += 1;
       setDraft((current) => ({ ...current, [name]: value }));
+      setProblems((current) =>
+        Object.fromEntries(Object.entries(current).filter(([field]) => field !== name)),
+      );
     },
     save: (event: FormEvent) => {
       event.preventDefault();
       void send();
     },
   };
+}
+
+/** Only the problems about a field this form shows: one about anything else names nothing here. */
+function onTheForm(
+  problems: Map<string, string>,
+  draft: SettingsDraft,
+): Partial<Record<SettingName, string>> {
+  return Object.fromEntries([...problems].filter(([field]) => field in draft));
 }

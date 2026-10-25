@@ -150,11 +150,11 @@ test.describe("configuring", () => {
   test("saves a settings change and reads it back", async ({ page }) => {
     await page.goto("/configure");
     // A textbox rather than a spinbutton: the field takes a decimal by `inputMode`, not a
-    // number input with its stepper.
+    // number input with its stepper. Euros, so shown with their cents (PL-032).
     const cap = page.getByRole("textbox", { name: /Spend cap per acquisition/ });
     await expect.poll(() => cap.inputValue()).not.toBe("");
     const before = await cap.inputValue();
-    const after = before === "12" ? "13" : "12";
+    const after = before === "12.00" ? "13.00" : "12.00";
 
     await cap.fill(after);
     await page.getByRole("button", { name: "Save settings" }).click();

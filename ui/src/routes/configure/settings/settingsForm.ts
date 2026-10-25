@@ -9,7 +9,12 @@
  */
 
 import type { Settings } from "../../../api/endpoints";
-import { readTypedNumber } from "../numericInput";
+import {
+  describeRule,
+  numberAsInput,
+  readNumber,
+  type NumberRule,
+} from "../../../format/typedNumber";
 
 /**
  * How much is lost while a setting is undecided.
@@ -22,8 +27,12 @@ import { readTypedNumber } from "../numericInput";
 export type UnsetSeverity = "blocking" | "advisory";
 
 export interface SettingField {
-  /** True where the setting counts things and a fraction of one is meaningless. */
-  whole: boolean;
+  /**
+   * What the box reads, and its range (PL-028). **The same bounds as the contract's
+   * `SettingsInput`**, checked before anything is sent and stated in the field's note; every
+   * setting is optional, because blank is "not decided yet".
+   */
+  rule: NumberRule;
   name: SettingName;
   label: string;
   /**
@@ -54,7 +63,7 @@ export const SETTING_FIELDS = [
   {
     name: "min_coverage",
     // A percentage, and 57.5% is a real floor to want.
-    whole: false,
+    rule: { kind: "decimal", minimum: 0, maximum: 100, optional: true },
     label: "Minimum coverage to score",
     unit: "%",
     description: "Below this, a candidate is insufficient_data.",
@@ -64,7 +73,7 @@ export const SETTING_FIELDS = [
   },
   {
     name: "score_scale_max",
-    whole: true,
+    rule: { kind: "whole", minimum: 1, optional: true },
     label: "Top of the score range",
     unit: "points",
     description: "The top of every score. Nothing assumes 100.",
@@ -73,9 +82,10 @@ export const SETTING_FIELDS = [
   },
   {
     name: "comparator_limit",
-    whole: true,
+    // Twenty is the product's ceiling (PL-030), held by the contract and the database too.
+    rule: { kind: "whole", minimum: 1, maximum: 20, optional: true },
     label: "Candidates you can compare at once",
-    unit: "candidates",
+    unit: "candidates (1–20)",
     description: "How many comparators one comparison may hold.",
     // **What Compare does, not what it might be expected to** (UI-31): an unset limit is
     // refused with `comparator_limit_not_set`, never read as "no limit".
@@ -84,8 +94,8 @@ export const SETTING_FIELDS = [
   },
   {
     name: "run_spend_cap_eur",
-    // Money, so cents.
-    whole: false,
+    // Money, so cents, and always shown with them: "5.00", as the design draws it (PL-032).
+    rule: { kind: "money", minimum: 0, optional: true, cents: "always" },
     label: "Spend cap per acquisition",
     unit: "€",
     description: "A run halts here, keeping what it fetched.",
@@ -95,7 +105,7 @@ export const SETTING_FIELDS = [
   },
   {
     name: "refetch_older_than_days",
-    whole: true,
+    rule: { kind: "whole", minimum: 1, optional: true },
     label: "Refetch data older than",
     unit: "days",
     description:
@@ -121,16 +131,51 @@ export function unsetFields(
 }
 
 /**
- * The fields holding text no number can be read from, in the order they are shown.
+ * What the warning above the form says about the blanks: how many, and what each stops.
+ *
+ * **Compare is named** (PL-030): an unset comparator limit refuses every comparison, which "the
+ * rule behind it is not in force" made sound like a rule quietly switched off.
+ */
+export function describeUnset(unset: readonly SettingField[]): string {
+  const count =
+    unset.length === 1 ? "One setting is not set" : `${String(unset.length)} settings are not set`;
+  const others = unset.length - (unset.some(isComparatorLimit) ? 1 : 0);
+  if (others === unset.length) {
+    return unset.length === 1
+      ? `${count}, so the rule behind it is not in force.`
+      : `${count}, so the rules behind them are not in force.`;
+  }
+  const stopsCompare = `${count}: Compare refuses every comparison until the comparator limit is set`;
+  if (others === 0) return `${stopsCompare}.`;
+  return others === 1
+    ? `${stopsCompare}, and the rule behind the other is not in force.`
+    : `${stopsCompare}, and the rules behind the other ${String(others)} are not in force.`;
+}
+
+function isComparatorLimit(field: SettingField): boolean {
+  return field.name === "comparator_limit";
+}
+
+/**
+ * The fields holding text the form cannot send, in the order they are shown: not a number,
+ * outside the field's range, or half typed.
  *
  * **Neither set nor unset** (UI-10): a lone point is not a decision to leave a rule off, and
- * sending it as null would make it one. The form refuses to send while any field is here.
+ * sending it as null would make it one. Nor is a limit of 25 a limit the server will store. The
+ * form refuses to send while any field is here -- a stored value outside a range included, which
+ * loads, is marked, and holds Save until it is fixed.
  */
 export function invalidSettings(draft: SettingsDraft): readonly SettingName[] {
-  return SETTING_FIELDS.filter(
-    (field) => readTypedNumber(draft[field.name]) === "invalid",
-  ).map((field) => field.name);
+  return SETTING_FIELDS.filter((field) => {
+    const reading = readNumber(draft[field.name], field.rule);
+    return reading.kind === "refused" || reading.kind === "incomplete";
+  }).map((field) => field.name);
 }
+
+/** Each field's range in words, for a server refusal whose kind the form does not know. */
+export const SETTING_RANGES: Readonly<Record<string, string>> = Object.fromEntries(
+  SETTING_FIELDS.map((field) => [field.name, describeRule(field.rule)]),
+);
 
 /**
  * Whether anything blank stops the product working, rather than merely leaving a rule off.
@@ -147,25 +192,21 @@ export type SettingsDraft = Record<SettingName, string>;
 /** The five values as the text of five inputs, which is what a half-typed number has to be. */
 export function draftOf(settings: Settings): SettingsDraft {
   return Object.fromEntries(
-    SETTING_FIELDS.map((field) => [field.name, asText(settings[field.name])]),
+    SETTING_FIELDS.map((field) => [field.name, numberAsInput(settings[field.name], field.rule)]),
   ) as SettingsDraft;
 }
 
+/** Only for a draft `invalidSettings` passes: a field it would refuse throws, never goes as null. */
 export function settingsFrom(draft: SettingsDraft): Settings {
-  return {
-    score_scale_max: asNumber(draft.score_scale_max),
-    min_coverage: asNumber(draft.min_coverage),
-    comparator_limit: asNumber(draft.comparator_limit),
-    run_spend_cap_eur: asNumber(draft.run_spend_cap_eur),
-    refetch_older_than_days: asNumber(draft.refetch_older_than_days),
-  };
-}
-
-function asText(value: number | null | undefined): string {
-  return value === null || value === undefined ? "" : String(value);
+  return Object.fromEntries(
+    SETTING_FIELDS.map((field) => [field.name, asNumber(draft[field.name], field.rule)]),
+  );
 }
 
 /** An empty field is null, never zero: "not decided" and "decided to be nothing" differ. */
-function asNumber(typed: string): number | null {
-  return typed.trim() === "" ? null : Number(typed);
+function asNumber(typed: string, rule: NumberRule): number | null {
+  const reading = readNumber(typed, rule);
+  if (reading.kind === "number") return reading.value;
+  if (reading.kind === "blank") return null;
+  throw new Error("A setting the form refuses was about to be sent.");
 }

@@ -60,7 +60,7 @@ describe("the household panel", () => {
     renderShell("/configure");
     await panel();
 
-    expect(field("Net income")).toHaveAccessibleDescription("per month");
+    expect(field("Net income")).toHaveAccessibleDescription(/^per month\./);
   });
 
   it("shows no city rather than an empty one when the household lives in none", async () => {
@@ -123,12 +123,35 @@ describe("the household panel", () => {
     await waitFor(() => expect(field("Rent ceiling")).toHaveValue(""));
   });
 
-  it("shows the server's refusal rather than pretending the record was written", async () => {
+  /**
+   * PL-028 and C02-S2. **The server's refusal, in the server's shape**: 422 `invalid_request`
+   * with each field in `details.errors`. Said on the field it names, worded from its kind and
+   * limit, with no code -- and a field with no box of its own is named above the form.
+   */
+  it("marks the fields the server refused rather than pretending the record was written", async () => {
     mockServer.use(
       http.put("/v1/household", () =>
         HttpResponse.json(
-          { code: "invalid_field", message: "net_income must be positive." },
-          { status: 400 },
+          {
+            code: "invalid_request",
+            message: "The request does not match what this operation accepts.",
+            details: {
+              errors: [
+                {
+                  location: ["body", "net_income"],
+                  problem: "Input should be greater than or equal to 0",
+                  kind: "greater_than_equal",
+                  limit: 0,
+                },
+                {
+                  location: ["body", "citizenships"],
+                  problem: "Tuple should have at least 1 item after validation, not 0",
+                  kind: "too_short",
+                },
+              ],
+            },
+          },
+          { status: 422 },
         ),
       ),
     );
@@ -136,14 +159,51 @@ describe("the household panel", () => {
     renderShell("/configure");
     const household = await panel();
 
-    await user.clear(field("Net income"));
-    await user.type(field("Net income"), "-1");
     await user.click(household.getByRole("button", { name: "Save household" }));
 
-    expect(
-      await household.findByText(/net_income must be positive/),
-    ).toBeInTheDocument();
+    const alert = await household.findByRole("alert");
+    expect(alert).toHaveTextContent("Not saved: the marked fields were refused.");
+    expect(alert).toHaveTextContent("Passports held: At least one is required.");
+    expect(field("Net income")).toHaveAttribute("aria-invalid", "true");
+    expect(field("Net income")).toHaveAccessibleDescription(/At least 0\./);
+    expect(household.queryByText(/invalid_request|greater_than_equal|Input should/)).toBeNull();
     expect(household.queryByText("Saved.")).not.toBeInTheDocument();
+  });
+
+  it("refuses a negative income in the form, and sends nothing", async () => {
+    const user = userEvent.setup();
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.put("/v1/household", async ({ request }) => {
+        sent.push(await request.json());
+        return HttpResponse.json({});
+      }),
+    );
+    renderShell("/configure");
+    const household = await panel();
+
+    await user.clear(field("Net income"));
+    await user.type(field("Net income"), "-1");
+    fireEvent.submit(field("Net income").closest("form")!);
+
+    expect(field("Net income")).toHaveAttribute("aria-invalid", "true");
+    expect(field("Net income")).toHaveAccessibleDescription(/cannot be negative/);
+    expect(household.getByRole("button", { name: "Save household" })).toBeDisabled();
+    expect(sent).toEqual([]);
+  });
+
+  /** PL-024. "72,000" was filtered to 72 and saved; it is now refused with both readings. */
+  it("refuses an income typed with a comma, offering both readings", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const household = await panel();
+
+    await user.clear(field("Net income"));
+    await user.type(field("Net income"), "72,000");
+
+    expect(field("Net income")).toHaveValue("72,000");
+    expect(field("Net income")).toHaveAccessibleDescription(/Type 72000, or 72 if/);
+    expect(household.getByRole("button", { name: "Save household" })).toBeDisabled();
   });
 
   it("reports a household that could not be read at all", async () => {
@@ -412,9 +472,7 @@ describe("the household panel while a save is in flight", () => {
     fireEvent.submit(field("Rent ceiling").closest("form")!);
 
     expect(field("Rent ceiling")).toHaveAttribute("aria-invalid", "true");
-    expect(field("Rent ceiling")).toHaveAccessibleDescription(
-      /not a number that can be saved/i,
-    );
+    expect(field("Rent ceiling")).toHaveAccessibleDescription(/not a number/i);
     expect(field("Net income")).toHaveAttribute("aria-invalid", "false");
     // Disabled outright, which is the one state Save is disabled for: nothing is in flight.
     const save = household.getByRole("button", { name: "Save household" });
@@ -467,8 +525,8 @@ describe("the household panel's confirmation", () => {
     mockServer.use(
       http.put("/v1/household", () =>
         HttpResponse.json(
-          { code: "invalid_field", message: "net_income must be positive." },
-          { status: 400 },
+          { code: "internal_error", message: "the household is locked" },
+          { status: 500 },
         ),
       ),
     );
@@ -479,7 +537,7 @@ describe("the household panel's confirmation", () => {
     await user.click(household.getByRole("button", { name: "Save household" }));
 
     expect(await household.findByRole("alert")).toHaveTextContent(
-      /net_income must be positive/,
+      /the household is locked/,
     );
     expect(household.getByRole("status")).toBeEmptyDOMElement();
   });

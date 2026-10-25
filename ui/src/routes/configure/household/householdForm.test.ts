@@ -8,7 +8,6 @@ import {
   invalidHouseholdFields,
   isIncomplete,
   type HouseholdDraft,
-  onlyMoneyCharacters,
 } from "./householdForm";
 
 /**
@@ -141,44 +140,61 @@ describe("what the form needs before it will send anything", () => {
   });
 });
 
-describe("what a reader may type into a money field", () => {
-  it("keeps digits", () => {
-    expect(onlyMoneyCharacters("2000")).toBe("2000");
+/**
+ * PL-024 (UF-026). **What was typed is read, or refused; never filtered.** The filter that
+ * stood here kept the digits of "about 2000", read "1250,75" as 1250.75 and "72,000" as 72.
+ */
+describe("what a money field reads", () => {
+  it.each([
+    ["about 2000 a month"],
+    ["€2000"],
+    ["72,000"],
+    ["1250,75"],
+    ["1.2.3"],
+    ["-500"],
+    ["72.000"],
+    ["1e5"],
+  ])("refuses %s rather than reading part of it", (typed) => {
+    expect(invalidHouseholdFields(draft({ net_income: typed }))).toEqual(["net_income"]);
+    expect(invalidHouseholdFields(draft({ max_rent: typed }))).toEqual(["max_rent"]);
   });
 
-  /**
-   * The owner's complaint: these were plain text, so "about 2000" went in, `Number()` made it
-   * `NaN`, and the next read rendered an empty box -- the figure vanished without a word.
-   */
-  it("drops letters", () => {
-    expect(onlyMoneyCharacters("about 2000 a month")).toBe("2000");
-    expect(onlyMoneyCharacters("abc")).toBe("");
+  it("reads euros and cents", () => {
+    expect(householdFrom(draft({ net_income: "1250.75" })).net_income).toBe(1250.75);
   });
 
-  it("drops a currency symbol, which the field already shows", () => {
-    expect(onlyMoneyCharacters("€2000")).toBe("2000");
+  it("shows a stored figure with cents only where it has any", () => {
+    expect(draftOf({ ...A_HOUSEHOLD, net_income: 72000 }).net_income).toBe("72000");
+    expect(draftOf({ ...A_HOUSEHOLD, net_income: 72000.5 }).net_income).toBe("72000.50");
   });
 
-  it("keeps one decimal point", () => {
-    expect(onlyMoneyCharacters("1250.75")).toBe("1250.75");
+  it("refuses to turn a field it would refuse into a number", () => {
+    expect(() => householdFrom(draft({ max_rent: "72,000" }))).toThrow();
+    expect(() => householdFrom(draft({ net_income: "" }))).toThrow();
+  });
+});
+
+/** PL-028. The contract's ranges: money and children from 0, adults from 1, all whole counts. */
+describe("a household figure outside its range", () => {
+  it.each([
+    ["number_adults", "0"],
+    ["number_adults", "1.5"],
+    ["number_children", "-1"],
+    ["target_monthly_spend", "-1"],
+  ] as const)("holds %s at %s", (field, typed) => {
+    expect(invalidHouseholdFields(draft({ [field]: typed }))).toEqual([field]);
   });
 
-  it("accepts a comma as the decimal point, because half of Europe types one", () => {
-    expect(onlyMoneyCharacters("1250,75")).toBe("1250.75");
+  it("accepts each field at its lower edge", () => {
+    expect(
+      invalidHouseholdFields(
+        draft({ net_income: "0", number_adults: "1", number_children: "0", max_rent: "0" }),
+      ),
+    ).toEqual([]);
   });
 
-  /** A second point ends the number rather than gluing the digits across it. */
-  it("stops at a second point", () => {
-    expect(onlyMoneyCharacters("1.2.3")).toBe("1.2");
-  });
-
-  /** Every field this guards is a cost or a stated income, and the schema floors them at 0. */
-  it("drops a minus sign", () => {
-    expect(onlyMoneyCharacters("-500")).toBe("500");
-  });
-
-  it("leaves an empty field empty, which is unanswered rather than zero", () => {
-    expect(onlyMoneyCharacters("")).toBe("");
+  it("leaves a blank required field to the completeness check, not the invalid list", () => {
+    expect(invalidHouseholdFields(draft({ net_income: "" }))).toEqual([]);
   });
 });
 

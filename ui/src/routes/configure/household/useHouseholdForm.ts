@@ -7,7 +7,9 @@
 
 import { useRef, useState, type FormEvent } from "react";
 import { replaceHousehold, type Household } from "../../../api/endpoints";
+import { fieldProblems } from "../../../api/fieldProblems";
 import {
+  HOUSEHOLD_RANGES,
   draftOf,
   householdFrom,
   invalidHouseholdFields,
@@ -21,7 +23,13 @@ export interface HouseholdForm {
   incomplete: boolean;
   /** Fields holding text no number can be read from. Nothing is sent while there are any. */
   invalid: readonly (keyof HouseholdDraft)[];
+  /** A refusal no field carries. One that names fields is said on them instead. */
   failure: unknown;
+  /**
+   * The server's refusal of each field it named, in words (PL-028). Kept on a field until that
+   * field is edited.
+   */
+  problems: Partial<Record<keyof HouseholdDraft, string>>;
   saved: boolean;
   /** A save is in flight, so another may not start. */
   saving: boolean;
@@ -38,6 +46,7 @@ export interface HouseholdForm {
 export function useHouseholdForm(household: Household): HouseholdForm {
   const [draft, setDraft] = useState<HouseholdDraft>(draftOf(household));
   const [failure, setFailure] = useState<unknown>(null);
+  const [problems, setProblems] = useState<Partial<Record<keyof HouseholdDraft, string>>>({});
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   // Refs, because both are read when a save starts and when it ends, and neither is drawn.
@@ -50,6 +59,9 @@ export function useHouseholdForm(household: Household): HouseholdForm {
   function change(field: keyof HouseholdDraft, value: string): void {
     revision.current += 1;
     setDraft((current) => ({ ...current, [field]: value }));
+    setProblems((current) =>
+      Object.fromEntries(Object.entries(current).filter(([name]) => name !== field)),
+    );
     setSaved(false);
   }
 
@@ -59,6 +71,7 @@ export function useHouseholdForm(household: Household): HouseholdForm {
     const sentAt = revision.current;
     setSaving(true);
     setFailure(null);
+    setProblems({});
     setSaved(false);
     try {
       const stored = await replaceHousehold(householdFrom(draft));
@@ -67,7 +80,11 @@ export function useHouseholdForm(household: Household): HouseholdForm {
         setSaved(true);
       }
     } catch (error) {
-      setFailure(error);
+      const named = Object.fromEntries(
+        [...fieldProblems(error, HOUSEHOLD_RANGES)].filter(([field]) => field in draft),
+      );
+      if (Object.keys(named).length > 0) setProblems(named);
+      else setFailure(error);
     } finally {
       inFlight.current = false;
       setSaving(false);
@@ -79,6 +96,7 @@ export function useHouseholdForm(household: Household): HouseholdForm {
     incomplete: isIncomplete(draft),
     invalid,
     failure,
+    problems,
     saved,
     saving,
     change,

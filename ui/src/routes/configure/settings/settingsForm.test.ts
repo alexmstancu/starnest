@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   SETTING_FIELDS,
+  describeUnset,
   draftOf,
   invalidSettings,
   isBlocked,
@@ -43,6 +44,24 @@ describe("settings becoming a draft", () => {
   it("shows a missing value as empty too", () => {
     expect(draftOf({}).comparator_limit).toBe("");
   });
+
+  /** T32-1 (PL-032). The cap is euros, and the design shows it with its cents. */
+  it("shows the spend cap with its cents, and reads it back as the same figure", () => {
+    const draft = draftOf({ run_spend_cap_eur: 5 });
+
+    expect(draft.run_spend_cap_eur).toBe("5.00");
+    expect(settingsFrom({ ...SET, run_spend_cap_eur: draft.run_spend_cap_eur }).run_spend_cap_eur).toBe(5);
+  });
+
+  /** T32-2. A stored figure with more decimals than money takes is shown whole, never rounded. */
+  it("shows a stored cap with three decimals in full, and calls it invalid", () => {
+    const draft = draftOf({ run_spend_cap_eur: 5.555 });
+
+    expect(draft.run_spend_cap_eur).toBe("5.555");
+    expect(invalidSettings({ ...SET, run_spend_cap_eur: draft.run_spend_cap_eur })).toEqual([
+      "run_spend_cap_eur",
+    ]);
+  });
 });
 
 describe("a draft becoming settings", () => {
@@ -66,6 +85,10 @@ describe("a draft becoming settings", () => {
     expect(
       settingsFrom({ ...SET, min_coverage: "   " }).min_coverage,
     ).toBeNull();
+  });
+
+  it("refuses to turn a draft the form would refuse into null", () => {
+    expect(() => settingsFrom({ ...SET, comparator_limit: "25" })).toThrow();
   });
 
   it("keeps a real zero, because zero can be a decision", () => {
@@ -108,7 +131,7 @@ describe("what a blank setting costs", () => {
     expect(SETTING_FIELDS.map((field) => field.unit)).toEqual([
       "%",
       "points",
-      "candidates",
+      "candidates (1–20)",
       "€",
       "days",
     ]);
@@ -183,6 +206,45 @@ describe("a setting that holds no number", () => {
   });
 });
 
+/** PL-028 and PL-030. Each field's range is the contract's, and a figure outside it is held. */
+describe("a setting outside its range", () => {
+  it.each([
+    ["min_coverage", "150"],
+    ["min_coverage", "-1"],
+    ["score_scale_max", "0"],
+    ["comparator_limit", "0"],
+    ["comparator_limit", "21"],
+    ["comparator_limit", "2.5"],
+    ["run_spend_cap_eur", "-5"],
+    ["run_spend_cap_eur", "72.000"],
+    ["refetch_older_than_days", "0"],
+  ] as const)("holds %s at %s", (name, typed) => {
+    expect(invalidSettings({ ...SET, [name]: typed })).toEqual([name]);
+  });
+
+  it.each([
+    ["min_coverage", "100"],
+    ["min_coverage", "0"],
+    ["min_coverage", "57.5"],
+    ["comparator_limit", "1"],
+    ["comparator_limit", "20"],
+    ["run_spend_cap_eur", "0"],
+    ["run_spend_cap_eur", "12.50"],
+  ] as const)("accepts %s at its edge or inside, %s", (name, typed) => {
+    expect(invalidSettings({ ...SET, [name]: typed })).toEqual([]);
+  });
+
+  it("refuses a comma rather than reading it as a point", () => {
+    expect(invalidSettings({ ...SET, min_coverage: "57,5" })).toEqual(["min_coverage"]);
+  });
+
+  it("states the comparator limit's range as 1 to 20", () => {
+    const limit = SETTING_FIELDS.find((field) => field.name === "comparator_limit");
+
+    expect(limit?.rule).toMatchObject({ kind: "whole", minimum: 1, maximum: 20 });
+  });
+});
+
 /**
  * UI-31. **The guidance said the opposite of what happens.** Compare refuses a comparison while
  * the limit is unset (`comparator_limit_not_set`); it never accepted "as many as you pick".
@@ -196,7 +258,50 @@ describe("what an unset comparator limit costs", () => {
     expect(limit?.consequence).toBe(
       "Compare refuses every comparison until this is set.",
     );
-    // Advisory still: ranking works without it, and the one blocking banner is the scale's.
+    // Advisory still: ranking works without it, so the one blocking banner stays the scale's;
+    // what it stops is Compare, and the summary says so (PL-030).
     expect(limit?.severity).toBe("advisory");
+  });
+});
+
+describe("the summary of the blanks", () => {
+  const field = (name: string) => SETTING_FIELDS.find((each) => each.name === name)!;
+
+  it("says one blank leaves its rule off", () => {
+    expect(describeUnset([field("min_coverage")])).toBe(
+      "One setting is not set, so the rule behind it is not in force.",
+    );
+  });
+
+  it("says several blanks leave their rules off", () => {
+    expect(describeUnset([field("min_coverage"), field("refetch_older_than_days")])).toBe(
+      "2 settings are not set, so the rules behind them are not in force.",
+    );
+  });
+
+  it("names Compare when the comparator limit is the blank", () => {
+    expect(describeUnset([field("comparator_limit")])).toBe(
+      "One setting is not set: Compare refuses every comparison until the comparator limit is set.",
+    );
+  });
+
+  it("names Compare first, and the other rule after it", () => {
+    expect(describeUnset([field("min_coverage"), field("comparator_limit")])).toBe(
+      "2 settings are not set: Compare refuses every comparison until the comparator limit " +
+        "is set, and the rule behind the other is not in force.",
+    );
+  });
+
+  it("counts the others when there are several", () => {
+    expect(
+      describeUnset([
+        field("min_coverage"),
+        field("comparator_limit"),
+        field("refetch_older_than_days"),
+      ]),
+    ).toBe(
+      "3 settings are not set: Compare refuses every comparison until the comparator limit " +
+        "is set, and the rules behind the other 2 are not in force.",
+    );
   });
 });
