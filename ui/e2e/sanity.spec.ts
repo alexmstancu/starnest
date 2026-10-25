@@ -419,10 +419,11 @@ test.describe("what a rule costs", () => {
       .getByRole("listitem")
       .filter({ hasText: "UK Skilled Worker" });
 
-    // Either it has answers and says what they cost, or it says nobody has answered. Both are
-    // real states; a switch that says only "enforced" is neither.
+    // What it costs in the live ranking (PL-164: an enforced gate's line is the ranking's, so
+    // a citizenship that clears it shows), or that nobody has answered it. Every one is a real
+    // state; a switch that says only "enforced" is none of them.
     await expect(row).toContainText(
-      /Removes |rules nobody out|No answer has been recorded/,
+      /Removes |Flags |rules nobody out|Applies to no \w+ right now|No answer has been recorded/,
     );
   });
 });
