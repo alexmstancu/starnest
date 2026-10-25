@@ -21,9 +21,9 @@ the account of a defect outlives the defect.
 
 ## Status
 
-**2026-10-25: six opened, P101-P106, handled in a separate pass by decision** -- the last
-review of PL-033 found five, and the batch review left one about the mock. Round 3 closed with
-them open; see the last section.
+**2026-10-25: six opened, P101-P106; P104 closed the same day**, and the other five are
+handled in a separate pass by decision -- the last review of PL-033 found five, and the batch
+review left one about the mock. Round 3 closed with them open; see the last section.
 
 **69 findings: 67 closed, 2 open, and both are open by decision rather than by neglect**:
 P38's mitigated LLM editions and P6's Cloudflare block. **P10's unserved exchange rate closed
@@ -643,6 +643,6 @@ handled in a separate pass**, and round 3 closed PL-033, PL-142 and PL-138 with 
 | **P101** | **An overdue creation loses its history** (`RecentChanges.tsx`, `stranded()`, from `5ed84a1`). With Create held past 10 seconds, the refreshed list lacks the unfinished set, and `stranded()` takes that for a deletion and drops its unconfirmed entry. When the request lands, the set exists with no entry and no Undo. | **Open.** Drop only the entries of a set the session knew to exist and that has since gone. |
 | **P102** | **A source write in flight when Configure is left holds every Configure write for good** (`sources/useDataSources.ts`, from `e3ed552`). Its `reload()` belongs to the unmounted hook and never resolves, so the write never ends, and every writer and Undo stays held until the page is reloaded. | **Open.** The shared runner. |
 | **P103** | **A source switch whose answer is lost, and whose read-back fails, is reported as refused** (`sources/useDataSources.ts`, from `e3ed552`). There is no unconfirmed entry and no Check again, and Reset cannot reverse a change that did happen. | **Open.** The shared runner. |
-| **P104** | **Undoing "made a gate a warning" leaves it a warning while the screen says gate** (`rules/ruleSwitches.ts`, from `85f384e`). The prior state recorded the outcome as `null`, the default, so the reverse leaves `outcome` out, and the server keeps the outcome it holds (`openapi.yaml`, `setMatchRuleEnforcement`). | **Open.** Record the outcome the set holds (`match_rule_outcomes`, `compound_rule_outcomes`) in every rule state, and send it on Undo. |
+| ~~**P104**~~ | **Undoing "made a gate a warning" leaves it a warning while the screen says gate** (`rules/ruleSwitches.ts`, from `85f384e`). The prior state recorded the outcome as `null`, the default, so the reverse leaves `outcome` out, and the server keeps the outcome it holds (`openapi.yaml`, `setMatchRuleEnforcement`). | **Closed 2026-10-25.** A rule read as it stands names the outcome the server holds for it (the chosen one, else a gate's `not_matching` or a compound rule's catalog outcome), so Undo sends it back by name. `RulesPanel.test.tsx`, "undoes a gate made a warning back to a gate", fails without the fix. |
 | **P105** | **An Undo of a rule switch that outlives the 10-second bound frees the rule with no unconfirmed entry** (`rules/useRuleToggles.ts`, from `85f384e`). The undo engine's handling of a lost reverse answer is older, and reaches every writer's Undo. | **Open.** Run reverses through the same runner as writes. |
 | **P106** | **The mock counts a source it does not list as switched on and free** (`mocks/handlers.ts`, the exact-pairs estimate). OECD is absent from the mock's sources, so the mock arms an estimate over attributes only it declares where the server might refuse. Low: test fidelity. Adding OECD broke about twenty source-priority tests that count the sources. | **Open.** Add OECD and every declared source to the fixture, and update the tests that count them. |

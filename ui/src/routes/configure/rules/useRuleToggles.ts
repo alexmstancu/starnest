@@ -170,10 +170,23 @@ export function useRuleToggles(
   }, []);
   useEffect(() => ruleAnswers.listen(criteriaSet.id, show), [ruleAnswers, criteriaSet.id, show]);
 
+  /**
+   * A rule as the set holds it now. **On, it names the outcome the server holds for it** -- the
+   * one chosen in this set, or the one a rule switched on without a choice is given: a gate a
+   * gate, a compound rule the catalog's (D56). This state is what an Undo sends back, and an
+   * outcome left out of that request is kept rather than reset, so "the default" would leave a
+   * warning standing where the screen showed a gate restored (P104).
+   */
   const stateOf = (kind: RuleState["kind"], id: string): RuleState => {
     const on = (kind === "gate" ? enforced : applied).includes(id);
-    const outcome = (kind === "gate" ? gateOutcomes : compoundOutcomes)[id];
-    return { kind, id, on, outcome: on && outcome !== undefined ? outcome : null };
+    return { kind, id, on, outcome: on ? outcomeHeld(kind, id) : null };
+  };
+  const gateOutcome = (matchRuleId: string): RuleOutcome =>
+    gateOutcomes[matchRuleId] ?? "not_matching";
+  const outcomeHeld = (kind: RuleState["kind"], id: string): RuleOutcome | null => {
+    if (kind === "gate") return gateOutcome(id);
+    const catalog = compoundRules.read.state === "ready" ? compoundRules.read.data.items : [];
+    return compoundOutcomes[id] ?? catalog.find((rule) => rule.id === id)?.outcome ?? null;
   };
   const nameOf = (kind: RuleState["kind"], id: string): string => {
     const read = kind === "gate" ? matchRules.read : compoundRules.read;
@@ -262,7 +275,7 @@ export function useRuleToggles(
     apply: (compoundRuleId, wanted) =>
       write({ kind: "compound", id: compoundRuleId, on: wanted, outcome: null }),
     // A gate newly enforced is a gate, as the server makes it.
-    outcomeOfGate: (matchRuleId) => gateOutcomes[matchRuleId] ?? "not_matching",
+    outcomeOfGate: gateOutcome,
     outcomeOfCompoundRule: (rule) => compoundOutcomes[rule.id] ?? rule.outcome,
     holdGateAs: (matchRuleId, outcome) =>
       write({ kind: "gate", id: matchRuleId, on: true, outcome }),

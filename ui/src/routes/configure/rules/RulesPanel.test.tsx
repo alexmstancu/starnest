@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import {
+  fetchCriteriaSet,
   putMatchRuleResult,
   replaceHousehold,
   setMatchRuleEnforcement,
@@ -373,6 +374,49 @@ describe("a rule as a gate or a warning", () => {
 
     await waitFor(() => expect(select).toHaveValue("warning"));
     expect(sent).toEqual([{ is_enforced: true, outcome: "warning" }]);
+  });
+
+  /**
+   * P104. Undo sends a rule back as it was, and the server keeps an outcome the request leaves
+   * out -- so a gate switched on here, then softened to a warning, must be undone to a gate by
+   * name, or the warning stands while the screen shows a gate restored.
+   */
+  it("undoes a gate made a warning back to a gate, in storage as on screen", async () => {
+    const sent = recordRuleWrites();
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+    await user.click(
+      await screen.findByRole("switch", { name: "Enforce A residence quota is open" }),
+    );
+    await waitFor(async () =>
+      expect(await outcomeOf("A residence quota is open")).toHaveValue("not_matching"),
+    );
+    // Another change between the two, so they are two entries rather than one merged.
+    await user.click(screen.getByRole("button", { name: "Lock Economy" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Lock Economy" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+    await user.selectOptions(await outcomeOf("A residence quota is open"), "warning");
+    const history = within(
+      await screen.findByRole("region", { name: /^recent changes/i }),
+    );
+    const softened = (
+      await history.findByText(/Made A residence quota is open a warning/)
+    ).closest("li");
+    expect(softened).not.toBeNull();
+
+    await user.click(within(softened as HTMLElement).getByRole("button", { name: "Undo this" }));
+
+    await waitFor(async () =>
+      expect(await outcomeOf("A residence quota is open")).toHaveValue("not_matching"),
+    );
+    expect(sent.at(-1)).toEqual({ is_enforced: true, outcome: "not_matching" });
+    const stored = await fetchCriteriaSet("default");
+    expect(stored.match_rule_outcomes?.["country.residence_quota_open"]).toBe("not_matching");
   });
 
   it("leaves the outcome as it was when the server refuses it, and says why", async () => {

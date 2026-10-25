@@ -8,8 +8,10 @@ import {
 /**
  * Whether one rule is on in a set, and what it does when it fires there (PL-138).
  *
- * `outcome` is null for a rule that is off, and for one on with the outcome its kind gives it:
- * a gate a gate, a compound rule the catalog's. The server stores only what was chosen (D56).
+ * `outcome` is null for a rule that is off, and for one being switched on without a choice, which
+ * the server gives its kind's outcome: a gate a gate, a compound rule the catalog's (D56). **A rule
+ * read as it stands names its outcome**, because Undo sends that state back and the server keeps
+ * an outcome a request leaves out (P104).
  */
 export interface RuleState {
   kind: "gate" | "compound";
