@@ -84,6 +84,30 @@ export function writeSlices(slices: StoredSlices): void {
  */
 export const DRAFT_PREFIX = "draft:";
 
+/** The slot of one rule's draft, under `DRAFT_PREFIX`: one per set and attribute. */
+export function ruleDraftKey(criteriaSetId: string, attribute: string): string {
+  return `rule:${criteriaSetId}:${attribute}`;
+}
+
+/**
+ * The slices without the rule drafts of sets no longer listed: a deleted set's draft can be
+ * neither shown nor discarded, so it must not keep a reload asking first. The same slices,
+ * unchanged, when every draft's set is listed.
+ */
+export function withoutDraftsOfSetsGone(
+  slices: StoredSlices,
+  listedSetIds: readonly string[],
+): StoredSlices {
+  const kept = new Set(listedSetIds.map((id) => `${DRAFT_PREFIX}${ruleDraftKey(id, "")}`));
+  const entries = Object.entries(slices);
+  const remaining = entries.filter(
+    ([key]) =>
+      !key.startsWith(`${DRAFT_PREFIX}rule:`) ||
+      [...kept].some((prefix) => key.startsWith(prefix)),
+  );
+  return remaining.length === entries.length ? slices : Object.fromEntries(remaining);
+}
+
 /** Whether any form holds something not yet saved: what a reload or a closed tab would lose. */
 export function hasUnsavedDraft(slices: StoredSlices): boolean {
   return Object.entries(slices).some(

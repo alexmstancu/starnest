@@ -984,3 +984,43 @@ describe("a rule's save state", () => {
     expect(goalSelect()).toHaveValue("maximise");
   });
 });
+
+/** PL-025 follow-up. A rule draft asks before a reload only while some screen can still show it. */
+describe("a rule draft's prompt before leaving", () => {
+  function reloadAsksFirst(): boolean {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+
+  it("is let go once its save is stored, though the pillar closed meanwhile", async () => {
+    const user = userEvent.setup();
+    await openTheRuleFor(PLAIN);
+    const writes = holdCriterionWrites();
+    await user.selectOptions(goalSelect(), "maximise");
+    await user.click(screen.getByRole("button", { name: "Save rule" }));
+    await waitFor(() => expect(writes.sent).toHaveLength(1));
+    await openThePillarOf(PLAIN);
+    expect(screen.queryByRole("combobox", { name: "Goal" })).toBeNull();
+    expect(reloadAsksFirst()).toBe(true);
+
+    writes.release();
+
+    await waitFor(() => expect(reloadAsksFirst()).toBe(false));
+  });
+
+  it("is dropped with the set it was typed in", async () => {
+    const user = userEvent.setup();
+    await openTheRuleFor(PLAIN);
+    await user.selectOptions(goalSelect(), "maximise");
+    expect(reloadAsksFirst()).toBe(true);
+
+    await user.click(
+      within(await screen.findByRole("listitem", { name: "Default" })).getByRole("button", {
+        name: "Delete",
+      }),
+    );
+
+    await waitFor(() => expect(reloadAsksFirst()).toBe(false));
+  });
+});

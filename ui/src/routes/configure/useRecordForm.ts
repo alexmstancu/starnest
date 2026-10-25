@@ -58,7 +58,7 @@ export interface RecordForm<R, D extends Draft<D>> {
   /** The stored record changed under an unsaved draft: an undo, another tab. */
   staleBase: boolean;
   change: (field: keyof D, value: string) => void;
-  /** Throw the draft away and show what is stored. Refuses while a save is in flight. */
+  /** Throw the draft away and show what is stored. Refuses while saving or with nothing to throw. */
   discard: () => void;
   save: (event: FormEvent) => void;
 }
@@ -161,7 +161,7 @@ export function useRecordForm<R, D extends Draft<D>>(spec: RecordFormSpec<R, D>)
     staleBase,
     change,
     discard: () => {
-      if (inFlight.current) return;
+      if (inFlight.current || !dirty) return;
       revision.current += 1;
       setSlot(null);
       setProblems({});

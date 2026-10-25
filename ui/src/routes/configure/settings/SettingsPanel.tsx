@@ -81,7 +81,7 @@ function SettingsFields({ settings }: { settings: Settings }) {
       {form.staleBase && (
         <div className="notice notice--warning">
           <p className="notice__message">
-            The stored settings changed since you began. Discard changes to see them.
+            The stored settings changed since you began. Discard settings changes to see them.
           </p>
         </div>
       )}
@@ -188,17 +188,18 @@ function LandingField({ name, children }: { name: string; children: ReactNode })
 
 /** "Not saved yet", and the way back to what is stored (PL-025, D8). Not a live region. */
 function UnsavedDraft({ form }: { form: SettingsForm }) {
-  if (!form.dirty) return null;
+  // **Held, never removed, while there is nothing to discard**: a button that took itself
+  // away on its own press threw focus to the page (as the rule editor's does not).
   return (
     <>
       {form.status === "unsaved" && <span className="unsaved-mark">Not saved yet</span>}
       <button
         type="button"
         className="button"
-        aria-disabled={form.saving || undefined}
+        aria-disabled={form.saving || !form.dirty || undefined}
         onClick={form.discard}
       >
-        Discard changes
+        Discard settings changes
       </button>
     </>
   );

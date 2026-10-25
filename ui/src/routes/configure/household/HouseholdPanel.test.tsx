@@ -912,7 +912,7 @@ describe("the household panel's draft", () => {
     const household = await panel();
     await user.type(field("Net income"), "1");
 
-    await user.click(household.getByRole("button", { name: "Discard changes" }));
+    await user.click(household.getByRole("button", { name: "Discard household changes" }));
 
     expect(field("Net income")).toHaveValue("7400");
     expect(household.queryByText("Not saved yet")).toBeNull();
@@ -948,7 +948,7 @@ describe("the household panel's draft", () => {
     expect(field("Comfortable monthly spend")).toHaveValue("3100");
     expect(field("Net income")).toHaveValue("7400");
     expect(household.getByText(/The stored household changed since you began/)).toBeInTheDocument();
-    await user.click(household.getByRole("button", { name: "Discard changes" }));
+    await user.click(household.getByRole("button", { name: "Discard household changes" }));
     expect(field("Net income")).toHaveValue("8000");
   });
 
@@ -990,5 +990,33 @@ describe("the household panel's draft", () => {
     release();
 
     await waitFor(() => expect(reloadAsksFirst()).toBe(false));
+  });
+});
+
+/** PL-025 follow-up. **Discard stays where it is**, held, once there is nothing to discard. */
+describe("discarding a draft", () => {
+  it.each([
+    ["a click", async (user: ReturnType<typeof userEvent.setup>, discard: HTMLElement) => {
+      await user.click(discard);
+    }],
+    ["Enter", async (user: ReturnType<typeof userEvent.setup>, discard: HTMLElement) => {
+      act(() => discard.focus());
+      await user.keyboard("{Enter}");
+    }],
+  ])("keeps focus on Discard after %s, held", async (_how, press) => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const form = await panel();
+    const discard = form.getByRole("button", { name: "Discard household changes" });
+    expectHeld(discard);
+    await user.type(field("Net income"), "1");
+    expectNotHeld(discard);
+
+    await press(user, discard);
+
+    expect(form.queryByText("Not saved yet")).toBeNull();
+    expect(form.getByRole("button", { name: "Discard household changes" })).toBe(discard);
+    expect(discard).toHaveFocus();
+    expectHeld(discard);
   });
 });

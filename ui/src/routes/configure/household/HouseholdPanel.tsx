@@ -288,17 +288,18 @@ function RefusedFields({ problems }: { problems: HouseholdForm["problems"] }) {
  * would speak on every first keystroke. "Saved." is the one that is announced.
  */
 function UnsavedDraft({ form }: { form: HouseholdForm }) {
-  if (!form.dirty) return null;
+  // **Held, never removed, while there is nothing to discard**: a button that took itself
+  // away on its own press threw focus to the page (as the rule editor's does not).
   return (
     <>
       {form.status === "unsaved" && <span className="unsaved-mark">Not saved yet</span>}
       <button
         type="button"
         className="button"
-        aria-disabled={form.saving || undefined}
+        aria-disabled={form.saving || !form.dirty || undefined}
         onClick={form.discard}
       >
-        Discard changes
+        Discard household changes
       </button>
     </>
   );
@@ -309,7 +310,7 @@ function StaleDraft() {
   return (
     <div className="notice notice--warning">
       <p className="notice__message">
-        The stored household changed since you began. Discard changes to see it.
+        The stored household changed since you began. Discard household changes to see it.
       </p>
     </div>
   );

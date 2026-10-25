@@ -188,3 +188,39 @@ describe("a small whole number", () => {
     );
   });
 });
+
+/** A field opened for a stored count stays open while it is edited, until a segment is picked. */
+describe("a stored count above the segments, while it is edited", () => {
+  it("keeps the field and its focus when the count is erased", async () => {
+    const user = userEvent.setup();
+    render(<Held initial="7" />);
+    await user.click(exact());
+
+    await user.keyboard("{Backspace}");
+
+    expect(exact()).toHaveValue("");
+    expect(exact()).toHaveFocus();
+  });
+
+  it("takes 12 typed over a stored 10, never pressing segment 1 on the way", async () => {
+    const user = userEvent.setup();
+    render(<Held initial="10" />);
+    await user.click(exact());
+
+    await user.keyboard("{Backspace}2");
+
+    expect(exact()).toHaveValue("12");
+    expect(exact()).toHaveFocus();
+    expect(segment("1")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("closes once a segment is picked", async () => {
+    const user = userEvent.setup();
+    render(<Held initial="7" />);
+
+    await user.click(segment("2"));
+
+    expect(screen.queryByRole("textbox", { name: "Adults, exact number" })).toBeNull();
+    expect(segment("2")).toHaveAttribute("aria-pressed", "true");
+  });
+});

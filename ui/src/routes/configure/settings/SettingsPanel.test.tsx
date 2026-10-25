@@ -744,3 +744,31 @@ describe("the settings panel's confirmation", () => {
     expect(settings.getByText("Not saved yet")).toBeInTheDocument();
   });
 });
+
+/** PL-025 follow-up. **Discard stays where it is**, held, once there is nothing to discard. */
+describe("discarding a draft", () => {
+  it.each([
+    ["a click", async (user: ReturnType<typeof userEvent.setup>, discard: HTMLElement) => {
+      await user.click(discard);
+    }],
+    ["Enter", async (user: ReturnType<typeof userEvent.setup>, discard: HTMLElement) => {
+      act(() => discard.focus());
+      await user.keyboard("{Enter}");
+    }],
+  ])("keeps focus on Discard after %s, held", async (_how, press) => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const form = await panel();
+    const discard = form.getByRole("button", { name: "Discard settings changes" });
+    expectHeld(discard);
+    await user.type(field("Refetch data older than"), "1");
+    expectNotHeld(discard);
+
+    await press(user, discard);
+
+    expect(form.queryByText("Not saved yet")).toBeNull();
+    expect(form.getByRole("button", { name: "Discard settings changes" })).toBe(discard);
+    expect(discard).toHaveFocus();
+    expectHeld(discard);
+  });
+});

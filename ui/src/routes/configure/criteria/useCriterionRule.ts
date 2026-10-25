@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CriterionRule, Criterion } from "../../../api/endpoints";
 import { useSelection } from "../../../shell/SelectionContext";
 import { useDraftSlot } from "../../../shell/SessionProvider";
+import { ruleDraftKey } from "../../../shell/sessionState";
 import {
   anEmptyAnchor,
   describeAsked,
@@ -110,7 +111,7 @@ export function useCriterionRule(
   // is kept, and said to be stale, when the stored rule changes under it (C02-S3).
   const { criteriaSetId } = useSelection();
   const [slot, setSlot] = useDraftSlot(
-    `rule:${criteriaSetId ?? ""}:${criterion.attribute}`,
+    ruleDraftKey(criteriaSetId ?? "", criterion.attribute),
     parseRuleDraftSlot,
   );
   const draft = slot?.draft ?? stored;
@@ -227,6 +228,17 @@ export function useCriterionRule(
       setSaved(false);
       sent.current = false;
       void onSave(criterion.attribute, parsed.rule).then((error) => {
+        const answered = (error !== null && error !== undefined) || sent.current;
+        // **Through the store, so it lands though the row has gone** -- a pillar closed while
+        // the save was in flight left the draft asking before every reload. Stored or refused,
+        // the stored rule is what the fields show now (P55); a draft typed since is kept.
+        if (answered) {
+          setSlot((current) =>
+            current !== null && JSON.stringify(current.draft) === JSON.stringify(asked)
+              ? null
+              : current,
+          );
+        }
         if (error !== null && error !== undefined) {
           setRefused(refusalOf(error, asked, { attribute: criterion.attribute, title }));
         } else if (sent.current) {

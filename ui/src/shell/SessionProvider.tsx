@@ -13,6 +13,7 @@ import {
   DRAFT_PREFIX,
   hasUnsavedDraft,
   readSlices,
+  withoutDraftsOfSetsGone,
   writeSlices,
   type StoredSlice,
   type StoredSlices,
@@ -44,7 +45,7 @@ interface SessionStore {
 const SessionContext = createContext<SessionStore | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const { levelId } = useSelection();
+  const { levelId, read: lists } = useSelection();
   const [slices, setSlices] = useState<StoredSlices>(readSlices);
   const unpersisted = useRef(new Set<string>());
 
@@ -74,11 +75,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     unpersisted.current.add(key);
   }, []);
 
-  useWarnBeforeLeaving(hasUnsavedDraft(slices));
+  // **A deleted set's rule drafts are not read**: no screen can show or discard them, so they
+  // must not keep a reload asking first. Only against a list that has landed, since one still
+  // coming is not a list of no sets.
+  const listedSets = lists.state === "ready" ? lists.data.criteriaSets : null;
+  const live = useMemo(
+    () =>
+      listedSets === null
+        ? slices
+        : withoutDraftsOfSetsGone(slices, listedSets.map((set) => set.id)),
+    [slices, listedSets],
+  );
+
+  useWarnBeforeLeaving(hasUnsavedDraft(live));
 
   const store = useMemo(
-    () => ({ slices, levelId, update, markUnpersisted }),
-    [slices, levelId, update, markUnpersisted],
+    () => ({ slices: live, levelId, update, markUnpersisted }),
+    [live, levelId, update, markUnpersisted],
   );
   return <SessionContext.Provider value={store}>{children}</SessionContext.Provider>;
 }

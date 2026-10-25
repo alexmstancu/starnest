@@ -38,9 +38,14 @@ export function CountField({
   noneLabel?: string;
 }) {
   const offeredOne = offered.find((each) => String(each) === value.trim());
-  const [asked, setAsked] = useState(false);
   // A stored count no segment offers is shown in the field, never hidden behind nothing pressed.
-  const typing = asked || (value.trim() !== "" && offeredOne === undefined);
+  const unoffered = value.trim() !== "" && offeredOne === undefined;
+  const [asked, setAsked] = useState(unoffered);
+  // **Once open, it stays open until a segment is picked** (PL-166): opened for a stored 10, it
+  // closed the moment its text read "1" or nothing, taking focus and the next keystroke with it.
+  // Adjusted while rendering, as React advises for state that follows a prop.
+  if (unoffered && !asked) setAsked(true);
+  const typing = asked;
   const chosen = typing ? undefined : offeredOne;
   const fieldId = `${id}-more`;
   const justOpened = useRef(false);
