@@ -11,9 +11,11 @@ not supply falls back to the identifier made readable, never to the identifier i
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
+
+from starnest.data import Attribute, MatchRule, ValueType
 
 _READABLE_DECIMALS = Decimal("0.01")
 _A_NOTE_TO_DEVELOPERS = re.compile(r"\s*\([a-z-]+\.md\b[^)]*\)")
@@ -32,6 +34,22 @@ class Names:
 
 
 NO_NAMES = Names()
+
+
+def names_in(attributes: Sequence[Attribute], gates: Sequence[MatchRule]) -> Names:
+    """What the catalog calls each attribute, its unit and each gate, for the sentences a
+    result carries (PL-067). A ratio is a percentage; a quantity reads its unit's name."""
+    units: dict[str, str] = {}
+    for attribute in attributes:
+        if attribute.value_type is ValueType.RATIO:
+            units[str(attribute.id)] = "%"
+        elif attribute.quantity_parameters and attribute.quantity_parameters.unit_name:
+            units[str(attribute.id)] = unit_words(attribute.quantity_parameters.unit_name)
+    return Names(
+        attributes={str(attribute.id): attribute.name for attribute in attributes},
+        units=units,
+        gates={str(gate.id): gate.name for gate in gates},
+    )
 
 
 def readable_identifier(identifier: str) -> str:
@@ -81,6 +99,19 @@ def band_words(minimum: Decimal | None, maximum: Decimal | None) -> str:
     if maximum is not None:
         return f"at most {readable_figure(maximum)}"
     return "with no bound set"
+
+
+def band_in_words(
+    names: Names, attribute: str, minimum: Decimal | None, maximum: Decimal | None
+) -> str:
+    """A band followed by its attribute's unit: "at least 40%", "between 10 and 16 degrees
+    Celsius". A band with no bound has no unit to carry."""
+    words = band_words(minimum, maximum)
+    unit = names.units.get(attribute)
+    if not unit or (minimum is None and maximum is None):
+        return words
+    separator = "" if unit.startswith("%") else " "
+    return f"{words}{separator}{unit}"
 
 
 def quoted(label: str) -> str:

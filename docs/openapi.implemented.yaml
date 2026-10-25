@@ -495,6 +495,9 @@ components:
             $ref: '#/components/schemas/CompoundRuleConditionBody'
           title: Conditions
           type: array
+        description:
+          title: Description
+          type: string
         id:
           title: Id
           type: string
@@ -531,6 +534,7 @@ components:
       required:
       - id
       - name
+      - description
       - shape
       - outcome
       title: CompoundRuleBody
@@ -1561,6 +1565,9 @@ components:
       type: string
     MatchRuleBody:
       properties:
+        description:
+          title: Description
+          type: string
         id:
           title: Id
           type: string
@@ -1575,6 +1582,7 @@ components:
       required:
       - id
       - name
+      - description
       title: MatchRuleBody
       type: object
     MatchRuleResultBody:

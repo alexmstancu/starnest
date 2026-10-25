@@ -404,6 +404,7 @@ erDiagram
         text id PK
         text level FK
         text name
+        text description
         bool researchable
     }
     MATCH_RULE_CANDIDATE {
@@ -1514,6 +1515,7 @@ eligibility but are not measurements of the place.
 |---|---|
 | `id`, `name` | Identifier and display name |
 | `level` | Which level it applies at |
+| `description` | When a candidate matches it, in words: section 7.3's "Matches when", seeded as catalog data and shown beside the gate (`0515`, D57). Required of every gate. A compound rule needs no such row: what it tests is written from its conditions -- names, bands and units -- when it is read |
 | `researchable` | Whether a model may be asked to research it (section 6.10 use 3). True only for a gate decided by reading official pages -- the "Manual, LLM-assisted" gates of section 7.3 (Q236) |
 | `match_rule_candidate` | The candidates the gate is a question about, one row each. **None means every candidate at its level**, so a gate that concerns everybody names nobody. **Each sits at the gate's level**, and a gate asked at every level lists nobody -- both held by foreign keys (`0514`, D55) |
 
@@ -2722,7 +2724,8 @@ not matching regardless of score** — and stays visible, with its score, showin
 `match_rule_candidate` names the one country each is a question about -- `uk_skilled_worker` the
 United Kingdom, `ch_eu_efta_quota` Switzerland, `li_eea_quota` Liechtenstein. A gate with no such
 rows concerns every candidate at its level, and a candidate it names sits at its level (`0514`);
-a gate asked at every level names nobody. `eu_free_movement` is definitional and
+a gate asked at every level names nobody. **The "Matches when" column is catalog data**:
+`match_rule.description` (`0515`) carries it, without its cross-references, to the screen. `eu_free_movement` is definitional and
 `not_manually_excluded` is the household's own, so neither is researched: a pass over the
 country level asks three questions, not 160.
 

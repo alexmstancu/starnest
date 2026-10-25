@@ -33,7 +33,7 @@ from starnest.api.rules import _result_body as _gate_answer_body
 from starnest.api.values import ValueBody, _value_body
 from starnest.candidates import Candidate
 from starnest.criteria import CriteriaSet
-from starnest.data import Attribute, MatchRule, MatchRuleResult, Value, ValueType
+from starnest.data import MatchRuleResult, Value
 from starnest.evaluation import (
     AttributeScore,
     CandidateResult,
@@ -41,7 +41,7 @@ from starnest.evaluation import (
     in_display_order,
     rank_candidates,
 )
-from starnest.evaluation.wording import Names, readable_identifier, unit_words
+from starnest.evaluation.wording import names_in, readable_identifier
 from starnest.household import HouseholdNotConfiguredError
 
 router = APIRouter(tags=["rankings"])
@@ -427,22 +427,6 @@ def _attribute_score_body(
         effective_weight=float(row.effective_weight),
         contribution=float(row.contribution),
         value=None if row.used_value is None else evidence.get(row.used_value),
-    )
-
-
-def names_in(attributes: Sequence[Attribute], gates: Sequence[MatchRule]) -> Names:
-    """What the catalog calls each attribute, its unit and each gate, for the sentences a
-    result carries (PL-067). A ratio is a percentage; a quantity reads its unit's name."""
-    units: dict[str, str] = {}
-    for attribute in attributes:
-        if attribute.value_type is ValueType.RATIO:
-            units[str(attribute.id)] = "%"
-        elif attribute.quantity_parameters and attribute.quantity_parameters.unit_name:
-            units[str(attribute.id)] = unit_words(attribute.quantity_parameters.unit_name)
-    return Names(
-        attributes={str(attribute.id): attribute.name for attribute in attributes},
-        units=units,
-        gates={str(gate.id): gate.name for gate in gates},
     )
 
 

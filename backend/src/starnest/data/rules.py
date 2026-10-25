@@ -111,6 +111,13 @@ class MatchRule(BaseModel):
             "excluded whether it is a country or a city."
         ),
     )
+    description: str = Field(
+        default="",
+        description=(
+            "When a candidate matches it, in words (`reqs.md` 7.3). Catalog text the database "
+            "requires of every gate; empty only for a gate built outside the catalog."
+        ),
+    )
     researchable: bool = Field(
         default=False,
         description=(

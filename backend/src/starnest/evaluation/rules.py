@@ -32,6 +32,7 @@ from starnest.data import (
     AttributeId,
     Boolean,
     CompoundRule,
+    CompoundRuleCondition,
     CompoundRuleId,
     CompoundRuleShape,
     LabelSet,
@@ -47,11 +48,14 @@ from starnest.evaluation.wording import (
     NO_NAMES,
     Names,
     attribute_called,
+    band_in_words,
     band_words,
     figure_in_words,
     gate_called,
     quoted,
     readable_figure,
+    readable_identifier,
+    unit_words,
     yes_or_no,
 )
 
@@ -189,6 +193,56 @@ def _figure(figure: Decimal | None, attribute: str, names: Names) -> str:
     """The figure that fired the rule. A derived one -- the estimated tax rate is a division,
     arriving as `43.32847052546540994843612212` -- reads "43.33"."""
     return "no figure" if figure is None else figure_in_words(names, attribute, figure)
+
+
+def describe_compound_rule(rule: CompoundRule, names: Names = NO_NAMES) -> str:
+    """What a rule tests, in words, for its row on screen (PL-155, UF-039).
+
+    Written from the rule's own conditions or inputs whenever it is read, so it cannot disagree
+    with the bands it describes; every attribute by its catalog name, never its key. "Flags a
+    candidate when Cost of living index is at most 80 and Total tax rate is at least 40%."
+    """
+    lead = "Flags a candidate" if rule.outcome is RuleOutcome.WARNING else "Rules a candidate out"
+    return f"{lead} when {_what_it_tests(rule, names)}."
+
+
+def _what_it_tests(rule: CompoundRule, names: Names) -> str:
+    """The condition each shape fires on, as `reqs.md` 3.7a defines it."""
+    if rule.shape is CompoundRuleShape.ALL_CONDITIONS_HOLD:
+        return " and ".join(_condition_in_words(condition, names) for condition in rule.conditions)
+    measured = " plus ".join(
+        attribute_called(names, str(read.attribute))
+        for read in rule.inputs
+        if read.attribute is not None
+    )
+    if rule.shape is CompoundRuleShape.SHARE_OF_HOUSEHOLD_FIELD:
+        fields = " and ".join(
+            unit_words(readable_identifier(str(read.household_field)))
+            for read in rule.inputs
+            if read.household_field is not None
+        )
+        share = (
+            "a share not yet chosen"
+            if rule.threshold_max is None
+            else f"{readable_figure(rule.threshold_max * 100)}%"
+        )
+        return f"{measured} is more than {share} of the household's {fields}"
+    floor = (
+        "a floor not yet chosen"
+        if rule.threshold_min is None
+        else readable_figure(rule.threshold_min)
+    )
+    return f"{measured} is below {floor}"
+
+
+def _condition_in_words(condition: CompoundRuleCondition, names: Names) -> str:
+    """ "Total tax rate is at least 40%", or "... has no bound set" where nobody chose one."""
+    attribute = str(condition.attribute)
+    called = condition.attribute_name or attribute_called(names, attribute)
+    if condition.threshold_min is None and condition.threshold_max is None:
+        return f"{called} has no bound set"
+    band = band_in_words(names, attribute, condition.threshold_min, condition.threshold_max)
+    return f"{called} is {band}"
 
 
 def gates_that_rule_out(

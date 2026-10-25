@@ -454,6 +454,19 @@ class TestTheGates:
         assert levels["uk_skilled_worker"] == "country"
         assert levels["not_manually_excluded"] is None
 
+    async def test_every_gate_says_what_it_tests_in_words(self, api: httpx.AsyncClient) -> None:
+        """PL-155: catalog text from `reqs.md` 7.3's "Matches when" column, never an id."""
+        response = await api.get("/v1/match-rules")
+        validate("listMatchRules", response.json())
+
+        described = {rule["id"]: rule["description"] for rule in response.json()["items"]}
+
+        assert described["ch_eu_efta_quota"] == (
+            "The annual Swiss EU/EFTA permit quota has capacity for this household."
+        )
+        assert all(described.values()), f"a gate says nothing: {described}"
+        assert not any(gate in text for text in described.values() for gate in described)
+
     async def test_an_answer_is_recorded_and_read_back_with_its_pages(
         self, api: httpx.AsyncClient
     ) -> None:
@@ -687,6 +700,22 @@ class TestTheCompoundRules:
             "country.avg_annual_temperature": (10, 16),
             "country.projected_summer_heat_days": (25, None),
         }
+
+    async def test_each_rule_says_what_it_tests_from_its_conditions(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        """PL-155: names, bands and units, read from the conditions; never an id or a token."""
+        response = await api.get("/v1/compound-rules", params={"level": "country"})
+        validate("listCompoundRules", response.json())
+
+        described = {rule["id"]: rule["description"] for rule in response.json()["items"]}
+
+        assert described["cheap_but_taxed"].startswith("Flags a candidate when ")
+        assert "is at most 80" in described["cheap_but_taxed"]
+        assert "is at least 40%" in described["cheap_but_taxed"]
+        assert "between 10 and 16 degrees Celsius" in described["mild_now_brutal_later"]
+        assert not any(AN_IDENTIFIER.search(text) for text in described.values())
+        assert not any("AllConditionsHold" in text for text in described.values())
 
     async def test_each_rule_names_the_attributes_it_reads(self, api: httpx.AsyncClient) -> None:
         body = (await api.get("/v1/compound-rules")).json()

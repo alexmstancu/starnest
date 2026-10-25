@@ -720,8 +720,9 @@ class TestTheChildrenOfACriterion:
         # The gate has to exist before a set may enforce it, which the foreign key says first.
         async with pool.connection() as connection:
             await connection.execute(
-                "INSERT INTO match_rule (id, level, name) VALUES"
-                " ('city_curfew', 'city', 'A gate that belongs to cities')"
+                "INSERT INTO match_rule (id, level, name, description) VALUES"
+                " ('city_curfew', 'city', 'A gate that belongs to cities',"
+                " 'The city has no curfew.')"
             )
         try:
             await criteria.create_criteria_set(

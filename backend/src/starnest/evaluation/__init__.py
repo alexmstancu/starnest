@@ -34,6 +34,7 @@ from starnest.evaluation.results import AttributeScore, CandidateResult, MatchSt
 from starnest.evaluation.rules import (
     NonMatch,
     RuleWarning,
+    describe_compound_rule,
     gates_that_rule_out,
     judgements_of,
     thresholds_that_rule_out,
@@ -73,6 +74,7 @@ __all__ = [
     "contribution_of",
     "coverage_of",
     "declared_weights",
+    "describe_compound_rule",
     "figure_of",
     "gates_that_rule_out",
     "in_display_order",

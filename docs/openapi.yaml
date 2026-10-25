@@ -1847,11 +1847,16 @@ components:
 
     MatchRule:
       type: object
-      required: [id, name, level]
+      required: [id, name, level, description]
       properties:
         id: { type: string }
         name: { type: string }
         level: { type: [string, "null"], description: "Null for a gate asked at every level, such as not_manually_excluded." }
+        description:
+          type: string
+          description: >-
+            When a candidate matches this gate, in words: catalog data seeded from reqs.md 7.3's
+            "Matches when" column, never an identifier.
 
     MatchRuleResultInput:
       type: object
@@ -1897,10 +1902,17 @@ components:
 
     CompoundRule:
       type: object
-      required: [id, name, level, shape, outcome, inputs]
+      required: [id, name, level, shape, outcome, inputs, description]
       properties:
         id: { type: string }
         name: { type: string }
+        description:
+          type: string
+          description: >-
+            What the rule tests, in words: what it does when it fires, and each condition's
+            attribute by its catalog name with its band and unit -- "Warns when Cost of living
+            index is at most 80 and Total tax rate is at least 40%." Written from the conditions
+            when they are read, so it cannot disagree with them; never an identifier.
         level: { type: string }
         shape: { type: string, enum: [ShareOfHouseholdField, SumBelowFloor, AllConditionsHold] }
         outcome: { type: string, enum: [warning, not_matching] }

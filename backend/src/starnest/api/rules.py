@@ -42,6 +42,8 @@ from starnest.data_acquisition import (
     plan_research,
     research_gates,
 )
+from starnest.evaluation import describe_compound_rule
+from starnest.evaluation.wording import names_in
 
 router = APIRouter(tags=["rules"])
 
@@ -50,6 +52,8 @@ class MatchRuleBody(BaseModel):
     id: str
     name: str
     level: str | None = None
+    description: str
+    """When a candidate matches the gate, in words: catalog text (`reqs.md` 7.3, D57)."""
 
 
 class MatchRulesBody(BaseModel):
@@ -201,6 +205,8 @@ class CompoundRuleBody(BaseModel):
 
     id: str
     name: str
+    description: str
+    """What the rule tests, written from its conditions when read (PL-155): never an id."""
     level: str | None = None
     shape: str
     outcome: str
@@ -222,11 +228,13 @@ async def list_compound_rules(catalog: Catalog, level: str | None = None) -> Com
     are listed with null bounds and fire nothing. That is the shipping state, not an omission:
     a rule fired on an invented number is the fabricated judgement this application prevents.
     """
+    names = names_in(await catalog.read_attributes(level=level), ())
     return CompoundRulesBody(
         items=tuple(
             CompoundRuleBody(
                 id=str(rule.id),
                 name=rule.name,
+                description=describe_compound_rule(rule, names),
                 level=None if rule.level is None else str(rule.level),
                 shape=str(rule.shape),
                 outcome=str(rule.outcome),
@@ -262,7 +270,9 @@ async def list_match_rules(catalog: Catalog, level: str | None = None) -> MatchR
     """The gates, or those asked at one level. A gate with no level is asked at every level."""
     return MatchRulesBody(
         items=tuple(
-            MatchRuleBody(id=str(rule.id), name=rule.name, level=rule.level)
+            MatchRuleBody(
+                id=str(rule.id), name=rule.name, level=rule.level, description=rule.description
+            )
             for rule in await catalog.read_match_rules(level=level)
         )
     )

@@ -185,6 +185,7 @@ ORDER  BY s.candidate, s.attribute;
 SELECT r.id,
        r.name,
        r.level,
+       r.description,
        r.researchable,
        ARRAY(
            SELECT c.candidate

@@ -229,6 +229,7 @@ class PostgresCatalogStore(CatalogStore):
                 id=MatchRuleId(row.id),
                 name=row.name,
                 level=LevelId(row.level) if row.level else None,
+                description=row.description,
                 researchable=row.researchable,
                 concerned_candidates=tuple(
                     CandidateId(candidate) for candidate in row.concerned_candidates

@@ -7,6 +7,7 @@ application exists to prevent (`devplan.md` D5).
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import ClassVar
 
 import pytest
 
@@ -32,6 +33,7 @@ from starnest.data import (
     ValueType,
 )
 from starnest.evaluation import (
+    describe_compound_rule,
     gates_that_rule_out,
     judgements_of,
     thresholds_that_rule_out,
@@ -249,6 +251,115 @@ class TestACompoundRule:
         assert other.is_decided
 
         assert judgements_of(rules=[other], figures=FIGURES, level="country") == ((), ())
+
+
+class TestACompoundRuleDescribed:
+    """What a rule tests, in words, for the rule's row in Configure (PL-155, UF-039).
+
+    Written from its conditions -- names and bands -- so it cannot disagree with them, and
+    never an identifier or a vocabulary token.
+    """
+
+    UNITS: ClassVar[Names] = Names(
+        attributes={PRICES: "Cost of living index", TAX: "Total tax rate"},
+        units={TAX: "%"},
+    )
+
+    def test_a_warning_names_each_condition_with_its_band_and_unit(self) -> None:
+        described = describe_compound_rule(a_rule(), self.UNITS)
+
+        assert described == (
+            "Flags a candidate when Cost of living index is at most 80 "
+            "and Total tax rate is at least 45%."
+        )
+
+    def test_a_band_closed_on_both_sides_reads_between(self) -> None:
+        rule = a_rule().model_copy(
+            update={
+                "conditions": (
+                    CompoundRuleCondition(
+                        ordinal=1,
+                        attribute="country.avg_annual_temperature",
+                        threshold_min=Decimal("10"),
+                        threshold_max=Decimal("16"),
+                    ),
+                )
+            }
+        )
+
+        described = describe_compound_rule(
+            rule, Names(units={"country.avg_annual_temperature": "degrees Celsius"})
+        )
+
+        assert "Avg annual temperature is between 10 and 16 degrees Celsius" in described
+
+    def test_a_rule_that_rules_out_says_so(self) -> None:
+        described = describe_compound_rule(a_rule(outcome=RuleOutcome.NOT_MATCHING), self.UNITS)
+
+        assert described.startswith("Rules a candidate out when ")
+
+    def test_an_undecided_condition_says_no_bound_is_set(self) -> None:
+        described = describe_compound_rule(a_rule(prices_max=None, tax_min=None), self.UNITS)
+
+        assert "Cost of living index has no bound set" in described
+        assert "Total tax rate has no bound set" in described
+
+    def test_without_names_it_reads_the_identifier_never_prints_it(self) -> None:
+        described = describe_compound_rule(a_rule())
+
+        assert "Cost of living index is at most 80" in described
+        assert PRICES not in described
+        assert TAX not in described
+
+    def test_a_share_of_a_household_figure_names_both_sides(self) -> None:
+        rule = CompoundRule(
+            id="rent_against_spend",
+            name="Rent against spend",
+            level="city",
+            shape=CompoundRuleShape.SHARE_OF_HOUSEHOLD_FIELD,
+            outcome=RuleOutcome.WARNING,
+            threshold_max=Decimal("0.40"),
+            inputs=(
+                CompoundRuleInput(input_order=1, attribute="city.average_rent"),
+                CompoundRuleInput(input_order=2, household_field="target_monthly_spend"),
+            ),
+        )
+
+        assert describe_compound_rule(rule, Names(attributes={"city.average_rent": "Rent"})) == (
+            "Flags a candidate when Rent is more than 40% of the household's target monthly spend."
+        )
+
+    def test_a_sum_names_every_figure_it_adds(self) -> None:
+        rule = CompoundRule(
+            id="two_incomes",
+            name="Two incomes",
+            level="city",
+            shape=CompoundRuleShape.SUM_BELOW_FLOOR,
+            outcome=RuleOutcome.NOT_MATCHING,
+            threshold_min=Decimal("12"),
+            inputs=(
+                CompoundRuleInput(input_order=1, attribute="city.tech_software_jobs"),
+                CompoundRuleInput(input_order=2, attribute="city.tech_product_jobs"),
+            ),
+        )
+
+        assert describe_compound_rule(rule) == (
+            "Rules a candidate out when Tech software jobs plus Tech product jobs is below 12."
+        )
+
+    def test_a_shape_with_no_bound_chosen_says_so(self) -> None:
+        rule = CompoundRule(
+            id="two_incomes",
+            name="Two incomes",
+            level="city",
+            shape=CompoundRuleShape.SUM_BELOW_FLOOR,
+            outcome=RuleOutcome.NOT_MATCHING,
+            inputs=(CompoundRuleInput(input_order=1, attribute="city.tech_software_jobs"),),
+        )
+
+        assert describe_compound_rule(rule) == (
+            "Rules a candidate out when Tech software jobs is below a floor not yet chosen."
+        )
 
 
 class TestAProposalRulesNothingOut:
