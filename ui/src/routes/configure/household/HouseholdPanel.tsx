@@ -140,21 +140,25 @@ function HouseholdFields({
             floor is what stops a figure and its currency ever being split across a wrap. */}
         <div className="field-grid">
           <MoneyField name="net_income" form={form} />
-          {/* One click for almost every household, and the field for the rest. */}
+          {/* One click for almost every household, and "More" opens a field for the rest. */}
           <CountField
             id="household-number_adults"
             label={HOUSEHOLD_LABELS.number_adults}
             offered={[1, 2, 3, 4]}
+            rule={HOUSEHOLD_RULES.number_adults}
             value={form.draft.number_adults}
             onChange={(value) => form.change("number_adults", value)}
+            problem={form.problems.number_adults}
           />
           <CountField
             id="household-number_children"
             label={HOUSEHOLD_LABELS.number_children}
             offered={[0, 1, 2, 3]}
+            rule={HOUSEHOLD_RULES.number_children}
             noneLabel="None"
             value={form.draft.number_children}
             onChange={(value) => form.change("number_children", value)}
+            problem={form.problems.number_children}
           />
           <MoneyField name="target_monthly_spend" form={form} />
           <MoneyField name="max_rent" form={form} />

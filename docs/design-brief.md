@@ -119,8 +119,11 @@ and are what a keyboard reaches; dragging would need an operation the contract d
 ("place this source at that position" rather than "swap it with its neighbour"). Worth adding
 to the contract if the gesture matters.
 
-**Adults and children are number fields, not segments of 1-4 and none-3.** A segmented control
-caps the count at whatever the design drew, and the domain has no such ceiling.
+**Adults and children are the design's segments, 1-4 and none-3, plus a "More" segment.** The
+segments are one click for almost every household; "More" opens a whole-number field for the
+rest, because a segmented control alone caps the count at whatever the design drew and the
+domain has no such ceiling. A stored count above the segments presses "More" with its number in
+the field, so a household of five adults is neither unenterable nor shown as nothing pressed.
 
 **The pillar slider's ceiling scales with how many weights share the hundred.** The design fixes
 it at 40, which is four and a half times an even share of eleven pillars -- right for eleven and

@@ -9,6 +9,7 @@ import {
   followChromiumFocusFixup,
 } from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
+import { HOUSEHOLD as STORED } from "../../../mocks/fixtures";
 
 /**
  * The household panel.
@@ -188,6 +189,74 @@ describe("the household panel", () => {
 
     expect(field("Net income")).toHaveAttribute("aria-invalid", "true");
     expect(field("Net income")).toHaveAccessibleDescription(/cannot be negative/);
+    expect(household.getByRole("button", { name: "Save household" })).toBeDisabled();
+    expect(sent).toEqual([]);
+  });
+
+  /** PL-166. The segments stop at four; the domain does not. */
+  it("saves a household of five adults entered through More", async () => {
+    const user = userEvent.setup();
+    const sent: { number_adults?: number }[] = [];
+    mockServer.use(
+      http.put("/v1/household", async ({ request }) => {
+        const body = (await request.json()) as { number_adults?: number };
+        sent.push(body);
+        return HttpResponse.json(body);
+      }),
+    );
+    renderShell("/configure");
+    const household = await panel();
+    const adults = within(screen.getByRole("group", { name: "Adults" }));
+
+    await user.click(adults.getByRole("button", { name: "More" }));
+    await user.clear(field("Adults, exact number"));
+    await user.type(field("Adults, exact number"), "5");
+    await user.click(household.getByRole("button", { name: "Save household" }));
+
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]!.number_adults).toBe(5);
+    expect(await household.findByText("Saved.")).toBeInTheDocument();
+    expect(adults.getByRole("button", { name: "More" })).toHaveAttribute("aria-pressed", "true");
+    expect(field("Adults, exact number")).toHaveValue("5");
+  });
+
+  it("shows a stored five adults as More, with five in its field", async () => {
+    mockServer.use(
+      http.get("/v1/household", () => HttpResponse.json({ ...STORED, number_adults: 5 })),
+    );
+    renderShell("/configure");
+    await panel();
+
+    expect(
+      within(screen.getByRole("group", { name: "Adults" })).getByRole("button", {
+        name: "More",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(field("Adults, exact number")).toHaveValue("5");
+  });
+
+  it("refuses no adults typed through More, and sends nothing", async () => {
+    const user = userEvent.setup();
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.put("/v1/household", async ({ request }) => {
+        sent.push(await request.json());
+        return HttpResponse.json({});
+      }),
+    );
+    renderShell("/configure");
+    const household = await panel();
+
+    await user.click(
+      within(screen.getByRole("group", { name: "Adults" })).getByRole("button", {
+        name: "More",
+      }),
+    );
+    await user.clear(field("Adults, exact number"));
+    await user.type(field("Adults, exact number"), "0");
+    fireEvent.submit(field("Adults, exact number").closest("form")!);
+
+    expect(field("Adults, exact number")).toHaveAttribute("aria-invalid", "true");
     expect(household.getByRole("button", { name: "Save household" })).toBeDisabled();
     expect(sent).toEqual([]);
   });

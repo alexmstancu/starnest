@@ -1,14 +1,14 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { CountField } from "./CountField";
+import { HOUSEHOLD_RULES } from "./householdForm";
 
 /**
- * **Segments, and only segments.** The design offers adults as 1 to 4 and children as none to
- * 3, with no free-text escape beside them. There used to be one, labelled "Or type another
- * number", and it showed on every render holding the number the pressed button already showed.
- * Widening the range is adding a segment, not asking every household to read past a field it
- * will never use.
+ * **Segments for the usual answers, and "More" for the rest** (PL-166, UF-050). The domain has
+ * no ceiling -- `number_adults` is any whole number from one -- so a household of five adults
+ * must be enterable, and a stored five must say five.
  */
 function draw(value: string, onChange = vi.fn()) {
   render(
@@ -16,11 +16,36 @@ function draw(value: string, onChange = vi.fn()) {
       id="adults"
       label="Adults"
       offered={[1, 2, 3, 4]}
+      rule={HOUSEHOLD_RULES.number_adults}
       value={value}
       onChange={onChange}
     />,
   );
   return onChange;
+}
+
+/** The field as the form holds it: what is typed is what is drawn next. */
+function Held({ initial, problem }: { initial: string; problem?: string }) {
+  const [value, setValue] = useState(initial);
+  return (
+    <CountField
+      id="adults"
+      label="Adults"
+      offered={[1, 2, 3, 4]}
+      rule={HOUSEHOLD_RULES.number_adults}
+      value={value}
+      onChange={setValue}
+      problem={problem}
+    />
+  );
+}
+
+function segment(name: string): HTMLElement {
+  return screen.getByRole("button", { name });
+}
+
+function exact(): HTMLInputElement {
+  return screen.getByRole<HTMLInputElement>("textbox", { name: "Adults, exact number" });
 }
 
 describe("a small whole number", () => {
@@ -42,28 +67,100 @@ describe("a small whole number", () => {
     );
   });
 
-  /**
-   * A stored value the segments do not offer still renders, with nothing pressed, which is the
-   * honest reading: no button says 7. The remedy is to offer 7, not to carry a text field on
-   * every render for the household that has it.
-   */
-  it("presses no button for an answer outside the buttons", () => {
-    draw("7");
-
-    for (const each of ["1", "2", "3", "4"]) {
-      expect(screen.getByRole("button", { name: each })).toHaveAttribute(
-        "aria-pressed",
-        "false",
-      );
-    }
-  });
-
-  /** The field it replaced is gone, and nothing on the panel asks to be read twice. */
-  it("offers no free-text field beside the buttons", () => {
+  it("offers no number field until More is chosen", () => {
     draw("2");
 
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-    expect(screen.queryByText(/type another number/i)).not.toBeInTheDocument();
+    expect(segment("More")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("takes five adults through More", async () => {
+    const user = userEvent.setup();
+    render(<Held initial="2" />);
+
+    await user.click(segment("More"));
+    await user.clear(exact());
+    await user.type(exact(), "5");
+
+    expect(segment("More")).toHaveAttribute("aria-pressed", "true");
+    expect(segment("2")).toHaveAttribute("aria-pressed", "false");
+    expect(exact()).toHaveValue("5");
+  });
+
+  /** A stored count above the segments is not hidden behind nothing pressed. */
+  it("shows a stored count above the segments in the More field", () => {
+    draw("7");
+
+    for (const each of ["1", "2", "3", "4"]) {
+      expect(segment(each)).toHaveAttribute("aria-pressed", "false");
+    }
+    expect(segment("More")).toHaveAttribute("aria-pressed", "true");
+    expect(exact()).toHaveValue("7");
+  });
+
+  it("closes the field when a segment is chosen again", async () => {
+    const user = userEvent.setup();
+    render(<Held initial="2" />);
+
+    await user.click(segment("More"));
+    await user.click(segment("3"));
+
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(segment("3")).toHaveAttribute("aria-pressed", "true");
+    expect(segment("More")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("refuses a count the parser cannot read, on the field", async () => {
+    const user = userEvent.setup();
+    render(<Held initial="2" />);
+
+    await user.click(segment("More"));
+    await user.clear(exact());
+    await user.type(exact(), "2.5");
+    await user.tab();
+
+    expect(exact()).toHaveAttribute("aria-invalid", "true");
+    expect(exact()).toHaveAccessibleDescription(/whole number/i);
+  });
+
+  it("refuses a count below the minimum, on the field", async () => {
+    const user = userEvent.setup();
+    render(<Held initial="2" />);
+
+    await user.click(segment("More"));
+    await user.clear(exact());
+    await user.type(exact(), "0");
+
+    expect(exact()).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("marks the field with the server's refusal", () => {
+    render(<Held initial="9" problem="Must be at least 1." />);
+
+    expect(exact()).toHaveAttribute("aria-invalid", "true");
+    expect(exact()).toHaveAccessibleDescription(/Must be at least 1\./);
+  });
+
+  /** Tab reaches every segment, Enter on More puts the cursor in the field, Tab leaves it. */
+  it("works from the keyboard", async () => {
+    const user = userEvent.setup();
+    render(<Held initial="2" />);
+
+    segment("4").focus();
+    await user.tab();
+    expect(segment("More")).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(exact()).toHaveFocus();
+    await user.keyboard("{Control>}a{/Control}6");
+    expect(exact()).toHaveValue("6");
+
+    await user.tab({ shift: true });
+    expect(segment("More")).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(segment("4")).toHaveFocus();
+    await user.keyboard(" ");
+    expect(segment("4")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
   /** The group carries the name now that the buttons are the whole control. */
@@ -79,6 +176,7 @@ describe("a small whole number", () => {
         id="children"
         label="Children"
         offered={[0, 1, 2]}
+        rule={HOUSEHOLD_RULES.number_children}
         noneLabel="None"
         value="0"
         onChange={vi.fn()}
