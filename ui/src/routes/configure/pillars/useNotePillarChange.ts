@@ -8,6 +8,7 @@ import {
   undoCanRestore,
   type PillarShare,
 } from "../changeHistory";
+import type { Pending } from "../unknownOutcome";
 import type { ChangeHistory } from "../useChangeHistory";
 
 type PillarWeight = components["schemas"]["PillarWeight"];
@@ -36,7 +37,7 @@ export function useNotePillarChange(
         /** Null while the write is unconfirmed: whether undo is exact is then not known. */
         answer: PillarWeight[] | null,
         weight: number,
-        unconfirmed?: () => Promise<boolean>,
+        pending?: Pending,
       ) {
         const before = was.find((each) => each.pillar === pillar)?.weight;
         history?.note({
@@ -54,10 +55,10 @@ export function useNotePillarChange(
             showAnswer(sentFor, (await updatePillarWeight(sentFor, pillar, back)).items);
           },
           undoes: { criteriaSetId: sentFor, by: "write" },
-          ...(unconfirmed === undefined ? {} : { unconfirmed }),
+          ...pending,
         });
       },
-      lock(pillar: string, locked: boolean, unconfirmed?: () => Promise<boolean>) {
+      lock(pillar: string, locked: boolean, pending?: Pending) {
         history?.note({
           target: `pillar-lock:${sentFor}:${pillar}`,
           stage: "Pillar weights",
@@ -68,7 +69,7 @@ export function useNotePillarChange(
             showAnswer(sentFor, (await updatePillarLock(sentFor, pillar, back === true)).items);
           },
           undoes: { criteriaSetId: sentFor, by: "write" },
-          ...(unconfirmed === undefined ? {} : { unconfirmed }),
+          ...pending,
         });
       },
     };

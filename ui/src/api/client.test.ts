@@ -10,7 +10,13 @@ import {
   postJson,
   putJson,
 } from "./client";
-import { fetchCandidates, fetchLevels, fetchRanking, fetchRuns } from "./endpoints";
+import {
+  fetchCandidates,
+  fetchLevels,
+  fetchRanking,
+  fetchRuns,
+  restoreCriteriaSet,
+} from "./endpoints";
 import { mockServer } from "../mocks/server";
 import { WRITE_PATIENCE_MS } from "./setWrites";
 
@@ -438,6 +444,66 @@ describe("a set read and the writes to its set (PL-142)", () => {
       const lost = await writing;
       expect(isApiError(lost) && lost.code).toBe(CLIENT_ERROR_CODES.unreachable);
       expect(await reading).toMatchObject({ id: "default" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reads a set again when a read that failed was overlapped by a write", async () => {
+    const firstRead = deferred();
+    let reads = 0;
+    mockServer.use(
+      http.get("/v1/criteria-sets/remote_only", async () => {
+        reads += 1;
+        if (reads > 1) return HttpResponse.json({ id: "remote_only" });
+        await firstRead.promise;
+        return HttpResponse.json({ code: "not_found", message: "gone" }, { status: 404 });
+      }),
+      http.post("/v1/criteria-sets/:criteriaSetId/restore", () =>
+        HttpResponse.json({ id: "remote_only" }),
+      ),
+    );
+
+    const reading = readSet("remote_only").catch((error: unknown) => error);
+    await vi.waitFor(() => expect(reads).toBe(1));
+    await restoreCriteriaSet("remote_only");
+    firstRead.resolve();
+
+    expect(await reading).toMatchObject({ id: "remote_only" });
+    expect(reads).toBe(2);
+  });
+
+  it("keeps a write it stopped waiting for alive, and reads again when it lands after all", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const write = deferred();
+      const heldRead = deferred();
+      let reads = 0;
+      mockServer.use(
+        http.put(MATCH_RULE, async () => {
+          await write.promise;
+          return new HttpResponse(null, { status: 204 });
+        }),
+        http.get("/v1/criteria-sets/default", async () => {
+          reads += 1;
+          if (reads === 1) await heldRead.promise;
+          return HttpResponse.json({ id: "default", reads });
+        }),
+      );
+
+      const writing = enforce("default").catch((error: unknown) => error);
+      await vi.advanceTimersByTimeAsync(WRITE_PATIENCE_MS);
+      const overdue = (await writing) as { code?: string; late?: Promise<unknown> };
+      expect(overdue.code).toBe(CLIENT_ERROR_CODES.unreachable);
+      expect(overdue.late).toBeInstanceOf(Promise);
+      // A read taken while the write may still land, answered after it has.
+      const reading = readSet("default");
+      await vi.waitFor(() => expect(reads).toBe(1));
+      write.resolve();
+      await overdue.late;
+      heldRead.resolve();
+
+      expect(await reading).toMatchObject({ reads: 2 });
     } finally {
       vi.useRealTimers();
     }

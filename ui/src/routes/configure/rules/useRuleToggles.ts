@@ -29,7 +29,7 @@ import { useRead } from "../../../api/useRead";
 import { useCandidateRosterState } from "../../../api/useCandidateRoster";
 import type { CandidateNames } from "../../../api/useCandidateNames";
 import { useConfigurationSession } from "../useConfigurationSession";
-import { settled as settledWrite } from "../unknownOutcome";
+import { outcomeUnknown, settled as settledWrite, UnconfirmedWrite } from "../unknownOutcome";
 import { answersAtLevel } from "./ruleEffect";
 
 export interface RuleToggles {
@@ -129,6 +129,8 @@ export function useRuleToggles(
     criteriaSet.compound_rule_outcomes ?? {},
   );
   const [failure, setFailure] = useState<unknown>(null);
+  // A rule's write the client stopped waiting for and that has not settled yet (PL-033).
+  const [unsettled, setUnsettled] = useState(false);
   const [accepted, setAccepted] = useState(0);
 
   const ranking = useRead(
@@ -156,19 +158,26 @@ export function useRuleToggles(
       accepted: () => void,
       tookEffect: (stored: CriteriaSet) => boolean,
     ) => {
-      const done = history.begin();
+      const done = history.begin(criteriaSet.id);
       if (done === null) return;
       setFailure(null);
+      const took = () => {
+        accepted();
+        setAccepted((count) => count + 1);
+      };
       try {
         await settledWrite(
           () => write().then(() => true as const),
           async (signal) =>
             tookEffect(await fetchCriteriaSet(criteriaSet.id, { signal })) ? true : null,
         );
-        accepted();
-        setAccepted((count) => count + 1);
+        took();
       } catch (error) {
-        setFailure(error);
+        if (error instanceof UnconfirmedWrite && error.settles !== undefined) {
+          // **Still running, so not refused** (PL-033): the rules wait for it, and its own
+          // settlement says what it did -- never a read taken while it could still land.
+          void decideWhenSettled(error, took, setFailure, setUnsettled);
+        } else setFailure(error);
       } finally {
         done();
       }
@@ -214,7 +223,7 @@ export function useRuleToggles(
     reloadMatchRules: matchRules.reload,
     reloadCompoundRules: compoundRules.reload,
     failure,
-    held: history.busy,
+    held: history.busy || history.waitsFor(criteriaSet.id) || unsettled,
     isEnforced: (matchRuleId) => enforced.includes(matchRuleId),
     isApplied: (compoundRuleId) => applied.includes(compoundRuleId),
     enforce: (matchRuleId, wanted) =>
@@ -268,4 +277,32 @@ function settled<T>(read: Read<T> | Idle): Read<T> {
 function statusOf(read: Read<unknown> | Idle): RuleToggles["matchRuleResultsStatus"] {
   if (read.state === "ready") return "ready";
   return read.state === "failed" ? "error" : "loading";
+}
+
+/**
+ * A rule's write still running when the client stopped waiting: held until it settles, then
+ * decided from what it did -- shown if it took effect, refused if it did not, and said if it is
+ * still not known.
+ */
+async function decideWhenSettled(
+  error: UnconfirmedWrite,
+  took: () => void,
+  refuse: (error: unknown) => void,
+  hold: (held: boolean) => void,
+): Promise<void> {
+  hold(true);
+  // Refused, its own refusal says why; answered or lost, a read taken now says what it did.
+  const refusal = await error.settles?.then(
+    () => null,
+    (failure: unknown) => (outcomeUnknown(failure) ? null : failure),
+  );
+  try {
+    if (refusal !== null && refusal !== undefined) refuse(refusal);
+    else if ((await error.readAgain()) !== null) took();
+    else refuse(error);
+  } catch (stillUnknown) {
+    refuse(stillUnknown);
+  } finally {
+    hold(false);
+  }
 }

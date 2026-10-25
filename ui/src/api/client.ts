@@ -18,6 +18,7 @@ import { isUnreachable, noteAnswered } from "./reachability";
 import {
   beginSetWrite,
   EVERY_SET,
+  noteLateSettlement,
   readWhenSettled,
   untilSettled,
   WRITE_PATIENCE_MS,
@@ -275,13 +276,33 @@ function setWriteKeys(path: string, pathParams: PathValues | undefined, body?: u
 }
 
 /**
+ * A write the client stopped waiting for after `WRITE_PATIENCE_MS` (PL-033). **Its outcome is
+ * unknown, not failed**: the request was left running and may still land, and `late` settles as
+ * it does -- answered, refused or lost.
+ */
+export class OverdueWrite extends ApiError {
+  readonly late: Promise<unknown>;
+
+  constructor(path: string, late: Promise<unknown>) {
+    super({
+      code: CLIENT_ERROR_CODES.unreachable,
+      message: `${path} has not answered yet, so whether it took effect is not known.`,
+    });
+    this.name = "OverdueWrite";
+    this.late = late;
+  }
+}
+
+/**
  * Sends a write, **counted as in flight under every set it changes until it settles**, however
  * it settles (PL-142): a refused write changed nothing, but the read it overlapped is read again
  * all the same, which costs one request and decides nothing.
  *
- * **Settled within `WRITE_PATIENCE_MS` at the latest** (PL-033): past it, the request is
- * abandoned and fails as one whose answer was lost -- its outcome unknown, for the writer to
- * read back -- rather than holding every read of the set for ever.
+ * **Waited for `WRITE_PATIENCE_MS` at the latest** (PL-033): past it, the caller is answered
+ * with `OverdueWrite` -- its outcome unknown -- and reads of its sets are no longer held, rather
+ * than for ever. The request itself is left to run: abandoning it would not stop the server
+ * committing it, only stop anyone hearing that it had. When it does settle, reads taken
+ * meanwhile are read again.
  */
 async function sendWrite<Result>(
   path: string,
@@ -293,27 +314,24 @@ async function sendWrite<Result>(
   const keys = setWriteKeys(path, pathParams, body);
   if (keys.length === 0) return send(signal);
   const settle = beginSetWrite(keys);
-  const patience = new AbortController();
-  const forward = () => patience.abort(signal?.reason);
-  if (signal?.aborted) forward();
-  signal?.addEventListener("abort", forward, { once: true });
+  const sending = send(signal);
+  let timer: ReturnType<typeof setTimeout> | undefined;
   let overdue = false;
-  const timer = setTimeout(() => {
-    overdue = true;
-    patience.abort();
-  }, WRITE_PATIENCE_MS);
+  const bound = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      overdue = true;
+      reject(new OverdueWrite(path, sending));
+    }, WRITE_PATIENCE_MS);
+  });
   try {
-    return await send(patience.signal);
-  } catch (error) {
-    if (!overdue) throw error;
-    throw new ApiError({
-      code: CLIENT_ERROR_CODES.unreachable,
-      message: `${path} did not answer in time, so whether it took effect is not known.`,
-    });
+    return await Promise.race([sending, bound]);
   } finally {
     clearTimeout(timer);
-    signal?.removeEventListener("abort", forward);
     settle();
+    if (overdue) {
+      const landed = () => noteLateSettlement(keys);
+      sending.then(landed, landed);
+    }
   }
 }
 

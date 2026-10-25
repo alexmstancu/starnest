@@ -78,3 +78,29 @@ describe("a write and an undo", () => {
     expect(result.current.busy).toBe(false);
   });
 });
+
+/** PL-033 round 9. A set with an unconfirmed change takes no other write until it is checked. */
+describe("a set with an unconfirmed change", () => {
+  it("refuses a write to that set, and only that set", () => {
+    const { result } = renderHook(() => useChangeHistory());
+    act(() =>
+      result.current.note({
+        target: "criteria-set:default:renamed",
+        stage: "Criteria set",
+        label: "Renamed Default to Two",
+        before: { name: "Default" },
+        after: { name: "Two" },
+        reverse: () => undefined,
+        undoes: { criteriaSetId: "default", by: "write" },
+        unconfirmed: () => Promise.resolve(true),
+      }),
+    );
+
+    expect(result.current.begin("default")).toBeNull();
+    let other: (() => void) | null = null;
+    act(() => {
+      other = result.current.begin("remote_only");
+    });
+    expect(other).not.toBeNull();
+  });
+});

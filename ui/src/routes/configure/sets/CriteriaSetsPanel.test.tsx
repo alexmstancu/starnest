@@ -1634,7 +1634,71 @@ describe("a write whose answer was lost", () => {
     expect(await row("Default")).toBeTruthy();
   });
 
-  it("names a rename after an unconfirmed one from the name the list shows, not the run's", async () => {
+  /** PL-033 round 9, finding 1. Waiting stopped is not the write stopped: it may still land. */
+  it("lists a deletion it stopped waiting for as unconfirmed, and settles it when it lands", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderShell("/configure");
+    await settledScreen();
+    const deletion = holdRequests("delete", "/v1/criteria-sets/:criteriaSetId");
+
+    await deleteSet(user, "Remote only");
+    await waitFor(() => expect(deletion.sent).toHaveLength(1));
+    act(() => {
+      vi.advanceTimersByTime(WRITE_PATIENCE_MS);
+    });
+
+    const history = await historyPanel();
+    const entry = (await history.findByText("Deleted Remote only")).closest("li")!;
+    expect(within(entry).getByText(/not confirmed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/did not go through/)).toBeNull();
+    // Checked while it can still land, nothing can be concluded: it stays unconfirmed.
+    await user.click(within(entry).getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(within(entry).getByRole("button", { name: "Check again" })).not.toHaveAttribute("aria-disabled"));
+    expect(within(entry).getByText(/not confirmed/i)).toBeInTheDocument();
+    // It lands after all: the entry is settled by the request's own answer, and keeps its undo.
+    deletion.release();
+    await waitFor(() => expect(within(entry).queryByText(/not confirmed/i)).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole("listitem", { name: "Remote only" })).toBeNull(),
+    );
+    writes = recordWrites();
+    await user.click(within(entry).getByRole("button", { name: "Undo this" }));
+    expect(await row("Remote only")).toBeTruthy();
+    expect(writes).toEqual(["POST /v1/criteria-sets/remote_only/restore"]);
+  });
+
+  it("holds a rule it stopped waiting for, and shows it on once it lands", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderShell("/configure");
+    await settledScreen();
+    const gate = await screen.findByRole("switch", { name: "Enforce Free movement applies" });
+    const enforce = holdRequests("put", "/v1/criteria-sets/:criteriaSetId/match-rules/:matchRuleId");
+    await user.click(gate);
+    await waitFor(() => expect(enforce.sent).toHaveLength(1));
+
+    act(() => {
+      vi.advanceTimersByTime(WRITE_PATIENCE_MS);
+    });
+
+    // The slot is free again, but the rule waits for its own write to settle.
+    await waitFor(async () => expect((await historyPanel()).queryByRole("status")).toBeNull());
+    expectHeld(gate);
+    expect(screen.queryByText(/did not go through/)).toBeNull();
+    enforce.release();
+    await waitFor(() => expect(gate).toHaveAttribute("aria-checked", "true"));
+    await waitFor(() => expectNotHeld(gate));
+  });
+
+  /** PL-033 round 9, finding 2. A later write must not leave an earlier one unjudgeable. */
+  it("holds a change to a set while an earlier one to it is unconfirmed, so Reset still ends at the start", async () => {
     const user = userEvent.setup();
     renderShell("/configure");
     await settledScreen();
@@ -1642,7 +1706,7 @@ describe("a write whose answer was lost", () => {
       await user.click((await row(from)).getByRole("button", { name: "Rename" }));
       await user.keyboard(`{Control>}a{/Control}${to}{Enter}`);
     };
-    // Lands, its answer is lost, and the read-back cannot say so.
+    // Default -> Two lands, its answer is lost, and the read-back cannot say so.
     mockServer.use(
       http.patch(
         "/v1/criteria-sets/:criteriaSetId",
@@ -1663,14 +1727,25 @@ describe("a write whose answer was lost", () => {
     );
     await rename("Default", "Two");
     const history = await historyPanel();
-    await history.findByText("Renamed Default to Two");
+    const first = (await history.findByText("Renamed Default to Two")).closest("li")!;
+    writes = recordWrites();
 
+    expectHeld((await row("Two")).getByRole("button", { name: "Rename" }));
     await rename("Two", "Three");
+    expect(writes).toEqual([]);
+    expect(within(first).getByText(/changes to this set wait/i)).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await user.click(within(first).getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(within(first).queryByText(/not confirmed/i)).toBeNull());
+    await rename("Two", "Three");
+    await row("Three");
+    await user.click(history.getByRole("button", { name: "Back to where I started" }));
 
-    expect(await history.findByText("Renamed Two to Three")).toBeInTheDocument();
+    expect(await row("Default")).toBeTruthy();
+    expect(await fetchCriteriaSet("default")).toMatchObject({ name: "Default" });
   });
 
-  it("gives up on a write that never answers, reads it back, and frees the screen", async () => {
+  it("stops waiting for a write that never answers, lists it unconfirmed, and frees the other sets", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     onTestFinished(() => {
       vi.useRealTimers();
@@ -1688,13 +1763,15 @@ describe("a write whose answer was lost", () => {
       vi.advanceTimersByTime(WRITE_PATIENCE_MS);
     });
 
-    // Read back, it never landed: refused, and nothing waits on it any longer.
-    expect(await screen.findByText(/did not go through/)).toBeInTheDocument();
+    // It may still land, so it is unconfirmed rather than refused, and only its own set waits.
+    const entry = (await (await historyPanel()).findByText("Locked the Economy pillar, in Default"))
+      .closest("li")!;
+    expect(within(entry).getByText(/not confirmed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/did not go through/)).toBeNull();
     await waitFor(() => expectNotHeld(remove));
-    expect(await screen.findByRole("button", { name: "Lock Economy" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
+    expectHeld(await screen.findByRole("button", { name: "Lock Economy" }));
+    expectHeld(await criterionLockOf(user));
+    expectHeld(screen.getByRole("switch", { name: "Enforce Free movement applies" }));
   });
 
   it("never claims a set another tab made under the same name", async () => {

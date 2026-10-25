@@ -18,7 +18,7 @@ import {
 import { titleOf, type AttributeCatalog } from "./criteria/criterionReading";
 import type { Answers } from "./useAnswers";
 import type { ChangeHistory, RecordedChange } from "./useChangeHistory";
-import { confirmation, settled, UnconfirmedWrite } from "./unknownOutcome";
+import { pendingEntry, settled, UnconfirmedWrite } from "./unknownOutcome";
 import {
   refusedUnder,
   standingFailure,
@@ -174,7 +174,7 @@ export function useCriteriaEditor(
       if (error instanceof UnconfirmedWrite) {
         // Confirmed later, what it read back reaches the editor showing the set then.
         const show = (read: RebalancedPillar) => deliver(sentFor, read.criteria);
-        history?.note({ ...entry, unconfirmed: confirmation(error, show) });
+        history?.note({ ...entry, ...pendingEntry(error, show) });
       } else reportFor(sentFor, { pillar: around.pillar, ...refusedUnder(error, around.items) });
     },
     [history, reportFor, deliver],
@@ -184,7 +184,7 @@ export function useCriteriaEditor(
     (attribute: string, weight: number) => {
       if (criteriaSetId === null || inFlight.current || undoing) return;
       // The one write in flight, or a wait while another is (PL-033).
-      const done = history?.begin();
+      const done = history?.begin(criteriaSetId);
       if (done === null) return;
       inFlight.current = true;
       const sentFor = criteriaSetId;
@@ -264,7 +264,7 @@ export function useCriteriaEditor(
     (attribute: string, weightLocked: boolean) => {
       if (criteriaSetId === null || inFlight.current || undoing) return;
       // The one write in flight, or a wait while another is (PL-033).
-      const done = history?.begin();
+      const done = history?.begin(criteriaSetId);
       if (done === null) return;
       inFlight.current = true;
       const sentFor = criteriaSetId;
@@ -320,7 +320,7 @@ export function useCriteriaEditor(
     (attribute: string, rule: CriterionRule): Promise<unknown> => {
       if (criteriaSetId === null || inFlight.current || undoing) return Promise.resolve(null);
       // The one write in flight, or a wait while another is (PL-033).
-      const done = history?.begin();
+      const done = history?.begin(criteriaSetId);
       if (done === null) return Promise.resolve(null);
       inFlight.current = true;
       const sentFor = criteriaSetId;
@@ -371,7 +371,8 @@ export function useCriteriaEditor(
     busy:
       savingAttribute !== null ||
       undoing ||
-      history?.busy === true,
+      history?.busy === true ||
+      (criteriaSetId !== null && history?.waitsFor(criteriaSetId) === true),
     saveErrorFor,
     setWeight,
     setLock,

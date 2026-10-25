@@ -11,7 +11,7 @@ import { formatPercentage, pillarName } from "../../../format/display";
 import type { ChangeHistory } from "../useChangeHistory";
 import { useNotePillarChange } from "./useNotePillarChange";
 import type { Answers } from "../useAnswers";
-import { confirmation, settled, UnconfirmedWrite } from "../unknownOutcome";
+import { pendingEntry, settled, UnconfirmedWrite } from "../unknownOutcome";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { useWeightDrag } from "../useWeightDrag";
 import {
@@ -100,8 +100,13 @@ export function PillarWeightsPanel({
   // name rather than a member expression. `useWeightDrag` keeps it stable for exactly that.
   const { preview, previewFor, moveTo, ended } = useWeightDrag();
   const undoing = history?.undoing === true;
-  // Held too while any other write in Configure is in flight: one at a time (PL-033).
-  const held = saving || undoing || history?.busy === true;
+  // Held too while any other write in Configure is in flight, or while a change to this set is
+  // unconfirmed and has to be checked first (PL-033).
+  const held =
+    saving ||
+    undoing ||
+    history?.busy === true ||
+    history?.waitsFor(criteriaSet.id) === true;
   useEffect(() => answers?.listen(criteriaSet.id, setWeights), [answers, criteriaSet.id]);
   const showAnswer = useCallback(
     (setId: string, answer: PillarWeight[]) => {
@@ -117,7 +122,7 @@ export function PillarWeightsPanel({
       if (inFlight.current || undoing) return;
       // The one write in Configure's flight (D41, PL-033), given back by the write itself,
       // which outlives this panel when a set switch remounts it.
-      const done = history?.begin();
+      const done = history?.begin(criteriaSet.id);
       if (done === null) return;
       inFlight.current = true;
       setSaving(true);
@@ -135,7 +140,7 @@ export function PillarWeightsPanel({
       } catch (error) {
         // Lost and not yet read back, it may have taken effect: listed, unconfirmed (PL-033).
         if (error instanceof UnconfirmedWrite) {
-          note.weight(pillar, weights, null, weight, confirmation(error, (read: Rebalanced) => showAnswer(criteriaSet.id, read.items)));
+          note.weight(pillar, weights, null, weight, pendingEntry(error, (read: Rebalanced) => showAnswer(criteriaSet.id, read.items)));
         } else setFailure(refusedUnder(error, weightedPillars(weights)));
       } finally {
         inFlight.current = false;
@@ -157,7 +162,7 @@ export function PillarWeightsPanel({
       if (inFlight.current || undoing) return;
       // The one write in Configure's flight (D41, PL-033), given back by the write itself,
       // which outlives this panel when a set switch remounts it.
-      const done = history?.begin();
+      const done = history?.begin(criteriaSet.id);
       if (done === null) return;
       inFlight.current = true;
       setSaving(true);
@@ -177,7 +182,7 @@ export function PillarWeightsPanel({
         note.lock(pillar, locked);
       } catch (error) {
         if (error instanceof UnconfirmedWrite) {
-          note.lock(pillar, locked, confirmation(error, (read: Rebalanced) => showAnswer(criteriaSet.id, read.items)));
+          note.lock(pillar, locked, pendingEntry(error, (read: Rebalanced) => showAnswer(criteriaSet.id, read.items)));
         } else setFailure(refusedUnder(error, weightedPillars(weights)));
       } finally {
         inFlight.current = false;

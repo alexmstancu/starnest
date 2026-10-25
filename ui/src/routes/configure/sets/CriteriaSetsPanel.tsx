@@ -129,7 +129,7 @@ export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
                     <HeldButton
                       key="save"
                       className="action"
-                      held={form.busy || !form.canSaveRename}
+                      held={form.heldFor(set.id) || !form.canSaveRename}
                       onClick={() => void saveRename(set.id)}
                     >
                       Save
@@ -157,7 +157,7 @@ export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
                     <HeldButton
                       id={buttonId(set.id, "rename")}
                       className="action"
-                      held={form.busy}
+                      held={form.heldFor(set.id)}
                       title="Rename this set"
                       onClick={() => form.beginRename(set.id, set.name)}
                     >
@@ -165,7 +165,7 @@ export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
                     </HeldButton>
                     <HeldButton
                       className="action"
-                      held={form.busy}
+                      held={form.heldFor(set.id)}
                       title="Copy it before experimenting"
                       onClick={() => void form.duplicate(set.id, set.name)}
                     >
@@ -174,7 +174,7 @@ export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
                     <HeldButton
                       id={buttonId(set.id, "delete")}
                       className="action action--danger"
-                      held={form.busy || only}
+                      held={form.heldFor(set.id) || only}
                       title={
                         only
                           ? "The only set there is cannot be deleted"

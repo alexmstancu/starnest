@@ -1,4 +1,5 @@
 import { ApiError, CLIENT_ERROR_CODES, isApiError } from "../../api/ApiError";
+import { OverdueWrite } from "../../api/client";
 
 /** How long a read is waited for before it counts as not having answered (PL-033). */
 export const READ_PATIENCE_MS = 10_000;
@@ -12,35 +13,46 @@ export function outcomeUnknown(error: unknown): boolean {
 }
 
 /**
- * A write whose answer was lost and whose read-back could not say either -- it failed, or never
- * answered. **What it did is still unknown**, so the writer lists it unconfirmed, and
- * `readAgain` reads back again: what the write would have answered if it took effect, null if
- * it did not, throwing while the server still cannot say.
+ * A write whose outcome is still unknown (PL-033): its answer was lost and reading it back could
+ * not say, or it was still running when the client stopped waiting for it. The writer lists it
+ * unconfirmed; `readAgain` says what it did -- what it would have answered if it took effect,
+ * null if it did not, throwing while that still cannot be said -- and `settles`, when the request
+ * is still running, settles as it does, so the entry can be resolved then.
  */
 export class UnconfirmedWrite extends Error {
   readonly readAgain: () => Promise<unknown>;
+  readonly settles: Promise<unknown> | undefined;
 
-  constructor(readAgain: () => Promise<unknown>) {
-    super("The write's answer was lost, and reading it back could not say whether it took effect.");
+  constructor(readAgain: () => Promise<unknown>, settles?: Promise<unknown>) {
+    super("Whether the write took effect is not known yet.");
     this.name = "UnconfirmedWrite";
     this.readAgain = readAgain;
+    this.settles = settles;
   }
 }
 
+/** What an unconfirmed change carries into Recent changes. */
+export interface Pending {
+  unconfirmed: () => Promise<boolean>;
+  settles?: Promise<unknown>;
+}
+
 /**
- * The check an unconfirmed change carries (PL-033): reads back again and, **when the write took
- * effect, shows it as an answered write would** -- to whatever shows its set now -- so a
- * confirmation never leaves the screen showing the state before it.
+ * How an unconfirmed change is resolved (PL-033): reading back again and, **when the write took
+ * effect, showing it as an answered write would** -- to whatever shows its set now -- so a
+ * confirmation never leaves the screen showing the state before it. With `settles`, the history
+ * resolves it by itself once the request does.
  */
-export function confirmation<Answer>(
+export function pendingEntry<Answer>(
   error: UnconfirmedWrite,
   show: (answer: Answer) => void,
-): () => Promise<boolean> {
-  return async () => {
+): Pending {
+  const unconfirmed = async () => {
     const landed = (await error.readAgain()) as Answer | null;
     if (landed !== null) show(landed);
     return landed !== null;
   };
+  return error.settles === undefined ? { unconfirmed } : { unconfirmed, settles: error.settles };
 }
 
 /** A read-back of what a write did: what it would have answered, or null if it did not land. */
@@ -51,6 +63,9 @@ export type ReadBack<Answer> = (signal: AbortSignal) => Promise<Answer | null>;
  * the write would have given when the read-back shows it took effect, so the screen and the
  * history record it; the original failure when it did not. When the read-back cannot say
  * either, `UnconfirmedWrite` -- never a guess.
+ *
+ * **A write still running is never read back** (`OverdueWrite`): it may land after any read, so
+ * no read taken meanwhile can say it did not. It is unconfirmed until its own request settles.
  */
 export async function settled<Answer>(
   send: () => Promise<Answer>,
@@ -60,6 +75,9 @@ export async function settled<Answer>(
     return await send();
   } catch (error) {
     if (!outcomeUnknown(error)) throw error;
+    if (error instanceof OverdueWrite) {
+      throw new UnconfirmedWrite(onceSettled(error.late, readBack), error.late);
+    }
     let landed: Answer | null;
     try {
       landed = await withPatience(readBack);
@@ -69,6 +87,29 @@ export async function settled<Answer>(
     if (landed === null) throw error;
     return landed;
   }
+}
+
+/**
+ * What a write still running did, **decided only once it has settled**: refused, it did nothing;
+ * answered, or lost after all, a read taken after it settled says what it did.
+ */
+function onceSettled<Answer>(late: Promise<unknown>, readBack: ReadBack<Answer>) {
+  let outcome: { settled: false } | { settled: true; refusal: unknown } = { settled: false };
+  late.then(
+    () => (outcome = { settled: true, refusal: null }),
+    (error: unknown) =>
+      (outcome = { settled: true, refusal: outcomeUnknown(error) ? null : error }),
+  );
+  return async (): Promise<Answer | null> => {
+    if (!outcome.settled) {
+      throw new ApiError({
+        code: CLIENT_ERROR_CODES.unreachable,
+        message: "It has still not answered, so whether it took effect is still not known.",
+      });
+    }
+    if (outcome.refusal !== null) return null;
+    return withPatience(readBack);
+  };
 }
 
 /**

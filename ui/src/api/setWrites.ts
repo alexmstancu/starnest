@@ -88,8 +88,9 @@ export function untilSettled(key: string, signal?: AbortSignal): Promise<void> {
 export const MAX_REREADS = 3;
 
 /**
- * How long a write is waited for before its outcome counts as unknown (PL-033): its request is
- * abandoned, and the writer reads back what it did. A write that never settles would otherwise
+ * How long a write is waited for before its outcome counts as unknown (PL-033). **Waiting stops;
+ * the request does not**: it may still land, so nothing read meanwhile can say it did not, and
+ * its own settlement, whenever it comes, decides. A write that never settles would otherwise
  * hold every read of its set for ever.
  */
 export const WRITE_PATIENCE_MS = 10_000;
@@ -117,11 +118,34 @@ export async function readWhenSettled<Answer>(
     const ledger = ledgerOf(key);
     if (ledger.inFlight > 0) continue;
     const begun = ledger.epoch;
-    const answer = await read();
-    const now = ledgerOf(key);
+    let answer: Answer;
+    try {
+      answer = await read();
+    } catch (error) {
+      // **A failure a write overlapped is as stale as an answer would be**: a 404 for a set
+      // restored meanwhile is read again, not passed on. An abort is the caller's, and final.
+      if (isAbort(error) || ledgerOf(key).epoch === begun) throw error;
+      continue;
+    }
     // In flight now means begun since `begun`, which the epoch already says.
-    if (now.epoch === begun) return answer;
+    if (ledgerOf(key).epoch === begun) return answer;
   }
+}
+
+/**
+ * A write the client stopped waiting for has settled after all (PL-033): whatever it did, a read
+ * of its sets taken while it could still land is read again.
+ */
+export function noteLateSettlement(keys: readonly string[]): void {
+  beginSetWrite(keys)();
+}
+
+function isAbort(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { name?: unknown }).name === "AbortError"
+  );
 }
 
 /** Every test is a page of its own. */

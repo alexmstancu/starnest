@@ -30,7 +30,7 @@ import {
 } from "../../../api/endpoints";
 import type { Selection } from "../../../shell/SelectionContext";
 import {
-  confirmation,
+  pendingEntry,
   READ_PATIENCE_MS,
   type ReadBack,
   settled,
@@ -78,6 +78,11 @@ export interface CriteriaSetsForm {
   retryList: () => void;
   /** Whether the list, once it shows every set action, no longer has this set. */
   isDeleted: (criteriaSetId: string) => boolean;
+  /**
+   * Whether this set's verbs are held: while anything is, or while a change to the set is
+   * unconfirmed and has to be checked first (PL-033).
+   */
+  heldFor: (criteriaSetId: string) => boolean;
 }
 
 export function useCriteriaSets(options: {
@@ -155,6 +160,8 @@ export function useCriteriaSets(options: {
    * dropped, so a deletion that did happen always keeps its restore.
    */
   async function act<Answer>(
+    /** The set the verb changes, held while a change to it is unconfirmed; none for a new one. */
+    criteriaSetId: string | undefined,
     send: () => Promise<Answer>,
     readBack: ReadBack<Answer>,
     /** Its entry; `confirmed` false when it is listed unconfirmed, and so on its own. */
@@ -162,7 +169,7 @@ export function useCriteriaSets(options: {
     landed: (answer: Answer) => void = () => undefined,
   ): Promise<boolean> {
     if (!listSettled) return false;
-    const done = history.begin();
+    const done = history.begin(criteriaSetId);
     if (done === null) return false;
     setFailure(null);
     try {
@@ -174,10 +181,7 @@ export function useCriteriaSets(options: {
         return false;
       }
       // Confirmed later, the list is read again so the rows show what the server holds.
-      history.note({
-        ...entry(false),
-        unconfirmed: confirmation(error, () => selection.reload()),
-      });
+      history.note({ ...entry(false), ...pendingEntry(error, () => selection.reload()) });
     } finally {
       done();
     }
@@ -213,16 +217,15 @@ export function useCriteriaSets(options: {
       const name = renameDraft.trim();
       const was = nameOf(target);
       const targetKey = `criteria-set:${target}:renamed`;
-      // A run of renames is one entry, so it reads from the name the run started from -- but
-      // only a run of confirmed ones: an unconfirmed rename stands alone (PL-033).
+      // A run of renames is one entry, so it reads from the name the run started from. Never
+      // from an unconfirmed one: a rename waits while one to its set is (PL-033).
       const latest = history.changes[0];
       const first =
-        latest?.target === targetKey && latest.unconfirmed === undefined
-          ? (latest.before as { name: string }).name
-          : was;
+        latest?.target === targetKey ? (latest.before as { name: string }).name : was;
       const renamedTo = (wanted: string) => async (signal: AbortSignal) =>
         (await setNow(target, signal))?.name === wanted ? { name: wanted } : null;
       const sent = await act(
+        target,
         () => renameCriteriaSet(target, name),
         renamedTo(name),
         (confirmed) => ({
@@ -256,6 +259,7 @@ export function useCriteriaSets(options: {
       // tab's: another tab making a set of the same name gets one of its own.
       const id = ownIdentifier(name);
       await act(
+        undefined,
         () => createCriteriaSet(id, name),
         (signal) => setNow(id, signal),
         () => ({
@@ -278,7 +282,9 @@ export function useCriteriaSets(options: {
     duplicate: async (criteriaSetId, currentName) => {
       const name = copyName(currentName, names);
       const id = ownIdentifier(name);
+      // A copy of a set with an unconfirmed change would copy what nobody knows it holds.
       await act(
+        criteriaSetId,
         () => duplicateCriteriaSet(criteriaSetId, id, name),
         (signal) => setNow(id, signal),
         () => ({
@@ -307,6 +313,7 @@ export function useCriteriaSets(options: {
       // listed with its restore, and one nobody can yet confirm is listed unconfirmed -- the
       // server keeps the deleted set (0508), so the restore is always there to be had.
       return act(
+        criteriaSetId,
         () => deleteCriteriaSet(criteriaSetId).then(() => true as const),
         async (signal) => ((await setNow(criteriaSetId, signal)) === null ? true : null),
         () => ({
@@ -335,6 +342,7 @@ export function useCriteriaSets(options: {
       setListAttempt((attempt) => attempt + 1);
       selection.reload();
     },
+    heldFor: (criteriaSetId) => held || history.waitsFor(criteriaSetId),
     isDeleted: (criteriaSetId) =>
       listSettled && !selection.criteriaSets.some((set) => set.id === criteriaSetId),
   };
