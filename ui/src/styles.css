@@ -838,6 +838,17 @@ select.field__control {
   font-weight: var(--weight-strong);
 }
 
+/* A chip held at the comparator limit (PL-092): it refuses a tick and says why in its title,
+   and stays focusable so the reason is heard. */
+.toggle--held {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.toggle--held input {
+  cursor: not-allowed;
+}
+
 .toggle:has(input:focus-visible) {
   outline: 2px solid var(--colour-accent);
   outline-offset: 2px;

@@ -206,6 +206,26 @@ describe("what Compare remembers", () => {
     await expectRemembered();
   });
 
+  it("keeps the open pillar across a tab change", async () => {
+    renderShell("/compare");
+    await compareWithRawFigures();
+    await openPillar("Economy");
+    await screen.findByRole("row", { name: /cost of living index/i });
+
+    await openTab("Configure");
+    await screen.findByRole("heading", { level: 1, name: "Configure" });
+    await openTab("Compare");
+
+    await screen.findByRole("table", { name: /every pillar/i });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Economy" })).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      ),
+    );
+    expect(screen.getByRole("row", { name: /cost of living index/i })).toBeInTheDocument();
+  });
+
   it("keeps them across a reload", async () => {
     const page = renderShell("/compare");
     await compareWithRawFigures();
@@ -1166,31 +1186,70 @@ describe("when a comparison cannot be drawn", () => {
  * it in place -- and `/comparisons` answers 409 above the limit, so that was a request this
  * application could never make.
  */
+/** The settings the mock serves, with this comparator limit. */
+function serveLimit(limit: number) {
+  mockServer.use(
+    http.get(`${BASE}/settings`, () => HttpResponse.json({ ...SETTINGS, comparator_limit: limit })),
+  );
+}
+
 describe("the comparator ceiling", () => {
-  it("trims the selection to the newest when the limit is below it", async () => {
-    mockServer.use(
-      http.get(`${BASE}/settings`, () =>
-        HttpResponse.json({
-          score_scale_max: 100,
-          min_coverage: 60,
-          comparator_limit: 1,
-          run_spend_cap_eur: 5,
-        }),
-      ),
-    );
+  it("holds the other chips at the limit, says why, and ignores a click (PL-092)", async () => {
+    serveLimit(1);
     renderShell("/compare");
     await chooseFocus("Portugal");
-
     await userEvent.click(await screen.findByRole("checkbox", { name: "Spain" }));
-    await userEvent.click(
-      await screen.findByRole("checkbox", { name: "Netherlands" }),
-    );
 
-    const notice = await screen.findByRole("alert");
-    expect(notice).toHaveTextContent(/comparator limit is lower/i);
-    // The newest is kept: the last click is the one being thought about.
-    expect(screen.getByRole("checkbox", { name: "Netherlands" })).toBeChecked();
+    const netherlands = screen.getByRole("checkbox", { name: "Netherlands" });
+    expect(netherlands).toHaveAttribute("aria-disabled", "true");
+    expect(netherlands).toHaveAccessibleDescription(
+      "Limit reached — remove one of the 1 first, or raise the limit in Configure",
+    );
+    expect(netherlands.closest("label")).toHaveAttribute(
+      "title",
+      "Limit reached — remove one of the 1 first, or raise the limit in Configure",
+    );
+    expect(screen.getByRole("checkbox", { name: "Spain" })).not.toHaveAttribute("aria-disabled");
+
+    await userEvent.click(netherlands);
+
+    expect(netherlands).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Spain" })).toBeChecked();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("names who was taken out when the limit was lowered, and never brings them back", async () => {
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Spain" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Netherlands" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Estonia" }));
+
+    await openTab("Configure");
+    await screen.findByRole("heading", { level: 1, name: "Configure" });
+    await replaceSettings({ ...SETTINGS, comparator_limit: 1 });
+    await openTab("Compare");
+
+    expect(
+      await screen.findByText("The limit is now 1, so Spain and Netherlands were taken out."),
+    ).toHaveAttribute("role", "status");
+    expect(screen.getByRole("checkbox", { name: "Estonia" })).toBeChecked();
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Estonia" }));
+
     expect(screen.getByRole("checkbox", { name: "Spain" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Netherlands" })).not.toBeChecked();
+    expect(screen.queryByText(/were taken out/)).toBeNull();
+  });
+
+  it("counts what is chosen (PL-106)", async () => {
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Spain" }));
+
+    expect(
+      screen.getByText("Up to 5 comparators, the limit set in Configure. 1 chosen."),
+    ).toBeInTheDocument();
   });
 
   it("says nothing while the selection is inside the limit", async () => {

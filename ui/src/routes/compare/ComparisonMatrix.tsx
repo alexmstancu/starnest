@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { Comparison } from "../../api/endpoints";
 import {
   attributeName,
@@ -53,6 +52,8 @@ export function ComparisonMatrix({
   shownAs,
   pillarWeights,
   priority,
+  open,
+  onOpen,
 }: {
   comparison: Comparison;
   measure: Measure;
@@ -62,6 +63,10 @@ export function ComparisonMatrix({
   pillarWeights: ReadonlyMap<string, number>;
   /** Each priority pillar's place, from `pillarPriority`, shared with the cards. */
   priority: ReadonlyMap<string, number>;
+  /** The one pillar open to its attributes, kept with the selection so it survives a tab change. */
+  open: string | null;
+  /** Opens a pillar, or closes it when it is the open one. */
+  onOpen: (pillar: string) => void;
 }) {
   const comparators = comparison.comparators ?? [];
   const pillarNames = usePillarNames();
@@ -71,7 +76,6 @@ export function ComparisonMatrix({
     value === undefined
       ? null
       : { description: describeProvenance(value, sourceNames), mark: provenanceMark(value) };
-  const [open, setOpen] = useState<string | null>(null);
 
   const rows = pillarMatrix(comparison.focus, comparators, measure, (pillar) =>
     pillarName(pillarNames, pillar),
@@ -179,9 +183,9 @@ export function ComparisonMatrix({
                 place={place}
                 open={isOpen}
                 canOpen={attributes.length > 0}
-                onToggle={() =>
-                  setOpen((current) => (current === row.pillar ? null : row.pillar))
-                }
+                onToggle={() => {
+                  if (row.pillar !== null) onOpen(row.pillar);
+                }}
                 cells={row.cells.map((cell) => ({
                   candidate: cell.candidate,
                   bar: scale.drawn ? divergingBar(cell.delta, pillarScale, row.focus) : null,

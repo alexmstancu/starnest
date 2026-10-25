@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import { ComparisonMatrix } from "./ComparisonMatrix";
 import { ViewChoices } from "./ViewChoices";
 import type { Measure } from "./pillarMatrix";
-import { useComparisonChoices } from "./useComparisonChoices";
-import { droppedByLimit, withinLimit } from "./comparatorLimit";
+import { useCompareSelection } from "./useCompareSelection";
+import { knownLimit } from "./comparatorLimit";
+import { canAdd, type CompareSelection } from "./compareSelection";
 import { asksTheSame, requestFor, type ComparisonRequest } from "./comparisonRequest";
 import { pillarPriority, pillarWeightsAt } from "./ordering";
 import { StatusChip } from "./StatusChip";
@@ -56,13 +57,12 @@ export function CompareScreen({ route }: { route: RouteDefinition }) {
           are per pillar, in score points, never averaged into one verdict.
         </p>
       </header>
-      {/* Keyed by the selection, so each comparison is read afresh. **The choices are not held
-          here** (PL-016): they live above the routes, survive a criteria-set switch and are
-          reset by a level change -- a comparison never mixes levels (`reqs.md`), and keeping
-          candidate ids across one re-asked for `level=city&focus=country.…`, which the
-          contract refuses with 409 "Levels mixed" (P54). */}
+      {/* **Keyed by the level only** (X1). A comparison never mixes levels (`reqs.md`), and
+          candidate ids from one level re-asked at another are refused with 409 "Levels mixed"
+          (P54). The choices themselves live in the session store, which a set switch keeps
+          and a level change resets. */}
       <TheComparison
-        key={`${criteriaSetId}-${levelId}`}
+        key={levelId ?? ""}
         criteriaSetId={criteriaSetId}
         levelId={levelId}
         focusRegion={focusRegion}
@@ -88,21 +88,15 @@ function TheComparison({
     ),
     { enabled: levelId !== null },
   );
-  const {
-    focus,
-    comparators,
-    shownAs,
-    measure,
-    asked,
-    chooseFocus,
-    toggleComparator,
-    showAs,
-    measureBy,
-    ask,
-  } = useComparisonChoices(candidates.read.state === "ready" ? candidates.read.data.items : null);
   const settings = useRead(
     useCallback((signal: AbortSignal) => fetchSettings({ signal }), []),
   );
+  const chosen = useCompareSelection(
+    candidates.read.state === "ready" ? candidates.read.data.items : null,
+    settings.read.state === "ready" ? knownLimit(settings.read.data.comparator_limit) : null,
+  );
+  const { asked } = chosen;
+  const { shownAs, measure } = chosen.selection;
   // **The set's configured pillar weights** (PL-104), read as Rank reads them: what the Weight
   // column shows and what "#N priority" ranks, so neither moves when only the focus changes.
   // **A read like the others** (PL-001): the comparison is drawn once they are read, and says
@@ -180,22 +174,21 @@ function TheComparison({
           ) : (
           <ComparisonPicker
             roster={roster.items}
-            focus={focus}
-            chosen={comparators}
-            limit={limit ?? null}
+            selection={chosen.selection}
+            limit={knownLimit(limit)}
             choices={
               <ViewChoices
                 shownAs={shownAs}
-                onShownAs={showAs}
+                onShownAs={chosen.showAs}
                 measure={measure}
-                onMeasure={measureBy}
+                onMeasure={chosen.measureBy}
               />
             }
-            onFocus={chooseFocus}
-            onToggleComparator={toggleComparator}
+            onFocus={chosen.chooseFocus}
+            onToggleComparator={chosen.toggleComparator}
             onCompare={(request) => {
               if (asksTheSame(request, asked)) void comparison.reload();
-              else ask(request);
+              else chosen.ask(request);
             }}
           />
           )
@@ -224,6 +217,8 @@ function TheComparison({
               shownAs={shownAs}
               measure={measure}
               pillarWeights={pillarWeights}
+              openPillar={chosen.selection.openPillar}
+              onOpenPillar={chosen.openPillar}
             />
           )}
         </LoadedRegion>
@@ -300,8 +295,7 @@ const PENDING: Read<never> = { state: "pending" };
 
 function ComparisonPicker({
   roster,
-  focus,
-  chosen,
+  selection,
   limit,
   onFocus,
   onToggleComparator,
@@ -309,9 +303,8 @@ function ComparisonPicker({
   choices,
 }: {
   roster: Candidate[];
-  focus: string | null;
-  /** Every comparator ticked, before the limit trims them. */
-  chosen: string[];
+  selection: CompareSelection;
+  /** The limit Compare may act on, or null where it is unknown (`knownLimit`). */
   limit: number | null;
   onFocus: (candidate: string | null) => void;
   onToggleComparator: (candidate: string) => void;
@@ -319,14 +312,11 @@ function ComparisonPicker({
   /** The two questions about how to read the comparison, answered before it is drawn. */
   choices: ReactNode;
 }) {
-  // **Trimmed as it is rendered, not on a click.** The limit was enforced only when adding, so
-  // lowering it in Configure left a selection above it in place -- and `/comparisons` answers
-  // 409 above the limit, so that was a request this application could never make (R4).
-  const comparators = withinLimit(chosen, limit);
-  // How many the limit is holding back, so the screen says so rather than losing them.
-  const dropped = droppedByLimit(chosen, limit);
+  const { focus, comparators, trimmed } = selection;
   const request = requestFor(focus, comparators);
-  const full = limit !== null && comparators.length >= limit;
+  const full = !canAdd(selection, limit);
+  const limitReason = `Limit reached — remove one of the ${String(limit)} first, or raise the limit in Configure`;
+  const nameOf = (id: string) => roster.find((candidate) => candidate.id === id)?.name ?? id;
 
   return (
     <div className="panel">
@@ -340,7 +330,7 @@ function ComparisonPicker({
               ? ""
               : full
                 ? `You have ${String(comparators.length)} of ${String(limit)} — the limit set in Configure. Remove one to add another, or raise the limit there.`
-                : `Up to ${String(limit)} comparators, the limit set in Configure.`}
+                : `Up to ${String(limit)} comparators, the limit set in Configure. ${String(comparators.length)} chosen.`}
           </span>
           <Link className="action" to="/configure">
             Change it in Configure
@@ -348,17 +338,13 @@ function ComparisonPicker({
         </span>
       </div>
 
-      {/* Said out loud, because a selection silently shrinking is worse than one that
-          refuses. The newest are kept: the last clicks are the ones being thought about. */}
-      {dropped > 0 && (
-        <div className="notice notice--warning" role="alert">
-          <p className="notice__message">
-            The comparator limit is lower than what was picked, so the{" "}
-            {dropped === 1 ? "oldest choice is" : `oldest ${dropped} choices are`}{" "}
-            no longer in the comparison. Raise the limit in Configure to bring
-            them back.
-          </p>
-        </div>
+      {/* **Said once, by name** (PL-092): only a lowered limit takes anyone out, the oldest
+          first, and the next choice clears this. */}
+      {trimmed.length > 0 && limit !== null && (
+        <p className="screen__note" role="status">
+          The limit is now {limit}, so {listNames(trimmed.map(nameOf))}{" "}
+          {trimmed.length === 1 ? "was" : "were"} taken out.
+        </p>
       )}
 
       {/* **The two questions before the two lists.** What a cell shows, and what a difference
@@ -392,17 +378,34 @@ function ComparisonPicker({
         <div className="toggle-group toggle-group--wrap">
           {roster
             .filter((candidate) => candidate.id !== focus)
-            .map((candidate) => (
-              <label key={candidate.id} className="toggle">
-                <input
-                  type="checkbox"
-                  checked={comparators.includes(candidate.id)}
-                  onChange={() => onToggleComparator(candidate.id)}
-                />
-                {candidate.name}
-              </label>
-            ))}
+            .map((candidate) => {
+              const ticked = comparators.includes(candidate.id);
+              // **Held, not hidden** (PL-092): at the limit a tick is refused where it is made,
+              // and the chip stays focusable so the reason is heard.
+              const held = full && !ticked;
+              return (
+                <label
+                  key={candidate.id}
+                  className={held ? "toggle toggle--held" : "toggle"}
+                  title={held ? limitReason : undefined}
+                >
+                  <input
+                    type="checkbox"
+                    checked={ticked}
+                    aria-disabled={held || undefined}
+                    aria-describedby={held ? LIMIT_REASON_ID : undefined}
+                    onChange={() => onToggleComparator(candidate.id)}
+                  />
+                  {candidate.name}
+                </label>
+              );
+            })}
         </div>
+        {full && (
+          <span id={LIMIT_REASON_ID} className="visually-hidden">
+            {limitReason}
+          </span>
+        )}
       </fieldset>
       </div>
 
@@ -419,16 +422,28 @@ function ComparisonPicker({
   );
 }
 
+const LIMIT_REASON_ID = "compare-limit-reason";
+
+/** "Spain", "Spain and Malta", "Spain, Malta and Estonia". */
+function listNames(names: readonly string[]): string {
+  if (names.length <= 1) return names.join("");
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]!}`;
+}
+
 function ComparisonTable({
   comparison,
   shownAs,
   measure,
   pillarWeights,
+  openPillar,
+  onOpenPillar,
 }: {
   comparison: Comparison;
   shownAs: "score" | "raw";
   measure: Measure;
   pillarWeights: ReadonlyMap<string, number>;
+  openPillar: string | null;
+  onOpenPillar: (pillar: string) => void;
 }) {
   const comparators = comparison.comparators ?? [];
   // One priority for the cards and the matrix, so "#N" means one thing on the screen (PL-100).
@@ -468,6 +483,8 @@ function ComparisonTable({
         shownAs={shownAs}
         pillarWeights={pillarWeights}
         priority={priority}
+        open={openPillar}
+        onOpen={onOpenPillar}
       />
     </>
   );
