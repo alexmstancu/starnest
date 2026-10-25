@@ -2178,11 +2178,12 @@ select.field__control {
    and a wholesale refresh are three different problems, and a reader arriving at Acquire is
    choosing between them -- stacked in a column they would read as a sequence of steps. */
 
+/* Stretched, so each card's action sits at the foot of a row of equal cards (PL-129). */
 .gap-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
   gap: 14px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .gap-card {
@@ -2273,9 +2274,9 @@ select.field__control {
 }
 
 /* ── The step between reading a cost and it happening ─────────────────────────
-   Amber, inside the card that raised it. An uncapped run goes red: `run_spend_cap_eur` is
-   nullable and null is the shipped state, so "no ceiling" is the default condition and the
-   one most worth interrupting for. */
+   Amber, inside the card that raised it, as the design draws every confirmation (PL-129). An
+   uncapped run is marked out by its words, set heavier, never by turning the strip red:
+   `run_spend_cap_eur` is nullable and null is the shipped state, so it is the common case. */
 .confirm {
   display: flex;
   flex-direction: column;
@@ -2286,11 +2287,6 @@ select.field__control {
   border-radius: var(--radius-medium);
 }
 
-.confirm--uncapped {
-  border-color: var(--colour-danger-border);
-  background: var(--colour-danger-surface);
-}
-
 .confirm__message {
   margin: 0;
   font-size: 12.5px;
@@ -2299,7 +2295,7 @@ select.field__control {
 }
 
 .confirm--uncapped .confirm__message {
-  color: var(--colour-danger-deep);
+  font-weight: var(--weight-strong);
 }
 
 .confirm__acts {
@@ -5068,4 +5064,25 @@ select.field__control {
   font-size: 12px;
   line-height: 1.5;
   color: var(--colour-warning-deep);
+}
+
+/* ── Acquire's visual details, as the design draws them (PL-129) ───────────────────────
+   The acquisition's overall bar is 8 px and teal, turning amber once the run is stopping or
+   halted -- the states whose pill is the warning one. Why an item failed is written in red. */
+.acquisition .meter__track {
+  height: 8px;
+  border-radius: 4px;
+}
+
+.acquisition .meter__fill--completed {
+  fill: var(--colour-accent);
+}
+
+.acquisition:has(.pill--warn) .meter__fill--completed {
+  fill: var(--colour-warning-bar);
+}
+
+.gap-card--danger .toggle__detail,
+.gap-card--danger .group__message-text {
+  color: var(--colour-danger);
 }
