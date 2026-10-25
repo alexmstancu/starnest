@@ -64,7 +64,21 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
 
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // **A spec that writes what nothing can delete runs last** (PL-084): a typed figure has no
+  // DELETE, so it goes in its own project after every other spec has read the copy as restored.
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+      testIgnore: /hand-entry\.spec\.ts/,
+    },
+    {
+      name: "writes-last",
+      use: { ...devices["Desktop Chrome"] },
+      testMatch: /hand-entry\.spec\.ts/,
+      dependencies: ["chromium"],
+    },
+  ],
 
   // The real backend, not a mock. A gate that passes against a mock proves the mock works.
   webServer: [
