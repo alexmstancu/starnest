@@ -175,7 +175,7 @@ describe("the settings panel", () => {
 
     await user.click(settings.getByRole("button", { name: "Save settings" }));
 
-    expect(await settings.findByText(/the settings are locked/)).toBeInTheDocument();
+    expect(await settings.findByText("The server failed while answering.")).toBeInTheDocument();
     expect(settings.queryByText("Saved.")).not.toBeInTheDocument();
   });
 
@@ -413,7 +413,7 @@ describe("the settings panel while a save is in flight", () => {
       await user.keyboard("{Enter}");
 
       expect(
-        await settings.findByText(/the settings are locked/),
+        await settings.findByText("The server failed while answering."),
       ).toBeInTheDocument();
       await waitFor(() => expectNotHeld(save));
       expect(save).toBeEnabled();

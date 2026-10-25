@@ -301,7 +301,7 @@ describe("changing the rule", () => {
     await user.click(screen.getByRole("button", { name: "Save rule" }));
 
     expect(
-      await within(ruleForm(ANCHORED)).findByText(/cannot express a band/i),
+      await within(ruleForm(ANCHORED)).findByText(/this rule is not valid as written/i),
     ).toBeInTheDocument();
   });
 
@@ -326,7 +326,7 @@ describe("changing the rule", () => {
     const stored = goalSelect().value;
     await user.selectOptions(goalSelect(), "target_range");
     await user.click(screen.getByRole("button", { name: "Save rule" }));
-    await screen.findByText(/cannot express a band/i);
+    await screen.findByText(/this rule is not valid as written/i);
 
     await waitFor(() => expect(goalSelect()).toHaveValue(stored));
   });
@@ -627,8 +627,9 @@ describe("a rule the server refuses", () => {
     await user.click(screen.getByRole("button", { name: "Save rule" }));
 
     expect(
-      await within(ruleForm(ANCHORED)).findByText("Something broke on the server."),
+      await within(ruleForm(ANCHORED)).findByText("The server failed while answering."),
     ).toBeInTheDocument();
+    expect(screen.queryByText("Something broke on the server.")).not.toBeInTheDocument();
     expect(screen.queryByText("internal_error")).not.toBeInTheDocument();
   });
 
@@ -908,7 +909,7 @@ describe("a rule while it is being saved", () => {
 
       await user.keyboard("{Enter}");
 
-      expect(await screen.findByText(/cannot express a band/i)).toBeInTheDocument();
+      expect(await screen.findByText(/this rule is not valid as written/i)).toBeInTheDocument();
       await waitFor(() => expect(threshold).not.toHaveAttribute("readonly"));
       expectNotHeld(threshold);
       expectNotHeld(screen.getByRole("group", { name: "Matching threshold" }));

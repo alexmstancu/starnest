@@ -57,16 +57,17 @@ describe.each(SCREENS)("on %s", (path, subject) => {
     expect(document.body).not.toHaveTextContent(SERVER_DOWN);
   });
 
-  it("says the server's refusal in its own words", async () => {
+  it("words the server's refusal from its code, never in the server's words", async () => {
     everyRequestAnswers(() =>
       HttpResponse.json(
-        { code: "criteria_set_not_found", message: "No such criteria set." },
+        { code: "not_found", message: "SENTINEL_MESSAGE" },
         { status: 409 },
       ),
     );
     renderShell(path);
 
-    expect((await screen.findAllByText("No such criteria set.")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText(/not there any more/i)).length).toBeGreaterThan(0);
+    expect(document.body).not.toHaveTextContent("SENTINEL_MESSAGE");
     expect(document.body).not.toHaveTextContent(SERVER_DOWN);
     expect(document.body).not.toHaveTextContent(MALFORMED);
   });

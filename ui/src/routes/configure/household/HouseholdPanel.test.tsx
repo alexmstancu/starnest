@@ -419,7 +419,7 @@ describe("the household panel while a save is in flight", () => {
       await user.keyboard("{Enter}");
 
       expect(
-        await household.findByText(/the household is locked/),
+        await household.findByText("The server failed while answering."),
       ).toBeInTheDocument();
       await waitFor(() => expectNotHeld(save));
       expect(save).toBeEnabled();
@@ -536,9 +536,7 @@ describe("the household panel's confirmation", () => {
 
     await user.click(household.getByRole("button", { name: "Save household" }));
 
-    expect(await household.findByRole("alert")).toHaveTextContent(
-      /the household is locked/,
-    );
+    expect(await household.findByRole("alert")).toHaveTextContent("The server failed while answering.");
     expect(household.getByRole("status")).toBeEmptyDOMElement();
   });
 });
@@ -697,7 +695,7 @@ describe("the household panel when the list of places is not there", () => {
     expect(
       await household.findByText(/list of places could not be read/i),
     ).toBeInTheDocument();
-    expect(household.getByRole("alert")).toHaveTextContent("the roster is down");
+    expect(household.getByRole("alert")).toHaveTextContent("The server failed while answering.");
 
     failing = false;
     await user.click(household.getByRole("button", { name: "Try again" }));

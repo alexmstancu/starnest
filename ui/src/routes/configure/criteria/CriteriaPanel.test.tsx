@@ -219,8 +219,10 @@ describe("the criteria panel while a pointer is down", () => {
 
     release(HOMICIDE);
 
-    // The refusal is the server's, and it names the lock that is in the way.
-    expect(await screen.findByText(/weights_all_locked/)).toBeInTheDocument();
+    // Worded from the code, and it names the lock that is in the way.
+    expect(
+      await screen.findByText(/every other weight in this pillar is locked/i),
+    ).toBeInTheDocument();
     const locked = within(
       screen.getByRole("list", { name: /Locked, so unable to absorb/ }),
     );

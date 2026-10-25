@@ -291,7 +291,7 @@ describe("the pillar weights panel", () => {
     await setWeight("Economy", "10");
 
     const pillars = await panel();
-    expect(await pillars.findByText(/weights_all_locked/)).toBeInTheDocument();
+    expect(await pillars.findByText(/every other weight in this pillar is locked/i)).toBeInTheDocument();
     // The refused weight is not shown as though it had been stored.
     expect(weightBox("Housing")).toHaveValue("35");
   });
@@ -456,7 +456,7 @@ describe("the pillar weights panel while a pointer is down", () => {
 
     // The refusal is the server's, with the locks it names.
     expect(
-      await (await panel()).findByText(/weights_all_locked/),
+      await (await panel()).findByText(/every other weight in this pillar is locked/i),
     ).toBeInTheDocument();
     expect(readingOf("Housing")).toBe("35.0%");
   });
@@ -707,7 +707,9 @@ describe("the pillar weights panel while a change is being saved", () => {
 
     fireEvent.change(slider, { target: { value: "50" } });
     fireEvent.pointerUp(slider);
-    expect(await (await panel()).findByText(/weights_all_locked/)).toBeInTheDocument();
+    expect(
+      await (await panel()).findByText(/every other weight in this pillar is locked/i),
+    ).toBeInTheDocument();
 
     await waitFor(() => expect(weightBox("Economy")).toHaveValue("40"));
     fireEvent.blur(weightBox("Economy"));
@@ -821,7 +823,9 @@ describe("the pillar weights panel while a change is being saved", () => {
 
       await pressArrowRight(user);
 
-      expect(await (await panel()).findByText(/weights_all_locked/)).toBeInTheDocument();
+      expect(
+      await (await panel()).findByText(/every other weight in this pillar is locked/i),
+    ).toBeInTheDocument();
       await waitFor(() => expectNotHeld(slider));
       expect(slider).toHaveFocus();
       await waitFor(() => expect(slider).toHaveValue("40"));

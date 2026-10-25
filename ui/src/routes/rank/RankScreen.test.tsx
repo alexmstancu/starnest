@@ -1510,9 +1510,7 @@ describe("what a stored figure looks like, whatever its type", () => {
       within(row).getByRole("button", { name: "Portugal" }),
     );
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      /no such candidate/i,
-    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(/not there any more/i);
   });
 
   it("reports a failure to read the outside opinions on its own", async () => {
@@ -1533,9 +1531,7 @@ describe("what a stored figure looks like, whatever its type", () => {
       within(row).getByRole("button", { name: "Portugal" }),
     );
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      /cannot read outside scores/i,
-    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("The server refused this.");
     expect(
       screen.getByRole("table", { name: /every stored value/i }),
     ).toBeInTheDocument();

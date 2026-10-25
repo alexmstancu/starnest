@@ -447,7 +447,7 @@ describe("confirming a proposal", () => {
     );
 
     expect(
-      await screen.findByText(/there is no candidate country\.portugal/i),
+      await screen.findByText(/not there any more/i),
     ).toBeInTheDocument();
   });
 });
@@ -617,7 +617,7 @@ describe("a research pass, one gate at a time", () => {
     );
 
     expect(
-      await theProposals().findByText("the settings could not be read"),
+      await theProposals().findByText("The server failed while answering."),
     ).toBeInTheDocument();
     await passSays(
       "The last pass did not start, because the spend cap and the gates could not be read: it asked nothing and spent nothing.",
@@ -957,7 +957,7 @@ describe("a research pass after an earlier one", () => {
     );
 
     expect(
-      await screen.findByText("the model provider failed"),
+      await screen.findByText("The server failed while answering."),
     ).toBeInTheDocument();
     await passSays(/failed at gate 1 of 5/);
     expect(screen.queryByText(ALL_ASKED)).toBeNull();
@@ -1005,7 +1005,7 @@ describe("a research pass after an earlier one", () => {
     expect(
       await screen.findByText(/the llm source is switched off/i),
     ).toBeInTheDocument();
-    expect(screen.getByText("llm_not_configured")).toBeInTheDocument();
+    expect(screen.queryByText("llm_not_configured")).toBeNull();
     await passSays(/refused at gate 1 of 5, which spent nothing/);
     expect(screen.queryByText(ALL_ASKED)).toBeNull();
     expect(statusLine()).not.toHaveTextContent(NOT_KNOWN);
@@ -1061,7 +1061,7 @@ describe("a research pass after an earlier one", () => {
     await researched();
 
     expect(
-      await screen.findByText("the model provider failed"),
+      await screen.findByText("The server failed while answering."),
     ).toBeInTheDocument();
     expect(screen.queryByText(/the model cited nothing/i)).toBeNull();
   });
@@ -1173,7 +1173,7 @@ describe("the gate proposals while a write is in flight", () => {
     estimates.release();
 
     expect(
-      await theProposals().findByText("the planner failed"),
+      await theProposals().findByText("The server failed while answering."),
     ).toBeInTheDocument();
     await waitFor(() => expectNotHeld(estimate));
     expect(estimate).toBeEnabled();
@@ -1253,7 +1253,7 @@ describe("the gate proposals while a write is in flight", () => {
     research.release();
 
     expect(
-      await theProposals().findByText("the model provider failed"),
+      await theProposals().findByText("The server failed while answering."),
     ).toBeInTheDocument();
     await waitFor(() => expect(estimateButton()).toHaveFocus());
     expectNotHeld(estimateButton());
@@ -1326,7 +1326,7 @@ describe("the gate proposals while a write is in flight", () => {
     confirmations.release();
 
     expect(
-      await theProposals().findByText(/there is no candidate country\.portugal/i),
+      await theProposals().findByText("The server failed while answering."),
     ).toBeInTheDocument();
     await waitFor(() => expectNotHeld(confirm));
     expect(confirm).toBeEnabled();

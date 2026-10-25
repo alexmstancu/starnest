@@ -250,8 +250,9 @@ describe("the comparison", () => {
       http.get(`${BASE}/comparisons`, () =>
         HttpResponse.json(
           {
-            code: "invalid_comparison",
-            message: "3 comparators is more than the limit of 2",
+            code: "comparator_limit_exceeded",
+            message: "SENTINEL_MESSAGE",
+            details: { limit: 2, asked: 3 },
           },
           { status: 409 },
         ),
@@ -262,7 +263,7 @@ describe("the comparison", () => {
     await compare("Portugal", "Netherlands");
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      /more than the limit/i,
+      "3 comparators were asked for, and the limit is 2.",
     );
   });
 
@@ -273,7 +274,7 @@ describe("the comparison", () => {
    */
   it("names an unset comparator limit as the reason a comparison is refused", async () => {
     expect(await compareWithNoLimit()).toHaveTextContent(
-      "comparator_limit_not_set",
+      /until the most candidates a comparison may hold is set/i,
     );
   });
 });

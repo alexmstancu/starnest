@@ -174,10 +174,20 @@ const ACT_NAMES: Record<RunAct, string> = {
   stopping: "The stop",
 };
 
+/** What an act on one run is called, naming the run, since the wording never comes from the server. */
+const ACTS_ON_A_RUN: Record<RunAct, (runId: number) => string> = {
+  planning: () => ACT_NAMES.planning,
+  running: () => ACT_NAMES.running,
+  opening: (runId) => `Reading acquisition ${runId}`,
+  stopping: (runId) => `Stopping acquisition ${runId}`,
+};
+
 interface Failure {
   what: RunAct;
   error: unknown;
   resend: (() => Promise<void>) | null;
+  /** The run a read-back or a stop was about, so the refusal can say which. */
+  runId: number | null;
 }
 
 /**
@@ -262,7 +272,11 @@ export function useRunScreen(
 
   const reloadHistory = history.reload;
   const act = useCallback(
-    async (what: RunAct, action: () => Promise<void>, resend?: () => Promise<void>) => {
+    async (
+      what: RunAct,
+      action: () => Promise<void>,
+      { resend, runId }: { resend?: () => Promise<void>; runId?: number } = {},
+    ) => {
       const mine = { what };
       going.current = [...going.current, mine];
       setBusy(what);
@@ -271,7 +285,7 @@ export function useRunScreen(
         await action();
         void reloadHistory();
       } catch (error) {
-        setFailure({ what, error, resend: resend ?? null });
+        setFailure({ what, error, resend: resend ?? null, runId: runId ?? null });
       } finally {
         going.current = going.current.filter((each) => each !== mine);
         setBusy(going.current.at(-1)?.what ?? null);
@@ -301,7 +315,7 @@ export function useRunScreen(
               setEstimating((now) => (now === origin ? null : now));
             }
           },
-          attempt,
+          { resend: attempt },
         );
       return attempt();
     },
@@ -521,7 +535,7 @@ export function useRunScreen(
       if (!current) return;
       setArmed(null);
       const ticket = claim(current.id);
-      void act("opening", () => watch(ticket, current.id));
+      void act("opening", () => watch(ticket, current.id), { runId: current.id });
     },
     close: clear,
     stop: () => {
@@ -547,24 +561,28 @@ export function useRunScreen(
         // have read the run before it was, and standing over this read it would offer Stop
         // again.
         await watch(reclaim(ticket, runId), stopped.id);
-      });
+      }, { runId });
     },
     // Through `act` like everything else. A backend that is down or a run that cannot be read
     // now says so, where before the promise rejected into nothing and the click looked ignored.
     open: (run) => {
       const ticket = claim(run.id);
       setArmed(null);
-      void act("opening", async () => {
-        await watch(ticket, run.id);
-        focusCardOf(ticket, run.id);
-      });
+      void act(
+        "opening",
+        async () => {
+          await watch(ticket, run.id);
+          focusCardOf(ticket, run.id);
+        },
+        { runId: run.id },
+      );
     },
   };
 }
 
-function refusalOf({ what, error, resend }: Failure): Refusal {
+function refusalOf({ what, error, resend, runId }: Failure): Refusal {
   return {
-    act: ACT_NAMES[what],
+    act: runId === null ? ACT_NAMES[what] : ACTS_ON_A_RUN[what](runId),
     error,
     // **A start nobody answered may have begun all the same** (P1-14): it is not sent again,
     // and the history is where the reader learns whether it did.

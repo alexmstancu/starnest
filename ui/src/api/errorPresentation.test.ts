@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, CLIENT_ERROR_CODES } from "./ApiError";
-import { presentError } from "./errorPresentation";
+import { WORDS, presentError } from "./errorPresentation";
 
 describe("presentError", () => {
   it("branches on the code, not on the message", () => {
@@ -14,24 +14,23 @@ describe("presentError", () => {
     expect(presentError(misleadingProse).message).not.toMatch(/honestly/);
   });
 
-  it("falls back to the server's own words for a code it does not know", () => {
+  it("words a code it does not know as a refusal, never in the server's words (P1-07)", () => {
     const unknown = new ApiError({
-      code: "criteria_set_not_found",
-      message: "No criteria set called 'weekend'.",
-      status: 404,
+      code: "a_code_from_a_newer_server",
+      message: "SENTINEL_MESSAGE",
+      status: 409,
     });
 
-    expect(presentError(unknown)).toEqual({
-      code: "criteria_set_not_found",
-      message: "No criteria set called 'weekend'.",
-      retryable: false,
-    });
+    const presented = presentError(unknown);
+    expect(presented.message).toBe("The server refused this.");
+    expect(presented.retryable).toBe(false);
   });
 
   it("treats a 5xx with an unknown code as worth retrying", () => {
     const serverFault = new ApiError({ code: "internal", message: "boom", status: 503 });
 
     expect(presentError(serverFault).retryable).toBe(true);
+    expect(presentError(serverFault).message).toBe("The server failed while answering.");
   });
 
   it("offers a retry when the backend could not be reached", () => {
@@ -52,6 +51,7 @@ describe("presentError", () => {
 
     expect(presentError(fault)).toEqual({
       code: CLIENT_ERROR_CODES.serverFault,
+      kind: "fault",
       message: "The server failed while answering.",
       retryable: true,
     });
@@ -78,20 +78,97 @@ describe("presentError", () => {
     expect(presentError(malformed).retryable).toBe(false);
   });
 
-  it("presents a plain Error", () => {
-    expect(presentError(new Error("something broke"))).toEqual({
+  it("presents a plain Error without its text, which is for a developer", () => {
+    expect(presentError(new Error("SENTINEL_MESSAGE"))).toEqual({
       code: "client.unexpected",
-      message: "something broke",
+      kind: "fault",
+      message: "Something went wrong in this interface.",
       retryable: false,
     });
   });
 
-  it("presents a thrown non-Error", () => {
-    expect(presentError("a string was thrown")).toEqual({
-      code: "client.unexpected",
-      message: "a string was thrown",
-      retryable: false,
+  it("presents a thrown non-Error the same way", () => {
+    expect(presentError("SENTINEL_MESSAGE").message).toBe(
+      "Something went wrong in this interface.",
+    );
+  });
+});
+
+/**
+ * PL-003, P1-07: **every code has a sentence of the interface's own**, and no sentence carries
+ * the code, the server's message or any other identifier -- whatever `details` holds.
+ */
+describe("the wording table", () => {
+  const SNAKE_CASE = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/;
+  const HOSTILE_DETAILS = {
+    name: "Weekend",
+    run: 7,
+    minimum: 80,
+    limit: 3,
+    asked: 4,
+    reason: "anchor_above_scale",
+    anchor_score: 120,
+    score_scale_max: 100,
+    candidates: ["country.portugal"],
+    pillars: ["economy"],
+    locked: ["country.homicide_rate"],
+    errors: [{ location: ["body", "net_income"], problem: "SENTINEL_MESSAGE", kind: "malformed_identifier" }],
+  };
+
+  it.each(Object.keys(WORDS))("words %s from its code and details alone", (code) => {
+    for (const details of [undefined, {}, HOSTILE_DETAILS]) {
+      const presented = presentError(
+        new ApiError({ code, message: "SENTINEL_MESSAGE", status: 409, details }),
+      );
+
+      expect(presented.message.length).toBeGreaterThan(0);
+      expect(presented.message).not.toContain("SENTINEL_MESSAGE");
+      expect(presented.message).not.toContain(code);
+      expect(presented.message).not.toMatch(SNAKE_CASE);
+      expect(presented.message).not.toMatch(/\b(country|city)\./);
+    }
+  });
+
+  it("fills in a name it is given, and never the id it was given", () => {
+    const refused = new ApiError({
+      code: "invalid_comparison",
+      message: "SENTINEL_MESSAGE",
+      status: 409,
+      details: { candidates: ["country.portugal", "country.spain"] },
     });
+
+    const names = { candidate: (id: string) => (id === "country.portugal" ? "Portugal" : undefined) };
+    expect(presentError(refused, names).message).toMatch(/Portugal/);
+    expect(presentError(refused, names).message).toMatch(/one other candidate/);
+  });
+
+  it("names what a refusal is about from its details", () => {
+    const busy = new ApiError({
+      code: "run_already_in_flight",
+      message: "SENTINEL_MESSAGE",
+      status: 409,
+      details: { run: 7 },
+    });
+    const over = new ApiError({
+      code: "comparator_limit_exceeded",
+      message: "SENTINEL_MESSAGE",
+      status: 409,
+      details: { limit: 3, asked: 4 },
+    });
+
+    expect(presentError(busy).message).toMatch(/acquisition 7 is still going/i);
+    expect(presentError(over).message).toMatch(/4 comparators.*limit is 3/i);
+  });
+
+  it("says an identifier in the request is malformed when the server says so", () => {
+    const malformed = new ApiError({
+      code: "invalid_request",
+      message: "SENTINEL_MESSAGE",
+      status: 422,
+      details: { errors: [{ location: ["path", "id"], problem: "x", kind: "malformed_identifier" }] },
+    });
+
+    expect(presentError(malformed).message).toMatch(/not well formed/i);
   });
 });
 
@@ -104,6 +181,7 @@ describe("a number the client would not send", () => {
 
     expect(presentError(refused)).toEqual({
       code: "client.unsendable_number",
+      kind: "refusal",
       message: expect.stringMatching(/not a number/i) as unknown,
       retryable: false,
     });

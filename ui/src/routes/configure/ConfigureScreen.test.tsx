@@ -400,7 +400,7 @@ describe("changing a weight", () => {
     await saveWeight(HOMICIDE, "80");
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("weights_all_locked");
+    expect(alert).not.toHaveTextContent("weights_all_locked");
     expect(alert).toHaveTextContent(
       /every other weight in this pillar is locked/i,
     );
@@ -432,7 +432,8 @@ describe("changing a weight", () => {
 
     await saveWeight(COST_OF_LIVING, "40");
 
-    expect(await screen.findByText("client.unreachable")).toBeInTheDocument();
+    expect(await screen.findByText(/backend did not answer/i)).toBeInTheDocument();
+    expect(screen.queryByText("client.unreachable")).toBeNull();
   });
 
   /**
@@ -492,7 +493,8 @@ describe("when the criteria set cannot be shown", () => {
     expect(
       await weights.findByText("The criteria set could not be loaded"),
     ).toBeInTheDocument();
-    expect(weights.getByText("No such criteria set.")).toBeInTheDocument();
+    expect(weights.getByText(/not there any more/i)).toBeInTheDocument();
+    expect(screen.queryByText("No such criteria set.")).not.toBeInTheDocument();
     // The code is for branching on and is never printed (M3).
     expect(screen.queryByText("not_found")).not.toBeInTheDocument();
 
@@ -1958,8 +1960,8 @@ describe("a gate's sentence once its answers change", () => {
     await user.click(screen.getByRole("button", { name: "Research the gates" }));
 
     expect(
-      await screen.findByText("the model provider failed"),
-    ).toBeInTheDocument();
+      (await screen.findAllByText("The server failed while answering.")).length,
+    ).toBeGreaterThan(0);
     await waitFor(() =>
       expect(gate).toHaveTextContent(
         "2 proposed answers await confirmation, so this rules nobody out yet.",
@@ -2122,7 +2124,7 @@ describe("a research pass while the screen changes around it", () => {
     );
 
     await chooseSet("remote-only");
-    expect(await screen.findByText(/the criteria set could not be read/i)).toBeInTheDocument();
+    expect((await screen.findAllByText("The server failed while answering.")).length).toBeGreaterThan(0);
     await userEvent.click(
       theProposals().getByRole("button", { name: "Stop after this question" }),
     );

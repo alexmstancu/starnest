@@ -70,11 +70,6 @@ export const IDENTIFIER_LEDGER = {
     ...GATE_PROPOSALS,
   ],
   "Configure, a weight change refused": [
-    {
-      identifier: "weights_all_locked",
-      where: "stage 3, the code under the refusal",
-      removedBy: "PL-003 (C01)",
-    },
     ...COMPOUND_RULES,
     ...GATE_PROPOSALS,
   ],
@@ -102,18 +97,7 @@ export const IDENTIFIER_LEDGER = {
 
   "Compare, drawn as scores": [],
   "Compare, drawn as raw figures": [],
-  "Compare, no comparator limit set": [
-    {
-      identifier: "comparator_limit_not_set",
-      where: "the code under the refusal",
-      removedBy: "PL-003 (C01)",
-    },
-    {
-      identifier: "comparator_limit",
-      where: 'the server\'s own sentence in the refusal: "comparator_limit is not set"',
-      removedBy: "PL-003 (C01)",
-    },
-  ],
+  "Compare, no comparator limit set": [],
   "Compare, the score range unset": [],
   "Compare, nothing compared yet": [],
   "Compare, the server unreachable": [],

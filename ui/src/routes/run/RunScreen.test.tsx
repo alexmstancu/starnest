@@ -145,7 +145,7 @@ describe("estimating a run", () => {
 
     await estimate();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/no level/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent("The server refused this.");
   });
 });
 
@@ -2343,7 +2343,7 @@ describe("stopping a run", () => {
       card.getByRole("button", { name: /stop — keep what completed/i }),
     );
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("the run could not be read");
+    expect(await screen.findByRole("alert")).toHaveTextContent("The server failed while answering.");
     expectHeld(card.getByRole("button", { name: "Stopping…" }));
   });
 
@@ -2359,7 +2359,7 @@ describe("stopping a run", () => {
       ),
       http.post(`${BASE}/data-acquisition-runs/:runId/stop`, () =>
         HttpResponse.json(
-          { code: "run_not_found", message: "there is no run numbered 7" },
+          { code: "run_not_found", message: "Stopping acquisition 7 did not go through" },
           { status: 404 },
         ),
       ),
@@ -2371,7 +2371,7 @@ describe("stopping a run", () => {
       screen.getByRole("button", { name: /stop — keep what completed/i }),
     );
 
-    expect(await screen.findByText(/the stop did not go through/i)).toBeInTheDocument();
+    expect(await screen.findByText(/stopping acquisition 7 did not go through/i)).toBeInTheDocument();
   });
 });
 
@@ -2693,16 +2693,16 @@ describe("whose failure the screen reports", () => {
     await waitFor(() => expect(newer.arrived()).toBe(true));
     newer.release();
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "run 5 could not be read",
+      "Reading acquisition 5 did not go through",
     );
     older.release();
     await everyActHasEnded();
 
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "run 5 could not be read",
+      "Reading acquisition 5 did not go through",
     );
     expect(screen.getByRole("alert")).not.toHaveTextContent(
-      "run 6 could not be read",
+      "Reading acquisition 6 did not go through",
     );
   });
 
@@ -2716,7 +2716,7 @@ describe("whose failure the screen reports", () => {
     read.release();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "run 6 could not be read",
+      "Reading acquisition 6 did not go through",
     );
   });
 
@@ -2774,7 +2774,7 @@ describe("whose failure the screen reports", () => {
       http.post(`${BASE}/data-acquisition-runs/:runId/stop`, async () => {
         await refusal.held;
         return HttpResponse.json(
-          { code: "not_found", message: "there is no run numbered 7" },
+          { code: "not_found", message: "Stopping acquisition 7 did not go through" },
           { status: 404 },
         );
       }),
@@ -2792,7 +2792,7 @@ describe("whose failure the screen reports", () => {
     refusal.release();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "there is no run numbered 7",
+      "Stopping acquisition 7 did not go through",
     );
   });
 });
@@ -3057,7 +3057,7 @@ describe("a stop a refresh overtook", () => {
       http.post(`${BASE}/data-acquisition-runs/:runId/stop`, async () => {
         await refusal.held;
         return HttpResponse.json(
-          { code: "not_found", message: "there is no run numbered 7" },
+          { code: "not_found", message: "Stopping acquisition 7 did not go through" },
           { status: 404 },
         );
       }),
@@ -3077,7 +3077,7 @@ describe("a stop a refresh overtook", () => {
     refusal.release();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "there is no run numbered 7",
+      "Stopping acquisition 7 did not go through",
     );
     expect(
       await card.findByRole("button", { name: /stop — keep what completed/i }),
@@ -3159,7 +3159,7 @@ describe("a stop a refresh overlaps", () => {
       http.post(`${BASE}/data-acquisition-runs/:runId/stop`, async () => {
         await refusal.held;
         return HttpResponse.json(
-          { code: "not_found", message: "there is no run numbered 7" },
+          { code: "not_found", message: "Stopping acquisition 7 did not go through" },
           { status: 404 },
         );
       }),
@@ -3174,7 +3174,7 @@ describe("a stop a refresh overlaps", () => {
     refusal.release();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "there is no run numbered 7",
+      "Stopping acquisition 7 did not go through",
     );
     await waitFor(() => expectNotHeld(stop));
     expect(stop).toHaveTextContent("Stop — keep what completed");
@@ -3398,7 +3398,7 @@ describe("a figure typed by hand", () => {
     await userEvent.click(form.getByRole("button", { name: /store this figure/i }));
 
     expect(
-      await form.findByText(/manual_entry_not_permitted/),
+      await form.findByText(/does not accept a manually entered value/i),
     ).toBeInTheDocument();
   });
 
@@ -3590,7 +3590,7 @@ describe("acting from the keyboard", () => {
     expectHeld(estimateIt);
     plans.release();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/no level/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent("The server refused this.");
     await waitFor(() => expectNotHeld(estimateIt));
     expect(estimateIt).toBeEnabled();
     expect(estimateIt).toHaveFocus();
@@ -3799,7 +3799,7 @@ describe("acting from the keyboard", () => {
     const stops = holdEach(
       "post",
       "/data-acquisition-runs/:runId/stop",
-      refusal("not_found", "there is no run numbered 7", 404),
+      refusal("not_found", "Stopping acquisition 7 did not go through", 404),
     );
     renderShell("/acquire");
     const card = within(
@@ -3820,7 +3820,7 @@ describe("acting from the keyboard", () => {
     stops.release();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "there is no run numbered 7",
+      "Stopping acquisition 7 did not go through",
     );
     await waitFor(() => expectNotHeld(stop));
     expect(stop).toHaveFocus();
@@ -4183,7 +4183,7 @@ describe("opening an acquisition from the history", () => {
 
     await openFromHistory("6");
 
-    expect(await screen.findByText("Reading the run did not go through")).toBeInTheDocument();
+    expect(await screen.findByText("Reading acquisition 6 did not go through")).toBeInTheDocument();
     const number = screen.getByRole("rowheader", { name: "6" });
     expect(within(number).getByRole("button", { name: "6" })).toHaveFocus();
     expect(scrolled).toEqual([]);

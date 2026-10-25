@@ -2897,10 +2897,6 @@ select.field__control {
   color: var(--colour-danger);
 }
 
-.notice__code {
-  color: var(--colour-text-muted);
-}
-
 .notice__list {
   margin: 0;
   padding-left: 18px;

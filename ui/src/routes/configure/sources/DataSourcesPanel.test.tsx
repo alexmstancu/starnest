@@ -174,7 +174,7 @@ describe("the source priority panel", () => {
     await user.click(sources.getByRole("switch", { name: "Consult Eurostat" }));
 
     expect(await sources.findByRole("alert")).toHaveTextContent(
-      "unknown_data_source",
+      "That source is not in the catalog.",
     );
     expect(
       screen.getByRole("listitem", { name: "Eurostat" }),
@@ -683,9 +683,7 @@ describe("the source priority panel while a change is being written", () => {
 
     dragOnto(await row("Eurostat"), await row("LLM with web search"));
 
-    expect(await sources.findByRole("alert")).toHaveTextContent(
-      "the second write failed",
-    );
+    expect(await sources.findByRole("alert")).toHaveTextContent("The server failed while answering.");
     await waitFor(() =>
       expect(namesInOrder(sources)).toEqual([
         "Manual entry",
@@ -694,9 +692,7 @@ describe("the source priority panel while a change is being written", () => {
       ]),
     );
     // The refusal stays on screen beside the order that is actually stored.
-    expect(sources.getByRole("alert")).toHaveTextContent(
-      "the second write failed",
-    );
+    expect(sources.getByRole("alert")).toHaveTextContent("The server failed while answering.");
   });
 
   it("re-reads the order after a change refused outright, too", async () => {
@@ -718,7 +714,7 @@ describe("the source priority panel while a change is being written", () => {
     await user.click(sources.getByRole("switch", { name: "Consult Eurostat" }));
 
     expect(await sources.findByRole("alert")).toHaveTextContent(
-      "unknown_data_source",
+      "That source is not in the catalog.",
     );
     await waitFor(() => expect(reads.count).toBe(2));
     expect(
@@ -967,7 +963,7 @@ describe("the source priority panel while a change is being written", () => {
       await user.keyboard(" ");
 
       expect(await sources.findByRole("alert")).toHaveTextContent(
-        "unknown_data_source",
+        "That source is not in the catalog.",
       );
       await waitFor(() => expect(reads.count).toBe(2));
       await waitFor(() => expectNotHeld(eurostat));

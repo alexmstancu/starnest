@@ -122,7 +122,7 @@ describe("the rules panel", () => {
     await user.click(toggle);
 
     expect(
-      await rules.findByText(/the gate could not be stored/),
+      await rules.findByText("The server failed while answering."),
     ).toBeInTheDocument();
     expect(toggle).not.toBeChecked();
   });
