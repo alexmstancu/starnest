@@ -62,3 +62,8 @@ backups/
 # The generated ER diagram (make schema-diagram). A dumped schema and a built web bundle:
 # both are derived from storage/migrations/, which is what is actually versioned.
 docs/schema/
+
+# The design handoff snapshot (CLAUDE.md, "The design lives at claude.ai/design"). Kept locally
+# for reading offline and by agents, and never pushed: the repository is public, and the
+# handoff carries the household's own figures.
+docs/design/

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Repository state
 
 **All four gates are closed and the MVP is functionally complete.** Four containers, a real
-database, 32 European countries ranked from seventeen sources in a browser, carrying a finished
+database, 32 European countries ranked from eighteen sources in a browser, carrying a finished
 visual design. **`docs/reqs.md` is authoritative for requirements and the ontology — read it
 first**, and `docs/devplan.md` 0 before doing implementation work.
 
@@ -19,13 +19,26 @@ Every remaining criterion already exists as a row with a weight and a pillar, so
 arriving is a row rather than a change — which is the "nothing hardcoded" invariant paying out.
 `docs/todos.md` tracks what is open.
 
+**The review programme is closed** (2026-10-25). Three rounds of independent review fed one
+plan of 182 items, and all 182 are done. What remains open is in `docs/known-issues.md`: five
+small items, P101-P106 (four need a stalled or crashed local server, one is the unit-test
+mock), and two open by decision (P6, P38).
+
+**v2.0, the city level, is designed and planned, not started** (2026-10-25). `docs/arch.md` 12
+revises the architecture, `docs/devplan-v2.md` is the build plan awaiting approval, and the
+decisions are `reqs.md` Q241-Q252. **Its first finding: `parent_not_matching` was specified and
+never built** -- the draft plan had taken it as done -- and a criterion's level is read off its
+attribute, which a city criterion judging a national figure breaks. Both are recorded in
+`arch.md` 12.1 with the other leaks the city level needs closed, the largest being that a
+ranking reads, freezes and compares only the candidate's own stored values (12.7).
+
 | Module | State |
 |---|---|
 | `candidates/`, `data/`, `household/`, `criteria/`, `storage/` | **Written and tested.** ~99.8% line and branch coverage |
 | `evaluation/` | **Written.** Normalisation (`fixed`, `percentile`, `as_is`), redistribution, coverage and its split by confidence, matching, ranking. Pure functions, no I/O. `target_range` scores its band and falls linearly to its zero points (built 2026-09-11). The rules are applied: a compound rule warns or rules out, a gate answered `not_matching` makes a candidate not match while keeping its score, and **an undecided rule never fires**. Both shipped compound rules are now decided and applied on `local_employment` -- `cheap_but_taxed` (`0474`) and `mild_now_brutal_later` (`0496`, the heat warning that fires for Bulgaria, Hungary, Romania and Croatia). **The two compound-rule shapes that read a household field belong to the city level.** Eight `fixed` criteria are anchored (Q206, Q209); the rest have no data yet, and would refuse truthfully if they had |
-| `api/`, `data_acquisition/`, `data_sources/` | **Written.** **All 45 of the contract's operations**; ten source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, Open-Meteo, Copernicus, OpenFlights, a set of transcribed published tables -- RSF, EF EPI, MIPEX, WDPA, PISA and national met-office sunshine normals -- and an estimate from Eurostat's tax-benefit figures); values served with both dates, manual entry where the attribute permits it, and the gates' answers; runs are planned, persisted and pollable, fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. `RunDetail.by_source` says what each source stored and what it failed on -- **derived from the value and failure rows, never stored**, for the reason Q217 settled for `items_unanswered`; the two counts are independent and sum to nothing, because a source may fail on an item another source then answers. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
+| `api/`, `data_acquisition/`, `data_sources/` | **Written.** **All 50 of the contract's operations**; eleven source adapters (Eurostat, World Bank WGI, WHO GHO, IMF WEO, OECD, Open-Meteo, Copernicus, OpenFlights, a set of transcribed published tables -- RSF, EF EPI, MIPEX, WDPA, PISA and national met-office sunshine normals -- an estimate from Eurostat's tax-benefit figures, and the ECB's euro reference rates, so a converted amount names who published its rate, `0521`); values served with both dates, manual entry where the attribute permits it, and the gates' answers -- **kept once written**, so a new answer adds a version and never overwrites one (`0510`), and a household citizenship clears the gates it names (`0517`, `0526`); runs are planned, persisted and pollable, **scoped to the exact candidate-attribute pairs they ask about** rather than a rectangle (`0506`, `0512`), fetch from every source, then let declared stand-ins borrow where nothing answered. **A failure names its source, and a retry asks only the sources that failed about only what they failed on**. `RunDetail.by_source` says what each source stored and what it failed on -- **derived from the value and failure rows, never stored**, for the reason Q217 settled for `items_unanswered`; the two counts are independent and sum to nothing, because a source may fail on an item another source then answers. **OECD's front door is intermittently Cloudflare-challenged** (`catalog-blockers.md` item 5) |
 | `comparison/` | **Written.** Focus against comparators, deltas in the attribute's own unit, weighted contribution, and a synthesis templated from the numbers and ordered by what each gap is worth |
-| `ui/` | The shell and **all four tabs**: Configure with its eight panels (household, settings, criteria sets, pillar weights, criteria, rules, gate proposals, source priority), Acquire, Rank with its drill-down, Compare. **A criterion's rule is editable per row** -- goal, normalisation method, target band, scale anchors, matching threshold -- which is the subjective half of the ontology becoming data rather than migration. 1,115 unit tests and 32 browser tests, the latter including a functional sanity suite that walks all four tabs. **It talks to the real backend**, and to a mock only in unit tests. No domain logic: every number on screen is the server's |
+| `ui/` | The shell and **all four tabs**: Configure with its nine panels (household, settings, criteria sets, pillar weights, criteria, rules, gate answers, gate proposals, source priority) and a **Recent changes** list that records every stored Configure edit in the session with its Undo -- session state, kept above the routes so leaving Configure does not lose it, Acquire, Rank with its drill-down, Compare. **A criterion's rule is editable per row** -- goal, normalisation method, target band, scale anchors, matching threshold -- which is the subjective half of the ontology becoming data rather than migration. 3,449 unit tests and 47 browser tests, the latter including a functional sanity suite that walks all four tabs. **It talks to the real backend**, and to a mock only in unit tests. No domain logic: every number on screen is the server's |
 
 **GATE D closed 2026-09-12** — the four failure modes, executable
 (`backend/tests/acceptance/test_gate_d.py`): a process that dies mid-run keeps every figure it
@@ -73,8 +86,8 @@ matching their publishers by routes the adapters never use, and selective retry 
 family pillar was the one known gap at closure**: OECD blocks scripts, so it waited -- its three
 attributes were later transcribed from OECD's published tables (`0492`) and now answer 31 of 32.
 **GATE A closed 2026-09-05** — `backend/tests/acceptance/test_gate_a.py` is the gate written
-down, seven steps in order against a real database plus two standing checks. 2,722 backend
-tests, 1,115 interface tests and 32 browser tests. `docs/devplan.md` 0.0 has the step-by-step state and what the gate
+down, seven steps in order against a real database plus two standing checks. 4,825 backend
+tests, 3,449 interface tests and 47 browser tests (2026-10-25). `docs/devplan.md` 0.0 has the step-by-step state and what the gate
 deliberately does not cover.
 
 **Two tables looked dead in the schema diagram and only one was** (Q229). `settings` is a
@@ -279,8 +292,10 @@ backend/      Python. The API and every domain rule
   tests/          unit, storage, acceptance
 ui/           TypeScript. A client of the contract, over HTTP only
   src/  e2e/      React; Playwright specs owned by the master agent
-docs/         reqs.md, arch.md, datasources.md, devplan.md, known-issues.md
-                openapi.yaml (target) + openapi.implemented.yaml (generated)
+docs/         reqs.md, arch.md, datasources.md, devplan.md, devplan-v2.md, known-issues.md,
+                design-brief.md; openapi.yaml (target) + openapi.implemented.yaml (generated);
+                research/ (source research), design/ (the design handoff: a local snapshot, gitignored);
+                copilot-*.md and the other review records
 tools/        the three structural audits, migrate.py (migrate/rollback runner) and e2e_copy.py (make e2e's copy)
 compose.yaml  four containers: database, backend, ui, schema diagram
 Makefile      every command the project has
@@ -296,11 +311,13 @@ Makefile      every command the project has
 |---|---|
 | `docs/reqs.md` | **Written.** Requirements and ontology. v1 scope in section 1.3, glossary in Appendix A, decision log in Appendix B |
 | `docs/datasources.md` | **Written.** Source analysis, market analysis, criterion→source mapping |
-| `docs/arch.md` | **Written, MVP scope.** Ontology, storage, module architecture, runtime flows, the interface, operations. Stack decided (section 10.2). **Revised before post-MVP work** |
-| `docs/openapi.yaml` | **Written.** The REST contract — 45 operations, **all of them served**; the target and the generated truth have been in exact step since 2026-09-12. It stays the target rather than a record of the code: it is written first, and `docs/openapi.implemented.yaml` is generated from the routes. The **target**, hand-written and deliberately ahead of the code. `docs/openapi.implemented.yaml` is the generated **truth**; see "Two contracts" below |
+| `docs/arch.md` | **Written, and revised for v2.0 on 2026-10-25.** Ontology, storage, module architecture, runtime flows, the interface, operations; stack decided (section 10.2). Sections 1-10 are the MVP; **section 12 is the city level** -- nomination, place, footprint, criteria across levels, derived figures, `parent_not_matching` |
+| `docs/openapi.yaml` | **Written.** The REST contract — 50 operations, **all of them served**; the target and the generated truth have been in exact step since 2026-09-12. It stays the target rather than a record of the code: it is written first, and `docs/openapi.implemented.yaml` is generated from the routes. The **target**, hand-written and deliberately ahead of the code. `docs/openapi.implemented.yaml` is the generated **truth**; see "Two contracts" below |
+| `docs/devplan-v2.md` | **The v2.0 build plan, awaiting approval** (2026-10-25). Vertical slices P0-P7, each gated and reviewed alone; the four gates A2-D2 written first as failing tests. Section 0.0 keeps the research and the household's decisions |
+| `docs/research/city-level-sources-2026-10-23.md` | **The city source research**, every coverage figure fetched live: what each source answers, by country and footprint. The evidence behind Q241-Q252 and the input to the city catalog |
 | `docs/devplan.md` | **Written, MVP scope only.** Delivery model, 8 phases, 4 e2e gates, agent decomposition. Blocking decisions in section 7; the MVP boundary and what follows it in section 8. **Post-MVP gets a revised `arch.md` and a second `devplan.md`, not an extension of this one** |
 
-**Read `docs/devplan.md` 0 before doing implementation work** — the stop rule, the definition of done per task, and which files an agent may not edit.
+**Read `docs/devplan.md` 0 before doing implementation work** — the stop rule, the definition of done per task, and which files an agent may not edit — **and `docs/devplan-v2.md` 1 before any v2.0 work**, which adds the slice rules.
 
 ## Commands
 
@@ -318,7 +335,7 @@ Makefile      every command the project has
 | `make openapi` | Regenerate `docs/openapi.implemented.yaml`. **Run after changing any endpoint** — a test fails when it is stale |
 | `make serve` / `make acquire` / `make rank` | Run the API; fetch real figures from every source, then the stand-ins; print the ranking from what is stored (`make rank SET=local_employment` for the shipped set) |
 | **`make check`** | **Backend lint + boundaries + coverage + audits, then `ui-check`. Both sides. This is the gate** |
-| `make migrate` / `make rollback` | Backs up first, then applies pending migrations (or rolls back the most recent). Both run `tools/migrate.py`, which reads `DATABASE_URL` from `.env` via python-dotenv and hands it to yoyo in-process — a URL exported in the shell or passed on the command line is **refused**, never used (RF-1). The database must be up. A refusal, a migration's own or a foreign key the database enforces, prints a reason and a remedy, never a traceback (P95). **Never automatic** (`arch.md` 7.4) |
+| `make migrate` / `make rollback` | Backs up first, then applies pending migrations (or rolls back the most recent). Both run `tools/migrate.py`, which reads `DATABASE_URL` from `.env` via python-dotenv and hands it to yoyo in-process — **only `.env`'s URL is ever used**: one exported in the shell is never read, and the runner takes no URL argument (RF-1). The database must be up. A refusal, a migration's own or a foreign key the database enforces, prints a reason and a remedy, never a traceback (P95). **Never automatic** (`arch.md` 7.4) |
 | `make ui-check` | The interface gate: `ui-lint` (eslint, type-aware) + `ui-typecheck` + `ui-coverage` (85% bar) |
 | `make ui-coverage` / `make e2e` | Interface coverage (85% bar); Playwright **on its own throwaway database** -- the newest backup restored and migrated, its own backend and Vite on ports 8100/5180, dropped afterwards (or at once, if it cannot be restored or migrated). It never touches the live database, and the copy's name cannot be overridden (UI-03). `tools/e2e_copy.py` builds the copy's URL from `.env` as compose reads it, so it works with any password and make never holds or prints it (P100). `E2E_ARGS=e2e/sanity.spec.ts` narrows it |
 | `make docker-build` / `docker-up` / `docker-migrate` / `docker-down` | The four containers: database, backend, the interface on `127.0.0.1:5173`, and the live schema diagram on `127.0.0.1:4174` (`docker compose restart schema-diagram` after a migration) |
@@ -378,7 +395,7 @@ A local, single-user decision-support app for a personal relocation search (EU/E
 
 **Everything is managed by `uv`** — `uv add`, `uv add --dev`, `uv run`. Never `pip`, never the system Python.
 
-**Two contracts, with different jobs.** `docs/openapi.yaml` is **the target**: hand-written, 45 operations, deliberately ahead of the code, and the file the interface generates its typed client from. Nothing regenerates it and nothing should — doing so would delete every operation not yet built. `docs/openapi.implemented.yaml` is **the truth**: generated by `make openapi` from the routes FastAPI has, committed, so the gap between design and reality is countable rather than remembered. `tests/unit/test_contract_drift.py` holds them together — the generated file must be fresh, nothing may be served that was never designed, and every implemented operation keeps its designed id and path shape.
+**Two contracts, with different jobs.** `docs/openapi.yaml` is **the target**: hand-written, 50 operations, deliberately ahead of the code, and the file the interface generates its typed client from. Nothing regenerates it and nothing should — doing so would delete every operation not yet built. `docs/openapi.implemented.yaml` is **the truth**: generated by `make openapi` from the routes FastAPI has, committed, so the gap between design and reality is countable rather than remembered. `tests/unit/test_contract_drift.py` holds them together — the generated file must be fresh, nothing may be served that was never designed, and every implemented operation keeps its designed id and path shape.
 
 **The acceptance suite validates every response against the target**, not against our own models: an assertion written beside an endpoint restates what its author meant, while the design was written earlier for a different consumer. Only the second kind catches "I meant the wrong thing".
 
@@ -432,9 +449,13 @@ and touched no component, because there was no hard-coded colour outside it to f
 `adb96384-f1ce-4f96-9612-ad5760163c0f`** -- `list_files` then `get_file`. **It will not appear
 in `DesignSync list_projects`**, which lists only writable design-*system* projects (Modernist,
 Nocturne); a design canvas is a different thing and needs the id. It is not in the Artifact
-listings either. Nothing is copied into this repo on purpose: the live file is the design, and a
-copy would go stale the first time it is edited. **The handoff folder is the part worth reading
-first** -- `design_handoff_starnest_app/README.md` is a full written specification of all four
+listings either. **A snapshot of the handoff, taken 2026-10-23, is kept locally in
+`docs/design/`, and gitignored**: it can be read offline and by agents, but it is never pushed,
+because the repository is public and the handoff carries the household's own figures. **The live
+file is still the design**, so a copy that may be stale is re-fetched rather than trusted, and
+where the two disagree the live `.dc.html` wins.
+**The handoff folder is the part worth reading first** -- its `README.md` is a full written
+specification of all four
 tabs with every token, `UX-REVIEW.md` has the open findings and the parked backlog, and
 `screens/` holds 27 captures, 01-17 at the full 1560px width and 20-27 unscaled for pixel work.
 **Where a screenshot and the README disagree, the live `.dc.html` wins**, because that is the
@@ -513,7 +534,7 @@ two disagree.
 The central structural idea. Evaluation is **not** uniform across all candidates:
 
 1. **Country level.** A cheap first pass across candidate countries using structured sources only, **no LLM calls**. Cities are nominated only for countries whose `match_status` is `matching` under the active criteria set — there is no separate score cutoff, and no field ever held one.
-2. **City level.** Only for countries that survived the country screen, ~5 cities each. Structured *and* qualitative (LLM + search) data acquisition.
+2. **City level** (v2.0, `arch.md` 12). The 79 seeded survey cities, manual adds and approved proposals. Evaluating a set at city level judges each city's country under the same set first: a city whose country is anything but `matching` is flagged `parent_not_matching` and keeps its score, and a city run leaves out by default only the cities of a `not_matching` country (Q248). Structured sources by footprint -- point, city, region, nation -- with national factors read through the parent country; the LLM only for employer lists and city proposals.
 
 **"Phase" is retired** — it named the same axis as `Candidate.level`. There is one concept: **level**, either `country` or `city`.
 
@@ -527,7 +548,7 @@ Read `reqs.md` 3.0 before touching the model. The whole design turns on keeping 
 - **Value** — what that attribute is, for one candidate, from one source, on one date.
 - **Criterion** — the rule *you* impose on one attribute: `goal` (`minimise`/`maximise`/`target_range`), matching threshold, weight. **Subjective.** Lives in a **CriteriaSet** (`alex`, `partner`, `remote-only`), never on the attribute. `is_scored` says whether it counts; `blocks_if_missing` says whether its absence makes the candidate unscoreable.
 - **Evaluation** — one CriteriaSet run against the candidates at one level. **Score, coverage, match status, rank and `parent_not_matching` belong here, not to the Candidate** — they change when the criteria set changes.
-- **Household** — the single record describing the user: income, size, target spend, home country and city, citizenship. Configured first.
+- **Household** — the single record describing the user: income, size, target spend, home country and city, citizenship. Configured first. **Citizenship clears the gates it names** -- any EU, EEA or Swiss passport clears `eu_free_movement`, a British or Irish one `uk_skilled_worker` -- and may name where it clears (`0517`, `0526`). Which citizenship clears which gate is catalog data, never code.
 
 Attributes are grouped into **Pillars** — the load-bearing verticals of a life (economics, housing, career, safety, health, climate, connectivity, nature, culture, governance, family). Pillar weights sum to 100% within a level; criterion weights sum to 100% within a pillar. Scores are **0–100 integers**.
 
@@ -568,9 +589,9 @@ The type determines what a `Value` stores, which normalisation methods are legal
 
 **v1 covers the country level only**, with the full feature set applied to it: pillar and criterion configuration, weight profiles, country nomination, data acquisition runs, scoring with coverage and confidence, non-match reporting, the ranking dashboard with drill-down and provenance, and comparison. See `reqs.md` 1.3.
 
-**After v1:** the entire city level — city criteria, city nomination, and the LLM + `web_search` data acquisition path.
+**v2.0** (`docs/devplan-v2.md`, awaiting approval): the city level -- nomination, place and footprint, national factors read through the parent, derived figures at scoring time, `parent_not_matching`, and city sources by tier. The LLM answers only employer lists and city proposals.
 
-Explicitly **post-MVP — do not build without being asked**: personal annotations, color-gradient maps per property, favorites lists, saved criteria profiles, saved comparisons.
+Explicitly **post-MVP — do not build without being asked**: personal annotations, color-gradient maps per property, favorites lists, saved criteria profiles, saved comparisons. All of them, and `relocation_window`, are **v2.1** (`reqs.md` Q246).
 
 ## Conventions
 
