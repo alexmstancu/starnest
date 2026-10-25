@@ -152,7 +152,7 @@ function SelectionControls() {
             onChange={(event) => selectCriteriaSet(event.target.value)}
             disabled={criteriaSets.length === 0}
           >
-            {criteriaSets.length === 0 && <option value="">No criteria sets</option>}
+            {criteriaSets.length === 0 && <option value="">No criteria set yet</option>}
             {criteriaSets.map((set) => (
               <option key={set.id} value={set.id}>
                 {set.name}

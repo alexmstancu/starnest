@@ -67,6 +67,8 @@ const READS: Record<string, SweptRead> = {
     feedsThePicker: false,
   },
   "GET /comparisons": { matches: path("/v1/comparisons"), owners: ["screen"], feedsThePicker: false },
+  // Whether anything is stored at all (PL-011): the picker is drawn while it is read.
+  "GET /values": { matches: path("/v1/values"), owners: ["screen"], feedsThePicker: false },
   "GET /rankings": { matches: path("/v1/rankings"), owners: ["sidebar"], feedsThePicker: false },
   "GET /household": { matches: path("/v1/household"), owners: ["sidebar"], feedsThePicker: false },
   "GET /evaluations": { matches: path("/v1/evaluations"), owners: ["sidebar"], feedsThePicker: false },
@@ -91,6 +93,7 @@ const NEVER_INFERRED = [
   "Nothing has been recorded about the household",
   "No figure has been stored",
   "No criteria sets",
+  "No criteria set yet",
   "0 sets",
   "Choose a criteria set",
   "shape this interface",

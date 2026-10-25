@@ -7,6 +7,7 @@ import {
   type RunPlan,
 } from "../../api/endpoints";
 import { useSourceNames } from "../../api/useSourceNames";
+import { useValueCount } from "../../api/useValueCount";
 import {
   formatCount,
   formatDateTime,
@@ -15,6 +16,7 @@ import {
   sourceName,
 } from "../../format/display";
 import type { RouteDefinition } from "../../navigation/routes";
+import { EmptyCard, UnlessNothingStored } from "../../shell/EmptyCard";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { RefusalNotice } from "../../shell/RefusalNotice";
 import { describeRunStatus } from "../../shell/runStatus";
@@ -78,6 +80,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
   const { levelId, noteAcquisitionStarted, acquisitionsEnded } = useSelection();
   // An acquisition the shell saw end has moved what the database holds.
   const run = useRunScreen(levelId, noteAcquisitionStarted, acquisitionsEnded);
+  const stored = useValueCount(acquisitionsEnded);
   // **Where Not yet hands focus back** (PL-128): the control that opened the strip, which
   // stays on screen when the strip goes.
   const opener = useRef<Element | null>(null);
@@ -177,97 +180,113 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           `run.close`. The failures live in the card below that can act on them. */}
       {report}
 
-      <DatabaseHoldsPanel
-        history={run.history}
-        holdings={run.holdings}
-        onRetryHistory={run.reloadHistory}
-        onRetryHoldings={run.reloadHoldings}
-      />
+      {/* **A new database leads with the way to fill it** (PL-011): the figures and the
+          remedies below would all read nought, and every gap card would say nothing. */}
+      <UnlessNothingStored
+        stored={stored.read}
+        onRetry={stored.reload}
+        card={
+          <NothingAcquiredYet
+            levelId={levelId}
+            run={run}
+            stillRunning={stillRunning}
+            propose={propose}
+            onCancel={cancel}
+          />
+        }
+      >
+        <DatabaseHoldsPanel
+          history={run.history}
+          holdings={run.holdings}
+          onRetryHistory={run.reloadHistory}
+          onRetryHoldings={run.reloadHoldings}
+        />
 
-      {/* ── What you can do about the gaps ───────────────────────────────────────────
-          **The cards side by side, and the same shape each.** A failure, an item nobody
-          answered and a wholesale refresh are different problems with different remedies, and
-          a reader arriving at this screen is choosing between them. Stacked in a column they
-          read as a sequence of steps, which they are not.
+        {/* ── What you can do about the gaps ───────────────────────────────────────────
+            **The cards side by side, and the same shape each.** A failure, an item nobody
+            answered and a wholesale refresh are different problems with different remedies, and
+            a reader arriving at this screen is choosing between them. Stacked in a column they
+            read as a sequence of steps, which they are not.
 
-          **The database's gaps, by their latest outcome** (PL-054, C04-N2): read from the
-          holdings, never from the run on the card, so opening, dismissing or refreshing a run
-          moves none of them, and with values stored they add up to every value at the level. */}
-      <section className="section" aria-labelledby="gaps">
-        <header className="section__head">
-          <h2 id="gaps" ref={gapsHeading} tabIndex={-1} className="section__heading">
-            What you can do about the gaps
-          </h2>
-          <p className="section__lead">
-            {describeGaps(run.holdings.state === "ready" ? run.holdings.data : null)}
-          </p>
-        </header>
-
-        <div className="gap-cards">
-          {levelId !== null && run.holdings.state !== "idle" && (
-            <LoadedRegion
-              read={run.holdings}
-              what="The gaps"
-              skeleton="lines"
-              prominence="region"
-              onRetry={run.reloadHoldings}
-            >
-              {({ gaps }) => (
-                <GapRemedies
-                  gaps={gaps}
-                  levelId={levelId}
-                  stillRunning={stillRunning}
-                  run={run}
-                  propose={propose}
-                  onCancel={cancel}
-                />
-              )}
-            </LoadedRegion>
-          )}
-
-          {levelId !== null && (
-            <PickerCard
-              levelId={levelId}
-              run={run}
-              stillRunning={stillRunning}
-              propose={propose}
-              onCancel={cancel}
-            />
-          )}
-
-          {levelId === null ? (
-            <p className="screen__note">
-              Choose a level to plan an acquisition.
+            **The database's gaps, by their latest outcome** (PL-054, C04-N2): read from the
+            holdings, never from the run on the card, so opening, dismissing or refreshing a run
+            moves none of them, and with values stored they add up to every value at the level. */}
+        <section className="section" aria-labelledby="gaps">
+          <header className="section__head">
+            <h2 id="gaps" ref={gapsHeading} tabIndex={-1} className="section__heading">
+              What you can do about the gaps
+            </h2>
+            <p className="section__lead">
+              {describeGaps(run.holdings.state === "ready" ? run.holdings.data : null)}
             </p>
-          ) : (
-            <GapCard
-              count=""
-              what={`An acquisition over every ${levelId} candidate`}
-              lead={describeRefresh(run.holdings.state === "ready" ? run.holdings.data : null)}
-            >
-              {/* **Confirmed like the other remedies** (PL-121): the estimate arms the strip,
-                  and nothing starts on a click. */}
-              <HeldButton
-                className="button"
-                held={run.busy !== null}
-                onClick={() => propose({ via: "scoped", scope: { level: levelId } }, "everything")}
+          </header>
+
+          <div className="gap-cards">
+            {levelId !== null && run.holdings.state !== "idle" && (
+              <LoadedRegion
+                read={run.holdings}
+                what="The gaps"
+                skeleton="lines"
+                prominence="region"
+                onRetry={run.reloadHoldings}
               >
-                {run.estimating === "everything"
-                  ? "Estimating…"
-                  : "Estimate an acquisition"}
-              </HeldButton>
-              <GapEstimate
-                kind="everything"
+                {({ gaps }) => (
+                  <GapRemedies
+                    gaps={gaps}
+                    levelId={levelId}
+                    stillRunning={stillRunning}
+                    run={run}
+                    propose={propose}
+                    onCancel={cancel}
+                  />
+                )}
+              </LoadedRegion>
+            )}
+
+            {levelId !== null && (
+              <PickerCard
+                levelId={levelId}
                 run={run}
                 stillRunning={stillRunning}
+                propose={propose}
                 onCancel={cancel}
               />
-            </GapCard>
-          )}
-        </div>
+            )}
 
-        {run.armed?.origin === "everything" && <PerSourcePlan plan={run.armed.plan} />}
-      </section>
+            {levelId === null ? (
+              <p className="screen__note">
+                Choose a level to plan an acquisition.
+              </p>
+            ) : (
+              <GapCard
+                count=""
+                what={`An acquisition over every ${levelId} candidate`}
+                lead={describeRefresh(run.holdings.state === "ready" ? run.holdings.data : null)}
+              >
+                {/* **Confirmed like the other remedies** (PL-121): the estimate arms the strip,
+                    and nothing starts on a click. */}
+                <HeldButton
+                  className="button"
+                  held={run.busy !== null}
+                  onClick={() => propose({ via: "scoped", scope: { level: levelId } }, "everything")}
+                >
+                  {run.estimating === "everything"
+                    ? "Estimating…"
+                    : "Estimate an acquisition"}
+                </HeldButton>
+                <GapEstimate
+                  kind="everything"
+                  run={run}
+                  stillRunning={stillRunning}
+                  onCancel={cancel}
+                />
+              </GapCard>
+            )}
+          </div>
+
+          {run.armed?.origin === "everything" && <PerSourcePlan plan={run.armed.plan} />}
+        </section>
+      </UnlessNothingStored>
 
       {/* Beside the failures deliberately: the three reasons a figure is missing look the
           same in a ranking and have entirely different remedies. */}
@@ -298,6 +317,52 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
         </LoadedRegion>
       </section>
     </section>
+  );
+}
+
+/**
+ * The database holds no value (PL-011). **See the estimate asks for the same estimate as
+ * "Estimate an acquisition"** -- every candidate at the level -- and arms its strip here, in the
+ * card, so nothing starts on the click (PL-121).
+ */
+function NothingAcquiredYet({
+  levelId,
+  run,
+  stillRunning,
+  propose,
+  onCancel,
+}: {
+  levelId: string | null;
+  run: RunScreenState;
+  stillRunning: number | null;
+  propose: RunScreenState["propose"];
+  onCancel: () => void;
+}) {
+  return (
+    <EmptyCard
+      title="Nothing acquired yet"
+      detail={
+        "The database holds no values. A first acquisition asks every connected source for " +
+        "every attribute at this level, and its estimate is shown before anything is charged."
+      }
+      action={
+        <HeldButton
+          className="button button--primary"
+          held={run.busy !== null}
+          disabled={levelId === null}
+          onClick={() => {
+            if (levelId !== null) {
+              propose({ via: "scoped", scope: { level: levelId } }, "everything");
+            }
+          }}
+        >
+          {run.estimating === "everything" ? "Estimating…" : "See the estimate"}
+        </HeldButton>
+      }
+    >
+      <GapEstimate kind="everything" run={run} stillRunning={stillRunning} onCancel={onCancel} />
+      {run.armed?.origin === "everything" && <PerSourcePlan plan={run.armed.plan} />}
+    </EmptyCard>
   );
 }
 

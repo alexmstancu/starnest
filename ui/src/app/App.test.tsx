@@ -595,7 +595,7 @@ describe("when the API fails", () => {
       (await screen.findAllByText(/criteria sets and levels could not be loaded/i)).length,
     ).toBeGreaterThan(0);
     expect(screen.queryByText("catalog_unavailable")).toBeNull();
-    expect(screen.queryByText("No criteria sets")).toBeNull();
+    expect(screen.queryByText(/No criteria set/)).toBeNull();
     expect(screen.getByRole("link", { name: "Compare" })).toBeInTheDocument();
   });
 
@@ -606,7 +606,7 @@ describe("when the API fails", () => {
     );
     renderShell("/rank");
 
-    expect(await screen.findByText("No criteria sets")).toBeInTheDocument();
+    expect(await screen.findByText("No criteria set yet")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /active criteria set/i })).toBeDisabled();
     // With nothing selected there is nothing to fetch, and the sidebar says so rather than
     // showing a spinner for a request it never made.

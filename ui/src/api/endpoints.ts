@@ -453,6 +453,16 @@ export function fetchValuesForAttribute(
 }
 
 /**
+ * How many values are in use across the whole database (PL-011): one row asked for, the total
+ * kept. **Nought is the one answer that matters** -- a database nothing has been acquired into,
+ * where a ranking or a comparison would be built on nothing.
+ */
+export async function fetchValueCount(options?: RequestOptions): Promise<number> {
+  const page: { total: number } = await getJson("/values", { limit: 1 }, options);
+  return page.total;
+}
+
+/**
  * The catalog's attributes, each with the pillar it belongs to.
  *
  * **The level is optional**, and omitting it asks for every level at once. A screen editing

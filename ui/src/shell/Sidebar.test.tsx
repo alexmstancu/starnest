@@ -240,7 +240,7 @@ describe("PL-009: a selection that is loading or failed never reads as none", ()
     renderShell("/acquire");
 
     await screen.findByRole("heading", { name: "Acquire" });
-    expect(screen.queryByText("No criteria sets")).toBeNull();
+    expect(screen.queryByText(/No criteria set/)).toBeNull();
     expect(screen.queryByText(/0 sets/)).toBeNull();
     expect(screen.queryByRole("combobox", { name: /active criteria set/i })).toBeNull();
     expect(document.querySelector(".sidebar [aria-busy='true']")).not.toBeNull();
@@ -253,7 +253,7 @@ describe("PL-009: a selection that is loading or failed never reads as none", ()
     const sidebar = within(await screen.findByRole("complementary"));
     expect(await sidebar.findByText(/criteria sets and levels could not be loaded/i)).toBeInTheDocument();
     expect(sidebar.queryByText("catalog_unavailable")).toBeNull();
-    expect(sidebar.queryByText("No criteria sets")).toBeNull();
+    expect(sidebar.queryByText(/No criteria set/)).toBeNull();
     expect(sidebar.queryByText(/choose a criteria set/i)).toBeNull();
     expect(sidebar.getAllByRole("button", { name: /try again/i }).length).toBeGreaterThan(0);
   });

@@ -1994,3 +1994,72 @@ describe("focus when the criteria sets and levels are read again", () => {
     expect(compareRegion()).toContainElement(document.activeElement as HTMLElement);
   });
 });
+
+/**
+ * PL-011. **A database nothing has been acquired into has nothing to compare**, and says so with
+ * the one way to fill it -- decided from the stored-value count, never from a pending or failed
+ * read of it, and never from every candidate reading insufficient data.
+ */
+describe("Compare with nothing stored", () => {
+  function storedValues(total: number) {
+    mockServer.use(
+      http.get(`${BASE}/values`, () => HttpResponse.json({ items: [], total })),
+    );
+  }
+
+  it("says there is nothing to compare yet, and leads to Acquire", async () => {
+    storedValues(0);
+    renderShell("/compare");
+
+    const card = await screen.findByRole("region", { name: "Nothing to compare yet" });
+    expect(within(card).getByRole("link", { name: "Go to Acquire" })).toHaveAttribute(
+      "href",
+      "/acquire",
+    );
+    expect(screen.queryByRole("combobox", { name: "Focus" })).toBeNull();
+  });
+
+  it("offers the picker once any value is stored, whatever the ranking says", async () => {
+    storedValues(1);
+    mockServer.use(
+      http.get(`${BASE}/rankings`, () =>
+        HttpResponse.json({ code: "cannot_be_ranked", message: "" }, { status: 409 }),
+      ),
+    );
+    renderShell("/compare");
+
+    expect(await screen.findByRole("option", { name: "Portugal" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Nothing to compare yet" })).toBeNull();
+  });
+
+  it("while the count is read, says nothing about it and marks the screen busy", async () => {
+    mockServer.use(
+      http.get(`${BASE}/values`, async () => {
+        await delay("infinite");
+        return HttpResponse.json({});
+      }),
+    );
+    renderShell("/compare");
+
+    expect(await screen.findByRole("option", { name: "Portugal" })).toBeInTheDocument();
+    const compare = screen.getByRole("region", { name: "Compare" });
+    expect(compare.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(screen.queryByRole("region", { name: "Nothing to compare yet" })).toBeNull();
+  });
+
+  it("when the count could not be read, says so with Try again and draws no card", async () => {
+    mockServer.use(
+      http.get(`${BASE}/values`, () =>
+        HttpResponse.json({ code: "internal_error", message: "" }, { status: 500 }),
+      ),
+    );
+    renderShell("/compare");
+
+    const compare = within(screen.getByRole("region", { name: "Compare" }));
+    expect(
+      await compare.findByText(/whether any values are stored could not be loaded/i),
+    ).toBeInTheDocument();
+    expect(compare.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Nothing to compare yet" })).toBeNull();
+  });
+});

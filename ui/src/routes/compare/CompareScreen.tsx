@@ -21,9 +21,11 @@ import {
 import { ApiError, hasErrorCode } from "../../api/ApiError";
 import { combine, map, type Idle, type Read } from "../../api/read";
 import { useRead } from "../../api/useRead";
+import { useValueCount } from "../../api/useValueCount";
 import { usePillarNames } from "../../api/usePillarNames";
 import type { RouteDefinition } from "../../navigation/routes";
 import { deltaTone, formatSigned, pillarName } from "../../format/display";
+import { EmptyCard, UnlessNothingStored } from "../../shell/EmptyCard";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { NothingSelected } from "../../shell/NothingSelected";
 import { SCORE_SCALE_NOT_SET } from "../../shell/refusalRemedy";
@@ -45,8 +47,9 @@ import { useSelection } from "../../shell/SelectionContext";
  * could disagree with the first.
  */
 export function CompareScreen({ route }: { route: RouteDefinition }) {
-  const { criteriaSetId, levelId } = useSelection();
+  const { criteriaSetId, levelId, acquisitionsEnded } = useSelection();
   const focusRegion = useFocusRegion();
+  const stored = useValueCount(acquisitionsEnded);
 
   return (
     // The region a notice inherits focus from, when it replaces the Compare that was pressed.
@@ -64,12 +67,20 @@ export function CompareScreen({ route }: { route: RouteDefinition }) {
           candidate ids from one level re-asked at another are refused with 409 "Levels mixed"
           (P54). The choices themselves live in the session store, which a set switch keeps
           and a level change resets. */}
-      <TheComparison
-        key={levelId ?? ""}
-        criteriaSetId={criteriaSetId}
-        levelId={levelId}
-        focusRegion={focusRegion}
-      />
+      {/* **Nothing stored, nothing to compare** (PL-011): said before a picker that could only
+          offer candidates with no score. */}
+      <UnlessNothingStored
+        stored={stored.read}
+        onRetry={stored.reload}
+        card={<NothingToCompareYet />}
+      >
+        <TheComparison
+          key={levelId ?? ""}
+          criteriaSetId={criteriaSetId}
+          levelId={levelId}
+          focusRegion={focusRegion}
+        />
+      </UnlessNothingStored>
     </section>
   );
 }
@@ -270,6 +281,24 @@ function TheComparison({
         </LoadedRegion>
       )}
     </>
+  );
+}
+
+/** A database nothing has been acquired into (PL-011): Acquire is what fills it. */
+function NothingToCompareYet() {
+  return (
+    <EmptyCard
+      title="Nothing to compare yet"
+      detail={
+        "A comparison needs at least two candidates with a score, and none has one until a " +
+        "first acquisition stores values."
+      }
+      action={
+        <Link className="button button--primary" to="/acquire">
+          Go to Acquire
+        </Link>
+      }
+    />
   );
 }
 
