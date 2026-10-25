@@ -1,10 +1,10 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { RouteDefinition } from "../../navigation/routes";
 import type { Idle, Read } from "../../api/read";
-import type { CriteriaSet } from "../../api/endpoints";
+import type { CriteriaSet, MatchRuleResult } from "../../api/endpoints";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { useSelection } from "../../shell/SelectionContext";
-import { GateAnswersPanel } from "./answers/GateAnswersPanel";
+import { type AnswerForm, GateAnswersPanel } from "./answers/GateAnswersPanel";
 import { CriteriaPanel } from "./criteria/CriteriaPanel";
 import { CriteriaSetsPanel } from "./sets/CriteriaSetsPanel";
 import { useCriteriaSets } from "./sets/useCriteriaSets";
@@ -59,6 +59,12 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
   // remounts the rules and the proposals inside them, and a pass held there would end with
   // them; leaving Configure is what ends one.
   const pass = useResearchPass(noteAnswered);
+  // A proposal answered otherwise opens the answers area's form, which lives beside it (PL-153).
+  const answerForm = useRef<AnswerForm>(null);
+  const answerDifferently = useCallback(
+    (proposal: MatchRuleResult) => answerForm.current?.answerOtherwise(proposal),
+    [],
+  );
   // **A pass keeps its Stop, whatever the set's read does** (UIC-A4). Gate research is
   // level-wide and needs no criteria set, but its panel is drawn beside a loaded set's rules; a
   // read that failed, or one still loading, hid Stop, the progress and the spend while the pass
@@ -71,6 +77,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
       answersFreshness={answersVersion}
       pass={pass}
       standsAlone
+      onAnswerDifferently={answerDifferently}
     />
   );
 
@@ -169,6 +176,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                   onAnswered={noteAnswered}
                   answersFreshness={answersVersion}
                   pass={pass}
+                  onAnswerDifferently={answerDifferently}
                 />
               </RulesPanel>
             )}
@@ -181,6 +189,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                 answersFreshness={answersVersion}
                 onAnswered={noteAnswered}
                 researching={pass.running}
+                form={answerForm}
               />
             )}
           </Stage>

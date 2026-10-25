@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { type Ref, useImperativeHandle, useRef } from "react";
 import type { MatchRuleResult } from "../../../api/endpoints";
 import { useCandidateNames } from "../../../api/useCandidateNames";
 import { useMatchRuleNames } from "../../../api/useMatchRuleNames";
@@ -6,7 +6,7 @@ import { candidateName, formatMatchStatus, matchRuleName } from "../../../format
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { dayOf, inReadingOrder } from "../gateAnswerReading";
-import { draftFrom, draftFromProposal } from "./gateAnswerForm";
+import { draftAnsweringOtherwise, draftFrom, draftFromProposal } from "./gateAnswerForm";
 import { GateAnswerFormPanel } from "./GateAnswerFormPanel";
 import { RecordedAnswersTable } from "./RecordedAnswersTable";
 import { useGateAnswers } from "./useGateAnswers";
@@ -19,17 +19,27 @@ import { useGateAnswers } from "./useGateAnswers";
  * **Outside the set's rules, keyed by level** (D4): answers are objective and belong to no set.
  * **Gates and candidates by name, never by id.**
  */
+/** What another panel may ask of this one: the form, filled to answer a proposal otherwise. */
+export interface AnswerForm {
+  answerOtherwise: (
+    proposal: Pick<MatchRuleResult, "match_rule" | "candidate" | "match_result">,
+  ) => void;
+}
+
 export function GateAnswersPanel({
   levelId,
   answersFreshness,
   onAnswered,
   researching,
+  form,
 }: {
   levelId: string;
   answersFreshness: number;
   onAnswered: () => void;
   /** A research pass is asking: Save waits for it. */
   researching: boolean;
+  /** Lets the proposals open this form on a pair (PL-153), as Change and Take the proposal do. */
+  form?: Ref<AnswerForm>;
 }) {
   const answers = useGateAnswers(levelId, answersFreshness, onAnswered);
   const gateNames = useMatchRuleNames();
@@ -45,6 +55,9 @@ export function GateAnswersPanel({
     answers.load(draft);
     firstField.current?.focus();
   };
+  useImperativeHandle(form, () => ({
+    answerOtherwise: (proposal) => fill(draftAnsweringOtherwise(proposal)),
+  }));
   const tableHeld = answers.saving || answers.stale;
 
   return (

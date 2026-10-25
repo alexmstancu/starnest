@@ -87,6 +87,23 @@ export function draftFromProposal(
   };
 }
 
+/**
+ * A proposal a person disagrees with, to answer themselves (PL-153): its gate and candidate,
+ * the other answer, and **nothing the model wrote** -- its reason and pages argued for the answer
+ * being replaced. Against "unknown", any answer is a different one, and the form's first is
+ * offered.
+ */
+export function draftAnsweringOtherwise(
+  proposal: Pick<MatchRuleResult, "match_rule" | "candidate" | "match_result">,
+): GateAnswerDraft {
+  return {
+    ...emptyDraft(),
+    matchRule: proposal.match_rule,
+    candidate: proposal.candidate,
+    answer: proposal.match_result === "matching" ? "not_matching" : "matching",
+  };
+}
+
 function contentOf(answer: MatchRuleResult | PendingProposal) {
   return {
     answer: answer.match_result,

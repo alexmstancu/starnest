@@ -324,6 +324,61 @@ describe("what the panel shows", () => {
   });
 });
 
+/**
+ * PL-153. **A person who disagrees with a proposal answers it themselves**, in the answers area's
+ * form: the same gate and candidate, the other answer, and nothing the model wrote -- its reason
+ * and pages argued for the answer being replaced.
+ */
+describe("answering a proposal differently", () => {
+  function theAnswerForm() {
+    return within(
+      within(screen.getByRole("region", { name: "Gate answers" })).getByRole("form", {
+        name: "Record a gate answer",
+      }),
+    );
+  }
+
+  it("opens the answer form with the other answer for that gate and candidate, focused", async () => {
+    renderShell("/configure");
+    await settled();
+    await screen.findByRole("option", { name: PROPOSED_FOR });
+
+    await userEvent.click(
+      await theProposals().findByRole("button", {
+        name: `Answer ${PROPOSED_GATE} for ${PROPOSED_FOR} differently`,
+      }),
+    );
+
+    const form = theAnswerForm();
+    expect(form.getByLabelText("Gate")).toHaveValue(PROPOSED_GATE_ID);
+    expect(form.getByLabelText("Gate")).toHaveFocus();
+    expect(form.getByLabelText("Candidate")).toHaveValue(PROPOSED_FOR_ID);
+    // The mock's proposal says Not matching.
+    expect(form.getByLabelText("Answer")).toHaveValue("matching");
+    expect(form.getByLabelText("Reason")).toHaveValue("");
+    expect(form.getByLabelText(/pages/i)).toHaveValue("");
+  });
+
+  it("offers Not matching against a proposal that a gate matches", async () => {
+    mockServer.use(
+      http.get(`${BASE}/match-rule-results`, () =>
+        HttpResponse.json({
+          items: [{ ...MATCH_RULE_RESULTS[0], match_result: "matching" }],
+        }),
+      ),
+    );
+    renderShell("/configure");
+    await settled();
+    await screen.findByRole("option", { name: PROPOSED_FOR });
+
+    await userEvent.click(
+      await theProposals().findByRole("button", { name: /differently$/ }),
+    );
+
+    expect(theAnswerForm().getByLabelText("Answer")).toHaveValue("not_matching");
+  });
+});
+
 describe("spending money on research", () => {
   it("offers no research until the cost has been seen", async () => {
     renderShell("/configure");

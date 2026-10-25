@@ -49,6 +49,7 @@ export function ProposalsPanel({
   answersFreshness,
   pass,
   standsAlone = false,
+  onAnswerDifferently,
 }: {
   levelId: string;
   /** A gate answer has been written here, so anything else describing the answers re-reads. */
@@ -62,6 +63,8 @@ export function ProposalsPanel({
    * panel, Estimate included.
    */
   standsAlone?: boolean;
+  /** Opens the answers area's form on a proposal's pair, with the other answer (PL-153). */
+  onAnswerDifferently?: (proposal: MatchRuleResult) => void;
 }) {
   const proposals = useProposals(onAnswered, answersFreshness, levelId);
   // Gates and candidates by name, never by id (PL-150). Either read failing leaves the id read
@@ -315,6 +318,9 @@ export function ProposalsPanel({
                       confirmFocus.pressed(proposal, index);
                       proposals.confirm(proposal);
                     }}
+                    onAnswerDifferently={
+                      onAnswerDifferently && (() => onAnswerDifferently(proposal))
+                    }
                   />
                 ))}
               </tbody>
@@ -384,6 +390,7 @@ function ProposalRow({
   held,
   confirmRef,
   onConfirm,
+  onAnswerDifferently,
 }: {
   proposal: MatchRuleResult;
   /** The gate's name, which the row and its Confirm say instead of the id. */
@@ -397,6 +404,8 @@ function ProposalRow({
   /** Its Confirm button, so focus can be handed to it once a row above has gone (NEW-45). */
   confirmRef: (element: HTMLButtonElement | null) => void;
   onConfirm: () => void;
+  /** Not held: it only fills a form, which a person still reads and saves. */
+  onAnswerDifferently?: () => void;
 }) {
   const pages = proposal.citations ?? [];
 
@@ -431,6 +440,11 @@ function ProposalRow({
         >
           Confirm {gate} for {candidate}
         </button>
+        {onAnswerDifferently && (
+          <button type="button" className="button" onClick={onAnswerDifferently}>
+            Answer {gate} for {candidate} differently
+          </button>
+        )}
       </td>
     </tr>
   );
