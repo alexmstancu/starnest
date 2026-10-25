@@ -21,6 +21,7 @@ export type Level = components["schemas"]["Level"];
 export type Attribute = components["schemas"]["Attribute"];
 export type Candidate = components["schemas"]["Candidate"];
 export type CriteriaSetSummary = components["schemas"]["CriteriaSetSummary"];
+export type CriteriaSetListItem = components["schemas"]["CriteriaSetListItem"];
 export type Run = components["schemas"]["Run"];
 export type Ranking = components["schemas"]["Ranking"];
 export type CandidateResult = components["schemas"]["CandidateResult"];
@@ -48,7 +49,7 @@ export function fetchLevels(
 
 export function fetchCriteriaSets(
   options?: RequestOptions,
-): Promise<{ items: CriteriaSetSummary[] }> {
+): Promise<{ items: CriteriaSetListItem[] }> {
   return getJson("/criteria-sets", undefined, options);
 }
 

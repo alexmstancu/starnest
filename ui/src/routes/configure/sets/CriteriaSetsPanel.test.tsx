@@ -153,7 +153,7 @@ describe("the criteria sets panel", () => {
     await create("remote ONLY ");
 
     expect(
-      await (await panel()).findByText("A set called Remote only already exists."),
+      await (await panel()).findByText("Another criteria set is already called “Remote only”."),
     ).toBeInTheDocument();
     expect(requests.sent).toHaveLength(0);
   });
@@ -299,9 +299,11 @@ describe("the criteria sets panel", () => {
     const sets = await panel();
 
     expectHeld(sets.getByRole("button", { name: "Create set" }));
-    // Punctuation alone derives no identifier, so it is still not a name.
-    await user.type(sets.getByRole("textbox", { name: /name a new set/i }), "!!");
+    await user.type(sets.getByRole("textbox", { name: /name a new set/i }), "   ");
     expectHeld(sets.getByRole("button", { name: "Create set" }));
+    // Punctuation alone is a name, though: the identifier is derived to suit the catalog (PL-039).
+    await user.type(sets.getByRole("textbox", { name: /name a new set/i }), "!!");
+    expectNotHeld(sets.getByRole("button", { name: "Create set" }));
   });
 });
 
@@ -1970,5 +1972,120 @@ describe("when every set has been discarded", () => {
     expect(
       await screen.findByRole("region", { name: "Pillar weights" }),
     ).toBeInTheDocument();
+  });
+});
+
+/** PL-036, PL-039, PL-040, PL-041: what a set may be called, and what its row says about it. */
+describe("a set's name and its row", () => {
+  const SIXTY_ONE = "A".repeat(61);
+
+  /** Any name that is not blank, taken or too long makes a set, in any script (PL-039). */
+  it.each([
+    ["Ελλάδα", /^set_[a-z0-9]+$/],
+    ["2026 plan", /^set_2026_plan_[a-z0-9]+$/],
+  ])("makes a set called %s, under an identifier the catalog accepts", async (name, id) => {
+    const created: unknown[] = [];
+    mockServer.events.on("request:start", async ({ request }) => {
+      if (request.method === "POST" && new URL(request.url).pathname === "/v1/criteria-sets") {
+        created.push(await request.clone().json());
+      }
+    });
+    renderShell("/configure");
+
+    await create(name);
+
+    expect(await screen.findByRole("listitem", { name })).toBeInTheDocument();
+    expect(created).toEqual([{ id: expect.stringMatching(id) as unknown, name }]);
+  });
+
+  it("refuses a name longer than the contract allows, says why, and sends nothing", async () => {
+    renderShell("/configure");
+    const requests = holdRequests("post", "/v1/criteria-sets");
+
+    await create(SIXTY_ONE);
+
+    expect(
+      await (await panel()).findByText("A set's name can be at most 60 characters."),
+    ).toBeInTheDocument();
+    expect(requests.sent).toHaveLength(0);
+  });
+
+  /** PL-036: refused beside the field before anything is sent, in any case. */
+  it("refuses a rename to another set's name, ignoring case, beside the field", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const requests = holdRequests("patch", "/v1/criteria-sets/:criteriaSetId");
+
+    await user.click((await row("Default")).getByRole("button", { name: "Rename" }));
+    const draft = (await row("Default")).getByRole("textbox", { name: /new name for Default/i });
+    await user.clear(draft);
+    await user.type(draft, " remote ONLY{Enter}");
+
+    expect(draft).toHaveAccessibleDescription("Another criteria set is already called “Remote only”.");
+    expectHeld((await row("Default")).getByRole("button", { name: "Save" }));
+    expect(requests.sent).toHaveLength(0);
+  });
+
+  it("lets a set keep its own name in another case", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+
+    await user.click((await row("Default")).getByRole("button", { name: "Rename" }));
+    const draft = (await row("Default")).getByRole("textbox", { name: /new name for Default/i });
+    await user.clear(draft);
+    await user.type(draft, "DEFAULT{Enter}");
+
+    expect(await screen.findByRole("listitem", { name: "DEFAULT" })).toBeInTheDocument();
+  });
+
+  /** PL-036: another tab may take the name between the check and the save. */
+  it("puts the server's refusal beside the field, keeps the draft, and clears it on typing", async () => {
+    const user = userEvent.setup();
+    mockServer.use(
+      http.patch("/v1/criteria-sets/:criteriaSetId", () =>
+        HttpResponse.json(
+          { code: "criteria_set_name_taken", message: "SENTINEL", details: { name: "Weekend" } },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderShell("/configure");
+
+    await user.click((await row("Default")).getByRole("button", { name: "Rename" }));
+    const draft = (await row("Default")).getByRole("textbox", { name: /new name for Default/i });
+    await user.clear(draft);
+    await user.type(draft, "Weekend{Enter}");
+
+    await waitFor(() =>
+      expect(draft).toHaveAccessibleDescription("Another criteria set is already called “Weekend”."),
+    );
+    expect(draft).toHaveValue("Weekend");
+    expect(screen.queryByText(/SENTINEL/)).toBeNull();
+    // Said once, beside the field, and not again in the stage's notice.
+    expect(screen.getAllByText(/already called “Weekend”/)).toHaveLength(1);
+
+    await user.type(draft, "s");
+
+    expect(draft).not.toHaveAccessibleDescription(/already called/);
+  });
+
+  /** PL-040: the design's row meta, by name, at the level on screen. */
+  it("names each set's heaviest pillar at the level on screen", async () => {
+    renderShell("/configure");
+
+    expect(await (await row("Default")).findByText("heaviest: Economy 40.0%")).toBeInTheDocument();
+    expect((await row("Remote only")).getByText("heaviest: Transport 100.0%")).toBeInTheDocument();
+  });
+
+  /** PL-041: cut to its slot by the stylesheet, and whole in its title. */
+  it("keeps a long name whole in the row's title", async () => {
+    const long = "B".repeat(60);
+    renderShell("/configure");
+
+    await create(long);
+
+    const name = (await row(long)).getByText(long);
+    expect(name).toHaveAttribute("title", long);
+    expect(name).toHaveClass("set-row__name");
   });
 });

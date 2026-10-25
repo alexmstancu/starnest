@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { fetchCriteriaSets, fetchLevels, type CriteriaSetSummary, type Level } from "../api/endpoints";
+import { fetchCriteriaSets, fetchLevels, type CriteriaSetListItem, type Level } from "../api/endpoints";
 import { combine, map, type Read } from "../api/read";
 import { useRead } from "../api/useRead";
 import {
@@ -25,7 +25,7 @@ import {
 
 export interface Selection {
   levels: Level[];
-  criteriaSets: CriteriaSetSummary[];
+  criteriaSets: CriteriaSetListItem[];
   levelId: string | null;
   criteriaSetId: string | null;
   selectLevel: (levelId: string) => void;
@@ -85,12 +85,12 @@ export interface Selection {
 
 export interface SelectionLists {
   levels: Level[];
-  criteriaSets: CriteriaSetSummary[];
+  criteriaSets: CriteriaSetListItem[];
 }
 
 const SelectionContext = createContext<Selection | null>(null);
 const NO_LEVELS: Level[] = [];
-const NO_SETS: CriteriaSetSummary[] = [];
+const NO_SETS: CriteriaSetListItem[] = [];
 const PENDING: Read<never> = { state: "pending" };
 
 export function SelectionProvider({ children }: { children: ReactNode }) {
@@ -100,7 +100,7 @@ export function SelectionProvider({ children }: { children: ReactNode }) {
   );
   // Never idle: both are always asked for, so the narrowing only satisfies the type.
   const levelsRead: Read<{ items: Level[] }> = levels.read.state === "idle" ? PENDING : levels.read;
-  const setsRead: Read<{ items: CriteriaSetSummary[] }> =
+  const setsRead: Read<{ items: CriteriaSetListItem[] }> =
     criteriaSets.read.state === "idle" ? PENDING : criteriaSets.read;
   // The data, not the read: a re-read makes a new read object around the same data, and only a
   // new answer should move what depends on it.

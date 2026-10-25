@@ -7,6 +7,7 @@ import type { NumberRule } from "../format/typedNumber";
 import { numberRulesFor } from "../routes/configure/criteria/criterionForm";
 import { HOUSEHOLD_RULES } from "../routes/configure/household/householdForm";
 import { SETTING_FIELDS } from "../routes/configure/settings/settingsForm";
+import { SET_NAME_LIMIT } from "../routes/configure/sets/setIdentifier";
 
 /**
  * T28-2 (PL-028). **Each numeric field's bounds on screen are the contract's.** A field refuses
@@ -93,5 +94,14 @@ describe("a numeric field's bounds, against the contract", () => {
     it("an anchor's score: whole, with the floor the server enforces", () => {
       expect(screenBounds(rules.anchorScore)).toEqual(contractBounds(anchor["score"]));
     });
+  });
+});
+
+/** PL-041. A set's name is refused on screen at the length the contract refuses it, not before. */
+describe("a set's name, against the contract", () => {
+  it("is refused past the contract's maxLength", () => {
+    const name = CONTRACT.components.schemas["CriteriaSetName"] as { maxLength?: number };
+
+    expect(SET_NAME_LIMIT).toBe(name.maxLength);
   });
 });

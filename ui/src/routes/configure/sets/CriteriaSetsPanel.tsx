@@ -1,3 +1,5 @@
+import { usePillarNames } from "../../../api/usePillarNames";
+import { formatPercentage, pillarName } from "../../../format/display";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { ReadFailureCard } from "../../../shell/ReadFailureCard";
 import { HeldButton } from "../../../shell/HeldButton";
@@ -27,7 +29,8 @@ import { useSetFocus } from "./useSetFocus";
  * its writes and its history outlive a remount; where focus goes after it is `useSetFocus.ts`.
  */
 export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
-  const { criteriaSets, criteriaSetId, selectCriteriaSet } = useSelection();
+  const { criteriaSets, criteriaSetId, levelId, selectCriteriaSet } = useSelection();
+  const pillarNames = usePillarNames();
   const only = criteriaSets.length === 1;
   const { renameField, newName, buttonId, renameClosed, deleted } = useSetFocus(
     criteriaSets,
@@ -84,6 +87,9 @@ export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
         {criteriaSets.map((set) => {
           const inUse = set.id === criteriaSetId;
           const renaming = form.renaming === set.id;
+          // At the level on screen (PL-040): a set weighs its pillars once per level.
+          const heaviest = set.heaviest_pillars.find((entry) => entry.level === levelId);
+          const problemId = `rename-problem-${set.id}`;
 
           return (
             // Named, so a reader and a test both reach "Default" rather than "the first
@@ -98,6 +104,7 @@ export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
                   ref={renameField}
                   className="set-row__rename"
                   aria-label={`New name for ${set.name}`}
+                  aria-describedby={form.renameProblem === null ? undefined : problemId}
                   value={form.renameDraft}
                   onChange={(event) => form.typeRenameDraft(event.target.value)}
                   onKeyDown={(event) => {
@@ -111,7 +118,19 @@ export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
                   }}
                 />
               ) : (
-                <span className="set-row__name">{set.name}</span>
+                <>
+                  {/* Cut to its slot with an ellipsis, so the verbs keep their place; the title
+                      holds it whole (PL-041). */}
+                  <span className="set-row__name" title={set.name}>
+                    {set.name}
+                  </span>
+                  {heaviest !== undefined && (
+                    <span className="set-row__meta">
+                      heaviest: {pillarName(pillarNames, heaviest.pillar)}{" "}
+                      {formatPercentage(heaviest.weight, 1)}
+                    </span>
+                  )}
+                </>
               )}
 
               {inUse && <span className="chip chip--accent">in use</span>}
@@ -189,6 +208,11 @@ export function CriteriaSetsPanel({ form }: { form: CriteriaSetsForm }) {
                   </>
                 )}
               </span>
+              {renaming && form.renameProblem !== null && (
+                <p id={problemId} className="set-row__problem" role="status">
+                  {form.renameProblem}
+                </p>
+              )}
             </li>
           );
         })}

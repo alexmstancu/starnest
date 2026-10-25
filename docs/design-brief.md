@@ -540,6 +540,14 @@ undo restores the whole snapshot. Ours re-sends the real request, and the server
 weights a move left at 0, so the entry reads "Undo cannot restore the rest of this pillar: this
 change left them all at 0, so undoing it shares their weight out evenly."
 
+**A rename to a name another set has is refused with the reason, beside the field** (PL-036). The
+design's prototype silently cancels such a rename. Names are unique ignoring case and surrounding
+spaces, so the field says "Another criteria set is already called “Remote only”." before anything
+is sent, and a refusal from the server (another tab took the name meanwhile) lands in the same
+place, with the draft kept. A name is at most 60 characters, refused with that reason rather than
+cut as it is typed; a long name is cut with an ellipsis in its row, which holds it whole as its
+title (PL-041). Any name in any script makes a set: "Ελλάδα" is one (PL-039).
+
 ### Acquire
 
 **The acquisition diff keeps a Source column** (C04-N8, PL-060). The design's table is Country ·

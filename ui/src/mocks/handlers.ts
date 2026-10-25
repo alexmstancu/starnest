@@ -334,7 +334,7 @@ export const handlers = [
   http.get(`${BASE}/criteria-sets`, () =>
     HttpResponse.json({
       items: Object.values(criteriaSetDetails)
-        .map(({ id, name }) => ({ id, name }))
+        .map((set) => ({ id: set.id, name: set.name, heaviest_pillars: heaviestPillars(set) }))
         .sort((one, other) => (one.id < other.id ? -1 : 1)),
     }),
   ),
@@ -1804,6 +1804,27 @@ function createFrom(source: CriteriaSet, body: { id: string; name: string }) {
 }
 
 /** Whether a live set other than `except` has this name, ignoring case and surrounding spaces. */
+/**
+ * Each level's heaviest pillar, as the list serves it (PL-040): the largest weight, a tie going to
+ * the lower `display_order`, one entry per level in level order, none for a level weighing nothing.
+ */
+function heaviestPillars(set: CriteriaSet) {
+  const order = (pillar: string) =>
+    PILLARS.find((each) => each.id === pillar)?.display_order ?? Number.MAX_SAFE_INTEGER;
+  const heaviest = new Map<string, { level: string; pillar: string; weight: number }>();
+  for (const { level, pillar, weight } of set.pillar_weights ?? []) {
+    const held = heaviest.get(level);
+    if (
+      held === undefined ||
+      weight > held.weight ||
+      (weight === held.weight && order(pillar) < order(held.pillar))
+    ) {
+      heaviest.set(level, { level, pillar, weight });
+    }
+  }
+  return [...heaviest.values()].sort((one, other) => (one.level < other.level ? -1 : 1));
+}
+
 function nameTaken(name: string, except?: string): boolean {
   const wanted = name.trim().toLowerCase();
   return Object.values(criteriaSetDetails).some(

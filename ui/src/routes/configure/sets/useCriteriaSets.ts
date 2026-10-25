@@ -19,6 +19,7 @@
 
 import { useEffect, useState } from "react";
 import { ApiError, CLIENT_ERROR_CODES, isApiError } from "../../../api/ApiError";
+import { presentError } from "../../../api/errorPresentation";
 import {
   createCriteriaSet,
   deleteCriteriaSet,
@@ -37,7 +38,7 @@ import {
   UnconfirmedWrite,
 } from "../unknownOutcome";
 import type { ChangeHistory, RecordedChange } from "../useChangeHistory";
-import { copyName, identifierFrom, ownIdentifier } from "./setIdentifier";
+import { copyName, nameRefusal, ownIdentifier } from "./setIdentifier";
 
 /** A set verb's entry in Recent changes, before the history stamps it. */
 type SetEntry = Omit<RecordedChange, "id" | "at">;
@@ -61,6 +62,11 @@ export interface CriteriaSetsForm {
   /** A press of Create set was refused, so the reason is said rather than only implied. */
   createRefused: boolean;
   canSaveRename: boolean;
+  /**
+   * Why the rename cannot be saved, beside its field (PL-036): a name another set has, or one too
+   * long -- said before anything is sent -- or the server's refusal, with the draft kept.
+   */
+  renameProblem: string | null;
   typeNewName: (value: string) => void;
   typeRenameDraft: (value: string) => void;
   beginRename: (criteriaSetId: string, currentName: string) => void;
@@ -137,6 +143,7 @@ export function useCriteriaSets(options: {
   const [newName, setNewName] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [renameFailure, setRenameFailure] = useState<unknown>(null);
   // **A rename ends with its set** (PL-033): an undo or another tab can take the set away with
   // the field open, and a field kept open in state would reopen if the set came back. Adjusted
   // while rendering, as React advises for state that follows a prop.
@@ -147,6 +154,14 @@ export function useCriteriaSets(options: {
   const [failure, setFailure] = useState<unknown>(null);
   const [createRefused, setCreateRefused] = useState(false);
   const createRefusal = refusalOf(newName, names);
+  // Measured against the other sets only: a set may keep its own name, in another case too.
+  const renameRefusal =
+    renaming === null || renameDraft.trim() === ""
+      ? null
+      : nameRefusal(
+          renameDraft,
+          selection.criteriaSets.filter((set) => set.id !== renaming).map((set) => set.name),
+        );
   const held = history.busy || !listSettled;
 
   /**
@@ -167,6 +182,8 @@ export function useCriteriaSets(options: {
     /** Its entry; `confirmed` false when it is listed unconfirmed, and so on its own. */
     entry: (confirmed: boolean) => SetEntry,
     landed: (answer: Answer) => void = () => undefined,
+    /** Where a refusal is shown: the stage's notice, unless the verb has a field of its own. */
+    refused: (error: unknown) => void = setFailure,
   ): Promise<boolean> {
     if (!listSettled) return false;
     const done = history.begin(criteriaSetId);
@@ -177,7 +194,7 @@ export function useCriteriaSets(options: {
       history.note(entry(true));
     } catch (error) {
       if (!(error instanceof UnconfirmedWrite)) {
-        setFailure(error);
+        refused(error);
         return false;
       }
       // Confirmed later, the list is read again so the rows show what the server holds.
@@ -197,23 +214,32 @@ export function useCriteriaSets(options: {
     busy: held,
     createRefusal,
     createRefused,
-    canSaveRename: renameDraft.trim() !== "",
+    canSaveRename: renameDraft.trim() !== "" && renameRefusal === null,
+    renameProblem:
+      renameFailure !== null ? presentError(renameFailure).message : renameRefusal,
     typeNewName: (value) => {
       setNewName(value);
       setCreateRefused(false);
     },
-    typeRenameDraft: setRenameDraft,
+    // Typing is answering the refusal, so the refusal goes (D8).
+    typeRenameDraft: (value) => {
+      setRenameDraft(value);
+      setRenameFailure(null);
+    },
     beginRename: (criteriaSetId, currentName) => {
       setRenaming(criteriaSetId);
       setRenameDraft(currentName);
+      setRenameFailure(null);
     },
     cancelRename: () => {
       setRenaming(null);
       setRenameDraft("");
+      setRenameFailure(null);
     },
     saveRename: async () => {
       const target = renaming;
-      if (target === null || renameDraft.trim() === "") return;
+      if (target === null || renameDraft.trim() === "" || renameRefusal !== null) return;
+      setRenameFailure(null);
       const name = renameDraft.trim();
       const was = nameOf(target);
       const targetKey = `criteria-set:${target}:renamed`;
@@ -241,6 +267,9 @@ export function useCriteriaSets(options: {
           },
           undoes: { criteriaSetId: target, by: "write" },
         }),
+        undefined,
+        // Beside the field it answers, with the draft kept to correct (PL-036).
+        setRenameFailure,
       );
       if (sent) {
         setRenaming(null);
@@ -364,12 +393,10 @@ async function setNow(criteriaSetId: string, signal: AbortSignal): Promise<Crite
 }
 
 /**
- * Why a name cannot make a set, said before anything is sent. A presentational guard: the server
- * still refuses an identifier something already holds.
+ * Why a name cannot make a set, said before anything is sent. **Any name not blank, not taken and
+ * not too long makes one** (PL-039), in any script: the identifier is derived to suit the catalog.
  */
 function refusalOf(name: string, taken: readonly string[]): string | null {
-  if (identifierFrom(name) === "") return "Give the new set a name first.";
-  const wanted = name.trim().toLowerCase();
-  const clash = taken.find((each) => each.trim().toLowerCase() === wanted);
-  return clash === undefined ? null : `A set called ${clash} already exists.`;
+  if (name.trim() === "") return "Give the new set a name first.";
+  return nameRefusal(name, taken);
 }
