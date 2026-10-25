@@ -1049,6 +1049,24 @@ describe("the mock's gate answer", () => {
     expect([error.status, error.code]).toEqual([422, "invalid_request"]);
   });
 
+  it("names every cited page that is not a full web address, before it looks for the gate", async () => {
+    const error = await refusalOf("no_such_gate", "country.portugal", {
+      ...AN_ANSWER,
+      citations: ["https://example.com/page", "javascript:alert(1)", "example.com"],
+    });
+
+    expect([error.status, error.code]).toEqual([422, "invalid_request"]);
+    expect(
+      (error.details?.["errors"] as { location: string[]; kind: string }[]).map((problem) => [
+        problem.location,
+        problem.kind,
+      ]),
+    ).toEqual([
+      [["body", "citations", "1"], "string_pattern_mismatch"],
+      [["body", "citations", "2"], "string_pattern_mismatch"],
+    ]);
+  });
+
   it("refuses an unknown gate, then an unknown candidate, with 404", async () => {
     const gate = await refusalOf("no_such_gate", "country.atlantis", AN_ANSWER);
     const candidate = await refusalOf("country.uk_skilled_worker", "country.atlantis", AN_ANSWER);

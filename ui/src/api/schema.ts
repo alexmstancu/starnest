@@ -1387,7 +1387,7 @@ export interface components {
             retrieval_date?: string;
             /** @description An override is audited: the server records the moment it was given as override_date. */
             override_reason?: string | null;
-            /** @description The pages the answer was read from. Replaces the previous answer's pages. */
+            /** @description The pages the answer was read from. Replaces the previous answer's pages. Each is a full web address, http or https, kept exactly as typed, as a typed figure's citations are: anything else is a page nobody can follow, and is refused with 422 invalid_request naming its index (PL-152). */
             citations?: string[];
         };
         MatchRuleResult: components["schemas"]["MatchRuleResultInput"] & {
@@ -2655,7 +2655,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         proposals: components["schemas"]["MatchRuleResult"][];
-                        /** @description Gates asked whose answer was not stored: the model cited nothing (or could not be reached), or a person answered the gate while the pass ran (NEW-63). Each line names the gate and the candidate as the catalog names them, never by id (PL-150), and gives its reason. */
+                        /** @description Gates asked whose answer was not stored: the model cited nothing (or could not be reached), or a person answered the gate while the pass ran (NEW-63). A page the model returned that is not a full web address is dropped rather than stored (PL-152); an answer left with no page is refused here, saying how many were dropped. Each line names the gate and the candidate as the catalog names them, never by id (PL-150), and gives its reason. */
                         refusals?: string[];
                         cost_eur: number;
                         calls: number;

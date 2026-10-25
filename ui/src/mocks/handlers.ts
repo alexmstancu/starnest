@@ -1648,7 +1648,7 @@ function refusedFields(body: object, bounds: readonly FieldBound[]): FieldProble
 }
 
 /**
- * `api/values.py`'s `WEB_ADDRESS`, character for character: a citation typed by hand must be a
+ * `data/web_address.py`'s `WEB_ADDRESS`, character for character: a citation typed by hand must be a
  * full http or https address, and the refusal quotes the pattern as Pydantic does.
  */
 const WEB_ADDRESS_PATTERN = "^[Hh][Tt][Tt][Pp][Ss]?://[^\\s/?#]+[^\\s]*$";
@@ -1844,6 +1844,17 @@ function refusedGateAnswer(
       kind: "string_too_short",
     });
   }
+  // A page cited for an answer is a full web address, as a hand-typed figure's citation is
+  // (`data/web_address.py`): every one that is not is named, located at its index.
+  (body.citations ?? []).forEach((citation, index) => {
+    if (!WEB_ADDRESS.test(citation)) {
+      problems.push({
+        location: ["body", "citations", String(index)],
+        problem: `String should match pattern '${WEB_ADDRESS_PATTERN}'`,
+        kind: "string_pattern_mismatch",
+      });
+    }
+  });
   if (problems.length > 0) return HttpResponse.json(invalidRequest(...problems), { status: 422 });
   const rule = MATCH_RULES.find((each) => each.id === pair.match_rule);
   if (!rule) return notFound(pair.match_rule);
