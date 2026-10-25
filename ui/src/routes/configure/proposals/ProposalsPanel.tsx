@@ -242,7 +242,23 @@ export function ProposalsPanel({
       >
         {() => (
         <>
-          {proposals.proposals.length === 0 ? (
+          {/* **Unknown is not this level's** (PL-151): until the candidates are read, nothing
+              says which level a proposal is about, so none is listed or confirmable yet. */}
+          {proposals.levels === "pending" && (
+            <p className="screen__note">Reading which level each proposal is about…</p>
+          )}
+          {proposals.levels === "failed" && (
+            <div className="rule-form__actions">
+              <p className="screen__note">
+                The candidates could not be read, so which level each proposal
+                is about is not known: every level&apos;s proposals are listed.
+              </p>
+              <button type="button" className="button" onClick={proposals.rereadLevels}>
+                Read the candidates again
+              </button>
+            </div>
+          )}
+          {proposals.levels === "pending" ? null : proposals.proposals.length === 0 ? (
             <p className="screen__note">
               No proposal is waiting. {proposals.confirmedCount} gate answers
               have been recorded by hand.

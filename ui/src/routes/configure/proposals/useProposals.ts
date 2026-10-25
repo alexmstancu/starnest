@@ -8,7 +8,7 @@ import {
   type ResearchPlan,
 } from "../../../api/endpoints";
 import type { Read } from "../../../api/read";
-import { useCandidateRoster } from "../../../api/useCandidateRoster";
+import { useCandidateRosterState } from "../../../api/useCandidateRoster";
 import { useRead } from "../../../api/useRead";
 
 /**
@@ -33,6 +33,14 @@ import { useRead } from "../../../api/useRead";
 export interface Proposals {
   /** The answers' read: the list region draws it, kept on screen while it is read again. */
   read: Read<{ items: MatchRuleResult[] }>;
+  /**
+   * Whether the candidates that place each answer at a level have been read. **`pending` lists
+   * nothing**: until the roster arrives no answer is known to be this level's. `failed` lists
+   * every level's, hiding nothing, and the panel says so.
+   */
+  levels: "pending" | "ready" | "failed";
+  /** Reads the candidates again, after they failed. */
+  rereadLevels: () => void;
   /** The unconfirmed answers, which are the only ones this panel acts on. */
   proposals: MatchRuleResult[];
   /** How many answers a person has already settled, for context beside the proposals. */
@@ -107,10 +115,14 @@ export function useProposals(
   // from the moment the answers are written again they are outdated: `useRead` marks the read
   // `refresh: "running"` in the same render the freshness moves, before the re-read is even
   // sent. A re-read that failed leaves them outdated too.
-  const roster = useCandidateRoster();
+  const roster = useCandidateRosterState();
+  const levels = LEVELS_READ[roster.status];
   const answers = useMemo(
-    () => atLevel(read.state === "ready" ? read.data.items : [], roster, level),
-    [read, roster, level],
+    () =>
+      read.state === "ready" && levels !== "pending"
+        ? atLevel(read.data.items, roster.roster, level)
+        : [],
+    [read, levels, roster.roster, level],
   );
   const stale = read.state === "ready" && read.refresh !== "idle";
 
@@ -132,6 +144,8 @@ export function useProposals(
 
   return {
     read,
+    levels,
+    rereadLevels: roster.reload,
     proposals: answers.filter((answer) => answer.is_proposal === true),
     confirmedCount: answers.filter((answer) => answer.is_proposal !== true)
       .length,
@@ -187,6 +201,8 @@ export function useProposals(
 
 const PENDING: Read<never> = { state: "pending" };
 
+const LEVELS_READ = { loading: "pending", ready: "ready", error: "failed" } as const;
+
 /** An estimate as the panel shows it: the plan, and the cap a pass would halt at. */
 interface Estimate {
   plan: ResearchPlan;
@@ -196,7 +212,8 @@ interface Estimate {
 /**
  * The answers about candidates at this level (PL-151). The answers are read for every level,
  * and a candidate's level is the roster's to say -- never read off its id. **One the roster does
- * not place is kept**, so a roster that failed to load hides nothing.
+ * not place is kept**, so a roster that failed to load hides nothing. Never called while the
+ * roster is still read, when it places nobody yet.
  */
 function atLevel(
   answers: readonly MatchRuleResult[],

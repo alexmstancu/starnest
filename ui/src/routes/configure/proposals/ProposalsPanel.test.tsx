@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { replaceSettings } from "../../../api/endpoints";
-import { SETTINGS } from "../../../mocks/fixtures";
+import { MATCH_RULE_RESULTS, SETTINGS } from "../../../mocks/fixtures";
 import { mockServer } from "../../../mocks/server";
 import {
   expectHeld,
@@ -37,6 +37,17 @@ const PROPOSED_FOR = "Portugal";
 const CONFIRM_PROPOSED = `Confirm ${PROPOSED_GATE} for ${PROPOSED_FOR}`;
 const PROPOSED_GATE_ID = "country.visa_route_exists";
 const PROPOSED_FOR_ID = "country.portugal";
+/** A proposal about a city, which the country level's panel never lists as its own. */
+const A_CITY_PROPOSAL = {
+  match_rule: "not_manually_excluded",
+  candidate: "city.lisbon",
+  match_result: "matching",
+  data_source: "llm",
+  retrieval_date: "2026-09-12T09:00:00Z",
+  citations: ["https://example.gov/lisbon"],
+  is_proposal: true,
+};
+const LEVELS_BEING_READ = "Reading which level each proposal is about…";
 
 /**
  * How a pass over the mock's five gates ends when nothing interrupts it: three of them are gates
@@ -172,6 +183,79 @@ describe("what the panel shows", () => {
     expect(
       await theProposals().findByRole("row", { name: new RegExp(PROPOSED_FOR) }),
     ).toBeInTheDocument();
+  });
+
+  /**
+   * The roster and the answers are read in parallel, and until the roster arrives no candidate
+   * is placed at a level: a proposal about another level's candidate must not be listed, with a
+   * live Confirm, as this level's in the meantime.
+   */
+  it("lists no proposal as this level's while the candidates that place it are still read", async () => {
+    mockServer.use(
+      http.get(`${BASE}/match-rule-results`, () =>
+        HttpResponse.json({ items: [...MATCH_RULE_RESULTS, A_CITY_PROPOSAL] }),
+      ),
+    );
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockServer.use(
+      http.get(`${BASE}/candidates`, async () => {
+        await held;
+        return undefined;
+      }),
+    );
+    renderShell("/configure");
+    await screen.findByRole("region", { name: "Gate proposals" });
+
+    expect(
+      await theProposals().findByText(LEVELS_BEING_READ),
+    ).toBeInTheDocument();
+    expect(theProposals().queryByRole("button", { name: /^Confirm/ })).toBeNull();
+    expect(theProposals().queryByRole("row", { name: /lisbon/i })).toBeNull();
+    expect(theProposals().queryByText(/recorded by hand/i)).toBeNull();
+
+    release();
+
+    expect(
+      await theProposals().findByRole("button", { name: CONFIRM_PROPOSED }),
+    ).toBeInTheDocument();
+    expect(theProposals().queryByText(LEVELS_BEING_READ)).toBeNull();
+    expect(theProposals().queryByRole("row", { name: /lisbon/i })).toBeNull();
+  });
+
+  it("lists every level's proposals when the candidates cannot be read, says so, and reads them again", async () => {
+    const candidates = { down: true };
+    mockServer.use(
+      http.get(`${BASE}/match-rule-results`, () =>
+        HttpResponse.json({ items: [...MATCH_RULE_RESULTS, A_CITY_PROPOSAL] }),
+      ),
+      http.get(`${BASE}/candidates`, () =>
+        candidates.down
+          ? HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 })
+          : undefined,
+      ),
+    );
+    renderShell("/configure");
+    await screen.findByRole("region", { name: "Gate proposals" });
+
+    expect(
+      await theProposals().findByText(
+        "The candidates could not be read, so which level each proposal is about is not known: every level's proposals are listed.",
+      ),
+    ).toBeInTheDocument();
+    expect(theProposals().getByRole("row", { name: /lisbon/i })).toBeInTheDocument();
+    candidates.down = false;
+
+    await userEvent.click(
+      theProposals().getByRole("button", { name: "Read the candidates again" }),
+    );
+
+    await waitFor(() =>
+      expect(theProposals().queryByRole("row", { name: /lisbon/i })).toBeNull(),
+    );
+    expect(theProposals().getByRole("row", { name: new RegExp(PROPOSED_FOR) })).toBeInTheDocument();
   });
 
   it("prints a page that is not a web address as text, never as a link", async () => {
