@@ -131,6 +131,12 @@ class Citizenship:
         rule = self.gates.get(gate)
         return rule is not None and rule.is_cleared_for(self.candidate, self.held)
 
+    def asks(self, gate: str) -> bool:
+        """Whether the gate is a question about this candidate. A gate the catalog was not
+        handed is taken to ask, as before the catalog said whom a gate concerns."""
+        rule = self.gates.get(gate)
+        return rule is None or rule.concerns(self.candidate)
+
     def refuses(self, gate: str) -> bool:
         rule = self.gates.get(gate)
         return (
@@ -364,7 +370,8 @@ def _gates_failed(
     citizenship: Citizenship,
 ) -> tuple[_GateFailure, ...]:
     """Each of these gates the candidate fails, in the order given, with why in words: by the
-    household's citizenships where they decide it, by its recorded answer otherwise."""
+    household's citizenships where they decide it, by its recorded answer otherwise -- and only
+    where the gate asks about this candidate."""
     failed = {
         answer.match_rule: answer
         for answer in answers
@@ -377,7 +384,8 @@ def _gates_failed(
         if citizenship.refuses(str(rule)):
             held = tuple(sorted(citizenship.held))
             failures.append((rule, None, _not_cleared(str(rule), held, names), held))
-        elif rule in failed:
+        elif rule in failed and citizenship.asks(str(rule)):
+            # An answer about a candidate the gate does not ask decides nothing (Q239).
             detail = (
                 failed[rule].reason
                 or f"{gate_called(names, str(rule))} answered not matching, with no reason recorded"

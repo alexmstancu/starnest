@@ -933,3 +933,25 @@ class TestACitizenshipScopedToAPlace:
         (refusal,) = refused_by("eu_free_movement", GERMANY, UNITED_KINGDOM)
 
         assert refusal.citizenships == (UNITED_KINGDOM,)
+
+
+class TestAnAnswerAboutACandidateTheGateDoesNotAsk:
+    """A recorded answer decides nothing where the catalog says the gate does not ask: free
+    movement concerns the EU and EEA states, so an answer about the UK is not one of its."""
+
+    def test_it_rules_nothing_out_for_that_country_s_own_citizens(self) -> None:
+        stray = a_refusal_of("eu_free_movement", UNITED_KINGDOM)
+
+        assert refused_by("eu_free_movement", UNITED_KINGDOM, UNITED_KINGDOM, answers=[stray]) == ()
+
+    def test_it_rules_nothing_out_with_no_household_either(self) -> None:
+        stray = a_refusal_of("eu_free_movement", UNITED_KINGDOM)
+
+        assert refused_by("eu_free_movement", UNITED_KINGDOM, answers=[stray]) == ()
+
+    def test_an_answer_about_a_candidate_the_gate_asks_still_rules_out(self) -> None:
+        recorded = a_refusal_of("uk_skilled_worker", UNITED_KINGDOM)
+
+        (refusal,) = refused_by("uk_skilled_worker", UNITED_KINGDOM, ROMANIA, answers=[recorded])
+
+        assert refusal.gate_answer == recorded
