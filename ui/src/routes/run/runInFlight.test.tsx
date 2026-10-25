@@ -18,6 +18,14 @@ import { useRunScreen } from "./useRunScreen";
 
 const BASE = "/v1";
 
+function heldAnswer(): { held: Promise<void>; release: () => void } {
+  let release = (): void => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { held, release };
+}
+
 function detailOf(runId: number, over: Partial<RunDetail> = {}): RunDetail {
   return { ...STARTED_RUN_DETAIL, id: runId, ...over };
 }
@@ -131,6 +139,53 @@ describe("a start refused as in flight", () => {
 
     expect(await screen.findByRole("region", { name: /acquisition 9/i })).toBeInTheDocument();
     expect(screen.queryByText(/the start did not go through/i)).toBeNull();
+  });
+
+  /** Review finding 5: the refusal goes with the press, and focus must not fall to the page. */
+  async function aRefusalNamingRun9(read: () => Promise<Response>) {
+    refuseStarts({ run: 9 });
+    mockServer.use(http.get(`${BASE}/data-acquisition-runs/9`, read));
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+    await estimateEverything();
+    await userEvent.click(await screen.findByRole("button", { name: /yes, start it/i }));
+    return within(
+      (await screen.findByText(/the start did not go through/i)).closest<HTMLElement>(
+        '[role="alert"]',
+      )!,
+    );
+  }
+
+  it("keeps focus on the screen while the run it names is read, then takes it to that run", async () => {
+    const read = heldAnswer();
+    const refusal = await aRefusalNamingRun9(async () => {
+      await read.held;
+      return HttpResponse.json(detailOf(9, { run_status: "running", finished_at: null }));
+    });
+
+    await userEvent.click(refusal.getByRole("button", { name: "Open acquisition 9" }));
+
+    expect(document.activeElement).not.toBe(document.body);
+    read.release();
+    const card = await screen.findByRole("region", { name: /acquisition 9/i });
+    await waitFor(() => expect(card).toContainElement(document.activeElement as HTMLElement));
+  });
+
+  it("keeps focus on the screen when reading the run it names fails", async () => {
+    const refusal = await aRefusalNamingRun9(async () =>
+      HttpResponse.json({ code: "internal_error", message: "run 9 could not be read" }, { status: 500 }),
+    );
+
+    await userEvent.click(refusal.getByRole("button", { name: "Open acquisition 9" }));
+
+    const failed = within(
+      (await screen.findByText("Reading acquisition 9 did not go through")).closest<HTMLElement>(
+        '[role="alert"]',
+      )!,
+    );
+    expect(document.activeElement).not.toBe(document.body);
+    await userEvent.click(failed.getByRole("button", { name: "Dismiss" }));
+    expect(document.activeElement).not.toBe(document.body);
   });
 
   /** The run ended between the refusal and the read that names it: Dismiss alone (P1-14). */

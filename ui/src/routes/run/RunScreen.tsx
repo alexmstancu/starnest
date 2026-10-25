@@ -17,6 +17,7 @@ import {
 import type { RouteDefinition } from "../../navigation/routes";
 import { EmptyCard, UnlessNothingStored } from "../../shell/EmptyCard";
 import { LoadedRegion } from "../../shell/LoadedRegion";
+import { refocusIfLost } from "../../shell/focusReturn";
 import { RefusalNotice } from "../../shell/RefusalNotice";
 import { describeRunStatus } from "../../shell/runStatus";
 import { RunStatusChip } from "../../shell/RunStatusChip";
@@ -148,7 +149,7 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
   return (
     <section className="screen screen--acquire" aria-labelledby="screen-heading">
       <header className="screen__header">
-        <h1 id="screen-heading" className="screen__heading">
+        <h1 id="screen-heading" tabIndex={-1} className="screen__heading">
           {route.label}
         </h1>
         <p className="screen__summary">
@@ -587,9 +588,20 @@ function OpenTheRunGoing({
   held: boolean;
   onOpen: (runId: number) => void;
 }) {
+  const button = useRef<HTMLButtonElement>(null);
   if (runId === null) return null;
+  // **It takes itself away** -- the refusal it sits in is cleared, the armed strip put away -- so
+  // once the screen has drawn that, focus lost goes to the screen's heading, and from there to the
+  // card the read brings (PL-126); a failed read's refusal captures the heading, never the page.
+  const open = () => {
+    const heading = button.current
+      ?.closest(".screen")
+      ?.querySelector<HTMLElement>(".screen__heading");
+    onOpen(runId);
+    queueMicrotask(() => refocusIfLost(heading));
+  };
   return (
-    <HeldButton className="link-button" held={held} onClick={() => onOpen(runId)}>
+    <HeldButton ref={button} className="link-button" held={held} onClick={open}>
       Open acquisition {runId}
     </HeldButton>
   );
