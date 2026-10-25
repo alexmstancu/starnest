@@ -4,7 +4,7 @@ import { ComparisonMatrix } from "./ComparisonMatrix";
 import { ViewChoices } from "./ViewChoices";
 import type { Measure } from "./pillarMatrix";
 import { droppedByLimit, withinLimit } from "./comparatorLimit";
-import { requestFor, type ComparisonRequest } from "./comparisonRequest";
+import { asksTheSame, requestFor, type ComparisonRequest } from "./comparisonRequest";
 import { pillarPriority, pillarWeightsAt } from "./ordering";
 import { StatusChip } from "./StatusChip";
 import {
@@ -25,6 +25,7 @@ import { LoadedRegion } from "../../shell/LoadedRegion";
 import { NothingSelected } from "../../shell/NothingSelected";
 import { SCORE_SCALE_NOT_SET } from "../../shell/refusalRemedy";
 import { NO_COMPARATOR_LIMIT, UnsetSetting } from "../../shell/UnsetSetting";
+import { useFocusWhenLost } from "../../shell/useFocusWhenLost";
 import { type SelectionLists, useSelection } from "../../shell/SelectionContext";
 
 /**
@@ -134,17 +135,19 @@ function TheComparison({
   }
 
   // **No score range, nothing to compare** (PL-005): known from the settings before anything
-  // is picked, and from the comparison's refusal when the range was cleared meanwhile.
-  const unsetScale =
-    settings.read.state === "ready" && settings.read.data.score_scale_max === null
-      ? UNSET_SCORE_RANGE
-      : comparison.read.state === "failed" &&
-          hasErrorCode(comparison.read.error, "score_scale_not_set")
-        ? comparison.read.error
-        : null;
-  if (unsetScale !== null) {
-    return <UnsetSetting error={unsetScale} title="Nothing to compare" detail={UNSET_DETAIL} />;
+  // is picked, and from the comparison's refusal -- first read or read again -- when the range
+  // was cleared meanwhile.
+  const comparisonFailure = failureOf(comparison.read);
+  const refusedForTheRange =
+    comparisonFailure !== null && hasErrorCode(comparisonFailure, "score_scale_not_set");
+  if (settings.read.state === "ready" && settings.read.data.score_scale_max === null) {
+    return <NothingToCompare error={UNSET_SCORE_RANGE} replacing={false} />;
   }
+  if (refusedForTheRange) return <NothingToCompare error={comparisonFailure} replacing />;
+
+  // The comparison's own failure, or the weights' if it is theirs: Try again reads what failed.
+  const weights = map(asRead(criteriaSet.read), (set) => pillarWeightsAt(set, levelId));
+  const weightsFailed = weights.state === "failed";
 
   return (
     <>
@@ -193,7 +196,10 @@ function TheComparison({
                   : [...chosen, candidate],
               )
             }
-            onCompare={setAsked}
+            onCompare={(request) => {
+              if (asksTheSame(request, asked)) void comparison.reload();
+              else setAsked(request);
+            }}
           />
           )
         }
@@ -210,13 +216,10 @@ function TheComparison({
       )}
       {(comparison.read.state === "pending" || comparison.read.state === "ready") && (
         <LoadedRegion
-          read={combine(
-            comparison.read,
-            map(asRead(criteriaSet.read), (set) => pillarWeightsAt(set, levelId)),
-          )}
-          what="The criteria set's weights"
+          read={combine(comparison.read, weights)}
+          what={weightsFailed ? "The criteria set's weights" : "The comparison"}
           skeleton="rank-table"
-          onRetry={criteriaSet.reload}
+          onRetry={weightsFailed ? criteriaSet.reload : comparison.reload}
         >
           {([drawn, pillarWeights]) => (
             <ComparisonTable
@@ -230,6 +233,26 @@ function TheComparison({
       )}
     </>
   );
+}
+
+/**
+ * "Nothing to compare", in place of the whole comparison. **When it replaces the Compare the
+ * reader pressed** it takes the focus that button had, rather than leaving it on the page.
+ */
+function NothingToCompare({ error, replacing }: { error: unknown; replacing: boolean }) {
+  const notice = useFocusWhenLost<HTMLDivElement>(replacing);
+  return (
+    <div ref={notice} tabIndex={-1}>
+      <UnsetSetting error={error} title="Nothing to compare" detail={UNSET_DETAIL} />
+    </div>
+  );
+}
+
+/** Why a read did not answer: its first read failed, or a read of it again did. */
+function failureOf(read: Read<unknown> | Idle): unknown {
+  if (read.state === "failed") return read.error;
+  if (read.state === "ready" && typeof read.refresh === "object") return read.refresh.failed;
+  return null;
 }
 
 /**

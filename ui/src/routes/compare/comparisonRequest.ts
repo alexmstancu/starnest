@@ -19,3 +19,19 @@ export function requestFor(
   if (focus === null || focus === "" || comparators.length === 0) return null;
   return { focus, comparators: [...comparators] };
 }
+
+/**
+ * Whether pressing Compare asks for what is already asked: the same resource, read again, which
+ * keeps the comparison on screen while it is (PL-010), rather than another one.
+ */
+export function asksTheSame(
+  request: ComparisonRequest,
+  asked: ComparisonRequest | null,
+): boolean {
+  return (
+    asked !== null &&
+    request.focus === asked.focus &&
+    request.comparators.length === asked.comparators.length &&
+    request.comparators.every((comparator, at) => comparator === asked.comparators[at])
+  );
+}

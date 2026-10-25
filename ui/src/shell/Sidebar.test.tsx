@@ -85,6 +85,28 @@ describe("PL-005: the candidates card while the score range is unset", () => {
     expect(figure(/^candidates$/i, "Total")).toHaveTextContent(String(COUNTRY_CANDIDATES.length));
   });
 
+  /**
+   * From review. Try again on counts that could not be refreshed held focus in their region,
+   * and the reason that replaced the region took it away: focus fell to the page.
+   */
+  it("keeps focus on the reason when a retry is refused for an unset range", async () => {
+    renderShell("/acquire");
+    const counts = within(await screen.findByRole("region", { name: /^candidates$/i }));
+    await counts.findByText("Matching");
+    mockServer.use(http.get(`${BASE}/rankings`, () => new HttpResponse(null, { status: 503 })));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("link", { name: "Compare" }));
+    const retry = await counts.findByRole("button", { name: /try again/i });
+
+    mockServer.resetHandlers();
+    await replaceSettings({ ...SETTINGS, score_scale_max: null });
+    await user.click(retry);
+
+    const reason = await counts.findByText(/depend on a score/i);
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(document.activeElement).toBe(reason);
+  });
+
   it("says the set cannot be ranked, in words, when the server says so", async () => {
     refuse("/rankings", "cannot_be_ranked", 409);
     renderShell("/acquire");

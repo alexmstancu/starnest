@@ -36,6 +36,7 @@ import { useSelection } from "./SelectionContext";
 import { Skeleton } from "./Skeleton";
 import { levelsWithCandidates, noRankingBecause } from "./candidateCounts";
 import { useScreenChanges } from "./useScreenChanges";
+import { useFocusWhenLost } from "./useFocusWhenLost";
 import { useShellSummary, type ShellSummary } from "./useShellSummary";
 
 /**
@@ -374,7 +375,7 @@ function MatchCountsRegion({
         : null;
   const unranked = noRankingBecause(failure);
   if (unranked !== null) {
-    return <p className="sidebar__note sidebar__note--warning">{unranked}</p>;
+    return <NoRankingNote reason={unranked} replacing={counts.state === "ready"} />;
   }
 
   return (
@@ -399,6 +400,19 @@ function MatchCountsRegion({
         </dl>
       )}
     </LoadedRegion>
+  );
+}
+
+/**
+ * Why there are no counts. **When it replaces counts that were shown** -- a Try again refused
+ * for an unset range -- it takes the focus their region held, rather than leaving it on the page.
+ */
+function NoRankingNote({ reason, replacing }: { reason: string; replacing: boolean }) {
+  const note = useFocusWhenLost<HTMLParagraphElement>(replacing);
+  return (
+    <p ref={note} tabIndex={-1} className="sidebar__note sidebar__note--warning">
+      {reason}
+    </p>
   );
 }
 

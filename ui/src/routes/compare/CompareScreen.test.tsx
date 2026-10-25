@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { HttpResponse, delay, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { replaceSettings } from "../../api/endpoints";
 import type { components } from "../../api/schema";
@@ -1406,5 +1406,123 @@ describe("a small gap", () => {
 
     const row = screen.getByRole("row", { name: /cost of living/i });
     expect(within(row).getByText("+0.03")).toBeInTheDocument();
+  });
+});
+
+/** The Compare screen's own region. */
+function compareRegion(): HTMLElement {
+  return screen.getByRole("region", { name: "Compare" });
+}
+
+describe("PL-010: a comparison asked for again", () => {
+  /** Answers the first comparison at once and holds every later one until `release`. */
+  function holdLaterComparisons(): { release: (answer?: Response) => void } {
+    let answered = 0;
+    let release: (answer?: Response) => void = () => {};
+    const held = new Promise<Response | undefined>((resolve) => {
+      release = resolve;
+    });
+    mockServer.use(
+      http.get(`${BASE}/comparisons`, async () => {
+        answered += 1;
+        return answered > 1 ? held : undefined;
+      }),
+    );
+    return { release };
+  }
+
+  it("keeps the table on screen, marked busy, while the same comparison is read again", async () => {
+    const later = holdLaterComparisons();
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+    const table = await screen.findByRole("table", { name: /every pillar/i });
+
+    await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
+
+    await waitFor(() => expect(table.closest("[aria-busy]")).toHaveAttribute("aria-busy", "true"));
+    expect(table).toBeInTheDocument();
+    later.release();
+    await waitFor(() => expect(table.closest("[aria-busy]")).toHaveAttribute("aria-busy", "false"));
+  });
+
+  it("keeps it marked could not be refreshed when the read fails, and Try again reads it", async () => {
+    const later = holdLaterComparisons();
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+    await screen.findByRole("table", { name: /every pillar/i });
+
+    await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
+    later.release(HttpResponse.error());
+
+    const region = within(compareRegion());
+    expect(await region.findByText(/comparison could not be refreshed/i)).toBeInTheDocument();
+    expect(region.getByRole("table", { name: /every pillar/i })).toBeInTheDocument();
+
+    mockServer.resetHandlers();
+    await userEvent.click(region.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(region.queryByText(/could not be refreshed/i)).toBeNull());
+    expect(region.getByRole("table", { name: /every pillar/i })).toBeInTheDocument();
+  });
+});
+
+/**
+ * A server that answered and failed. **Not a network error**: a server that did not answer is
+ * said once by the shell's card and read again by itself (PL-002), which is another test.
+ */
+function serverFault(): Response {
+  return HttpResponse.json({ code: "internal_error", message: "The server failed." }, { status: 500 });
+}
+
+describe("Try again reads what failed", () => {
+  it("reads the comparison again after it failed", async () => {
+    mockServer.use(http.get(`${BASE}/comparisons`, () => serverFault()));
+    renderShell("/compare");
+    await compare("Portugal", "Netherlands");
+    const failure = await within(compareRegion()).findByRole("alert");
+
+    mockServer.resetHandlers();
+    await userEvent.click(within(failure).getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByRole("table", { name: /every pillar/i })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["the roster", `${BASE}/candidates`],
+    ["the settings", `${BASE}/settings`],
+  ])("reads %s again after it failed, and draws the picker", async (_what, path) => {
+    mockServer.use(http.get(path, () => serverFault()));
+    renderShell("/compare");
+    const region = within(compareRegion());
+    await region.findByText(/could not be loaded/i);
+
+    mockServer.resetHandlers();
+    await userEvent.click(region.getByRole("button", { name: "Try again" }));
+
+    expect(await region.findByRole("option", { name: "Portugal" })).toBeInTheDocument();
+    expect(region.getByText(/up to 5 comparators/i)).toBeInTheDocument();
+  });
+});
+
+describe("focus when a refusal takes the pressed control away", () => {
+  it("moves to Nothing to compare when Compare is refused for an unset range", async () => {
+    renderShell("/compare");
+    await chooseFocus("Portugal");
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Netherlands" }));
+    await replaceSettings({ ...SETTINGS, score_scale_max: null });
+
+    await userEvent.click(screen.getByRole("button", { name: /^compare$/i }));
+
+    const card = await screen.findByRole("region", { name: "Nothing to compare" });
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(document.activeElement).toContainElement(card);
+  });
+
+  it("takes no focus when the range was unset before anything was pressed", async () => {
+    await replaceSettings({ ...SETTINGS, score_scale_max: null });
+    renderShell("/compare");
+
+    await screen.findByRole("region", { name: "Nothing to compare" });
+    await delay(50);
+    expect(document.activeElement).toBe(document.body);
   });
 });

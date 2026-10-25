@@ -450,8 +450,8 @@ export const handlers = [
     if (missing) return missing;
     const criteriaSet = query.get("criteria_set")!;
     const level = query.get("level")!;
-    const unset = refusedForAnUnsetScale();
-    if (unset) return unset;
+    const refused = refusedBeforeScoring(criteriaSet);
+    if (refused) return refused;
 
     return HttpResponse.json(rankingFor(criteriaSet, level, scaleInForce()));
   }),
@@ -470,8 +470,8 @@ export const handlers = [
     const criteriaSet = query.get("criteria_set")!;
     const level = query.get("level")!;
 
-    const unset = refusedForAnUnsetScale();
-    if (unset) return unset;
+    const refused = refusedBeforeScoring(criteriaSet);
+    if (refused) return refused;
     const candidateId = String(params["candidateId"]);
     const ranked = rankingFor(criteriaSet, level, scaleInForce()).candidates.find(
       (each) => each.candidate === candidateId,
@@ -497,8 +497,8 @@ export const handlers = [
       level: string;
       note?: string;
     };
-    const unset = refusedForAnUnsetScale();
-    if (unset) return unset;
+    const refused = refusedBeforeScoring(body.criteria_set);
+    if (refused) return refused;
     // Frozen with it: a saved ranking keeps the scale it was computed on, and the results it
     // computed, whatever the setting and the figures do afterwards.
     const ranking = rankingFor(body.criteria_set, body.level, scaleInForce());
@@ -645,7 +645,7 @@ export const handlers = [
 
   /**
    * **Refuses what the server refuses, in its order and with its codes** (PL-091): the required
-   * parameters first, then the score range being set (`the_ranking`), then the limit being set
+   * parameters first, then the set and the score range (`the_ranking`), then the limit being set
    * (`comparisons.py`), then `compare`'s own checks
    * -- none, too many, the focus among them, one named twice, and a candidate this level's
    * ranking does not hold, which is how a mixed-level request is refused.
@@ -658,8 +658,8 @@ export const handlers = [
     const level = query.get("level")!;
     const focus = query.get("focus")!;
     const comparators = query.getAll("comparators");
-    const unset = refusedForAnUnsetScale();
-    if (unset) return unset;
+    const beforeScoring = refusedBeforeScoring(criteriaSet);
+    if (beforeScoring) return beforeScoring;
     if (settings.comparator_limit === null || settings.comparator_limit === undefined) {
       return HttpResponse.json(
         {
@@ -1018,12 +1018,19 @@ function missingFrom(query: URLSearchParams, required: readonly string[]) {
 }
 
 /**
- * **What the server answers in place of a score while the top of the range is unset**
- * (`rankings.py::the_ranking`): a 409 `score_scale_not_set`, after the request's own
- * parameters and before anything else. Every handler that scores asks this first, so a mock
- * that scored onto a range nobody chose can no longer hide a screen that mishandles the
- * refusal (PL-005).
+ * **What the server answers in place of a score, in its precedence** (`rankings.py::the_ranking`):
+ * after the request's own parameters, the criteria set named is read first -- a 404 `not_found`
+ * for one that does not exist, whatever the settings say -- and only then is an unset top of the
+ * range a 409 `score_scale_not_set`. Every handler that scores asks this first, so a mock that
+ * scored onto a range nobody chose can no longer hide a screen that mishandles the refusal
+ * (PL-005).
  */
+function refusedBeforeScoring(criteriaSet: string): Response | null {
+  if (!criteriaSetDetails[criteriaSet]) return notFound(criteriaSet);
+  return refusedForAnUnsetScale();
+}
+
+/** The 409 for an unset top of the score range, or nothing while it is set. */
 function refusedForAnUnsetScale(): Response | null {
   if (settings.score_scale_max !== null && settings.score_scale_max !== undefined) return null;
   return HttpResponse.json(
@@ -1037,7 +1044,7 @@ function refusedForAnUnsetScale(): Response | null {
   );
 }
 
-/** The scale a live score is on: the setting, which `refusedForAnUnsetScale` has checked. */
+/** The scale a live score is on: the setting, which `refusedBeforeScoring` has checked. */
 function scaleInForce(): number {
   if (settings.score_scale_max === null || settings.score_scale_max === undefined) {
     throw new Error("a handler scored before refusing an unset score range");

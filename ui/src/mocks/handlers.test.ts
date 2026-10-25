@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../api/ApiError";
-import { getJson } from "../api/client";
+import { getJson, postJson } from "../api/client";
 import {
   fetchCriteriaSet,
   fetchHoldings,
@@ -442,5 +442,37 @@ describe("the mock's holdings", () => {
 
     expect(error.code).toBe("unknown_scope");
     expect(error.details).toEqual({ level: "planet", unknown_levels: ["planet"] });
+  });
+});
+
+/**
+ * **What the server answers for a score while the range is unset, in its precedence**
+ * (`rankings.py::the_ranking`): the criteria set named is read first, so one that does not
+ * exist is a 404 whatever the settings say; only an existing set is refused for the range.
+ */
+describe("the mock's scored reads while the score range is unset", () => {
+  const COMPARISON = { level: "country", focus: "country.portugal", comparators: ["country.spain"] };
+  const ASKED: Record<string, (set: string) => Promise<unknown>> = {
+    "GET /rankings": (set) => getJson("/rankings", { criteria_set: set, level: "country" }),
+    "GET /rankings/candidates/{id}": (set) =>
+      getJson("/rankings/candidates/{candidateId}", { criteria_set: set, level: "country" }, {
+        pathParams: { candidateId: "country.portugal" },
+      }),
+    "GET /comparisons": (set) => getJson("/comparisons", { criteria_set: set, ...COMPARISON }),
+    "POST /evaluations": (set) => postJson("/evaluations", { criteria_set: set, level: "country" }),
+  };
+
+  async function refusalOf(ask: () => Promise<unknown>): Promise<[number | null, string]> {
+    await replaceSettings({ ...SETTINGS, score_scale_max: null });
+    const error = (await ask().catch((thrown: unknown) => thrown)) as ApiError;
+    return [error.status, error.code];
+  }
+
+  it.each(Object.entries(ASKED))("%s refuses an existing set with 409 score_scale_not_set", async (_name, ask) => {
+    expect(await refusalOf(() => ask("default"))).toEqual([409, "score_scale_not_set"]);
+  });
+
+  it.each(Object.entries(ASKED))("%s names a set that does not exist with 404 first", async (_name, ask) => {
+    expect(await refusalOf(() => ask("no-such-set"))).toEqual([404, "not_found"]);
   });
 });
