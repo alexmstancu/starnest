@@ -776,7 +776,7 @@ class TestTheCompoundRules:
 
         described = {rule["id"]: rule["description"] for rule in response.json()["items"]}
 
-        assert described["cheap_but_taxed"].startswith("Flags a candidate when ")
+        assert described["cheap_but_taxed"].startswith("Applies when ")
         assert "is at most 80" in described["cheap_but_taxed"]
         assert "is at least 40%" in described["cheap_but_taxed"]
         assert "between 10 and 16 degrees Celsius" in described["mild_now_brutal_later"]

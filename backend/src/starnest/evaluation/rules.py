@@ -209,11 +209,14 @@ def describe_compound_rule(rule: CompoundRule, names: Names = NO_NAMES) -> str:
     """What a rule tests, in words, for its row on screen (PL-155, UF-039).
 
     Written from the rule's own conditions or inputs whenever it is read, so it cannot disagree
-    with the bands it describes; every attribute by its catalog name, never its key. "Flags a
-    candidate when Cost of living index is at most 80 and Total tax rate is at least 40%."
+    with the bands it describes; every attribute by its catalog name, never its key. "Applies
+    when Cost of living index is at most 80 and Total tax rate is at least 40%."
+
+    **It says what the rule tests, never what it does**: each criteria set holds a rule as a
+    gate or as a warning (0516), so an outcome written here from the catalog would contradict
+    every set that holds it the other way. The row's own select says which it is.
     """
-    lead = "Flags a candidate" if rule.outcome is RuleOutcome.WARNING else "Rules a candidate out"
-    return f"{lead} when {_what_it_tests(rule, names)}."
+    return f"Applies when {_what_it_tests(rule, names)}."
 
 
 def _what_it_tests(rule: CompoundRule, names: Names) -> str:

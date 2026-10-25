@@ -267,12 +267,11 @@ class TestACompoundRuleDescribed:
         units={TAX: "%"},
     )
 
-    def test_a_warning_names_each_condition_with_its_band_and_unit(self) -> None:
+    def test_it_names_each_condition_with_its_band_and_unit(self) -> None:
         described = describe_compound_rule(a_rule(), self.UNITS)
 
         assert described == (
-            "Flags a candidate when Cost of living index is at most 80 "
-            "and Total tax rate is at least 45%."
+            "Applies when Cost of living index is at most 80 and Total tax rate is at least 45%."
         )
 
     def test_a_band_closed_on_both_sides_reads_between(self) -> None:
@@ -295,10 +294,13 @@ class TestACompoundRuleDescribed:
 
         assert "Avg annual temperature is between 10 and 16 degrees Celsius" in described
 
-    def test_a_rule_that_rules_out_says_so(self) -> None:
-        described = describe_compound_rule(a_rule(outcome=RuleOutcome.NOT_MATCHING), self.UNITS)
+    def test_it_reads_the_same_whatever_the_catalog_says_the_rule_does(self) -> None:
+        # A set may hold the rule as a gate or a warning (0516), so the words must not take
+        # either side: the catalog's outcome written here would contradict half the sets.
+        as_a_warning = describe_compound_rule(a_rule(outcome=RuleOutcome.WARNING), self.UNITS)
+        as_a_gate = describe_compound_rule(a_rule(outcome=RuleOutcome.NOT_MATCHING), self.UNITS)
 
-        assert described.startswith("Rules a candidate out when ")
+        assert as_a_warning == as_a_gate
 
     def test_an_undecided_condition_says_no_bound_is_set(self) -> None:
         described = describe_compound_rule(a_rule(prices_max=None, tax_min=None), self.UNITS)
@@ -328,7 +330,7 @@ class TestACompoundRuleDescribed:
         )
 
         assert describe_compound_rule(rule, Names(attributes={"city.average_rent": "Rent"})) == (
-            "Flags a candidate when Rent is more than 40% of the household's target monthly spend."
+            "Applies when Rent is more than 40% of the household's target monthly spend."
         )
 
     def test_a_sum_names_every_figure_it_adds(self) -> None:
@@ -346,7 +348,7 @@ class TestACompoundRuleDescribed:
         )
 
         assert describe_compound_rule(rule) == (
-            "Rules a candidate out when Tech software jobs plus Tech product jobs is below 12."
+            "Applies when Tech software jobs plus Tech product jobs is below 12."
         )
 
     def test_a_shape_with_no_bound_chosen_says_so(self) -> None:
@@ -360,7 +362,7 @@ class TestACompoundRuleDescribed:
         )
 
         assert describe_compound_rule(rule) == (
-            "Rules a candidate out when Tech software jobs is below a floor not yet chosen."
+            "Applies when Tech software jobs is below a floor not yet chosen."
         )
 
 
