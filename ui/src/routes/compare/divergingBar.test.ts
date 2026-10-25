@@ -61,8 +61,9 @@ describe("the diverging bar", () => {
   });
 
   it("draws a short reach softer than a long one", () => {
-    expect(divergingBar(10, 100, ANY_FOCUS).barOpacity).toBe(0.62);
-    expect(divergingBar(30, 100, ANY_FOCUS).barOpacity).toBe(1);
+    // A focus of 100, so both gaps are above the noise floor and only their reach differs.
+    expect(divergingBar(10, 100, 100).barOpacity).toBe(0.62);
+    expect(divergingBar(30, 100, 100).barOpacity).toBe(1);
   });
 
   /**
