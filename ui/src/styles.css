@@ -545,8 +545,8 @@ a:hover {
 
 /* A row lifts under the pointer. The table is the screen's subject and every row is a link to
    its own evidence, so it has to look reachable. The ranking is left out: its rows decide their
-   own hover, because a saved ranking's rows open nothing, and this rule (two classes deep) would
-   out-rank the row's base and tint them anyway (PL-075). */
+   own hover, because a row that opens nothing must not offer it, and this rule (two classes
+   deep) would out-rank the row's base and tint them anyway (PL-075). */
 .table:not(.table--ranking) tbody tr:hover {
   background: var(--colour-surface-raised);
 }
@@ -3644,8 +3644,8 @@ select.field__control {
   background: var(--colour-surface);
 }
 
-/* A row that opens the drill-down says so with the whole row. A saved ranking's rows open
-   nothing, so they offer neither the pointer nor the tint (PL-076). */
+/* A row that opens the drill-down says so with the whole row. A row that opens nothing offers
+   neither the pointer nor the tint (PL-076). */
 .table--ranking > tbody > tr.table__row--toggle {
   cursor: pointer;
 }
@@ -4794,4 +4794,52 @@ select.field__control {
   font-size: 10.5px;
   color: var(--colour-warning);
   cursor: help;
+}
+
+/* A saved ranking, opened (PL-144): the note it was kept for, then the evidence each rule read
+   and the figure each contribution scored -- with "not recorded" where an older ranking kept
+   none, drawn quieter than a figure so it cannot be read as one. */
+.saved__note {
+  margin: 0 0 var(--space-half);
+  font-size: 13px;
+  font-style: italic;
+  color: var(--colour-text-strong);
+}
+
+.saved-evidence {
+  list-style: none;
+  margin: 0 0 var(--space-single);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+}
+
+.saved-evidence__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: var(--border-width) solid var(--colour-border);
+  border-radius: var(--radius-medium);
+}
+
+.saved-evidence__what {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--colour-text);
+}
+
+.saved-evidence__input {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.saved-evidence__unrecorded {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--colour-text-muted);
 }

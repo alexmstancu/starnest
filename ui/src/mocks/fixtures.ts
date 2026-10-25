@@ -310,6 +310,18 @@ const COUNTRY_RESULTS: CandidateResult[] = [
       {
         match_rule: "country.visa_route_exists",
         reason_detail: "No visa route this household qualifies for.",
+        // The answer the refusal read, as the server serves it (D46). A gate reads no figure.
+        gate_answer: {
+          match_rule: "country.visa_route_exists",
+          candidate: "country.spain",
+          match_result: "not_matching",
+          data_source: "manual",
+          retrieval_date: "2026-09-10T10:00:00Z",
+          reason: "No route for these citizenships on the ministry's page.",
+          is_proposal: false,
+          citations: [],
+        },
+        inputs: [],
       },
     ],
   },
@@ -995,6 +1007,32 @@ export function attributeScoresOf(
         ? row.normalised_score
         : onScale(row.normalised_score, scaleMax),
     contribution: onScale(row.contribution, scaleMax),
+  }));
+}
+
+/**
+ * A saved ranking's contributions, each with the stored row it scored (D46), as
+ * `GET /evaluations/{id}/candidates/{id}` serves them.
+ *
+ * **The row is the one in use, or nothing**: a contribution with no figure has no row, and a
+ * scored one whose figure this fixture never stored has none either -- which is how a ranking
+ * saved before the evidence was kept reads, and is never invented here.
+ */
+export function savedAttributeScoresOf(
+  candidate: string,
+  scaleMax: number = MOCK_SCORE_SCALE,
+): AttributeScore[] {
+  return attributeScoresOf(candidate, scaleMax).map((row) => ({
+    ...row,
+    value:
+      row.normalised_score === null || row.normalised_score === undefined
+        ? null
+        : (STORED_VALUES.find(
+            (value) =>
+              value.candidate === candidate &&
+              value.attribute === row.attribute &&
+              value.is_active,
+          ) ?? null),
   }));
 }
 

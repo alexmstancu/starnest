@@ -39,9 +39,8 @@ import { barReachedBy, tabStopOf } from "./pillarChartFocus";
  * thing seen at different moments, and a second table for the saved case would be two places
  * for one meaning to drift apart.
  *
- * `onToggle` is optional, and that is the only difference between the two uses: a live row
- * opens the candidate's current evidence, while a saved ranking is a snapshot whose evidence
- * has moved on, so it offers no drill-down rather than a misleading one.
+ * What an open row shows is the only difference between the two uses: a live row opens the
+ * candidate's current evidence, and a saved one the evidence frozen with it (PL-144).
  *
  * **The card scrolls, not the page.** The header is sticky inside it and the whole thing is
  * capped at the viewport, so the column a number sits under is still on screen at row 30 --
@@ -62,14 +61,14 @@ export function RankingTable({
   /**
    * Choose a pillar from the chart in the row, filtering the panel underneath it.
    *
-   * **Omitted by a saved ranking**, like `detail` and for the same reason: there is no panel
-   * to filter, so the bars stay a picture.
+   * **Omitted by a saved ranking**, whose panel lists every saved figure and has no pillar
+   * filter, so the bars stay a picture.
    */
   onChoosePillar?: (row: OpenCandidate, pillar: string) => void;
   /**
    * What an open row shows underneath itself. **Passed in rather than imported**, because
    * the evidence behind a score is fetched, and a table that renders a live ranking and a
-   * frozen one must not know the difference -- a saved ranking supplies none.
+   * frozen one must not know the difference -- each supplies its own.
    */
   detail?: (row: OpenCandidate) => ReactNode;
   /**
@@ -82,7 +81,8 @@ export function RankingTable({
   codes?: ReadonlyMap<string, string>;
   /**
    * What is known about the household's home (`reqs.md` 1.1): which rows are home, and why
-   * the Δ home column may be empty. **Omitted by a saved ranking**, which says nothing then.
+   * the Δ home column may be empty. A saved ranking passes today's, which its Δ home is
+   * taken against.
    */
   household?: HomeRead;
 }) {
@@ -302,8 +302,8 @@ function CandidateRow({
   const toggle = onToggle ? () => onToggle(row) : undefined;
 
   const classes = ["table__row"];
-  // **Only a row that opens is marked as one** (PL-076): a saved ranking's rows open nothing,
-  // so the pointer and the hover tint a row offers belong on this class, not on every row.
+  // **Only a row that opens is marked as one** (PL-076): a table given no `onToggle` opens
+  // nothing, so the pointer and the hover tint a row offers belong on this class.
   if (toggle) classes.push("table__row--toggle");
   if (!matching) classes.push("table__row--not-matching");
   if (open) classes.push("table__row--open");
@@ -474,8 +474,8 @@ function PillarChart({
   /**
    * Choose this pillar, or undefined to leave the chart as a picture.
    *
-   * **A saved ranking passes nothing**, and the bars stay inert: its evidence has moved on,
-   * so there is no drill-down for a click to filter.
+   * **A saved ranking passes nothing**, and the bars stay inert: its panel has no pillar
+   * filter for a click to set.
    */
   onChoose?: (pillar: string) => void;
 }) {

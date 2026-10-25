@@ -37,6 +37,8 @@ const TEST_EVALUATION_MARKER = "[e2e] ";
 const OPEN_GROUND = "rgb(240, 253, 250)";
 const NOT_MATCHING_GROUND = "rgb(252, 252, 253)";
 const PLAIN_GROUND = "rgb(255, 255, 255)";
+/** `--colour-surface-raised`: the tint a row that opens takes under the pointer. */
+const RAISED_GROUND = "rgb(252, 252, 253)";
 
 /** 1280 is the narrowest the interface supports; 1560 is the design's own width. */
 const WIDTHS = [1920, 1560, 1440, 1280] as const;
@@ -207,13 +209,12 @@ for (const width of WIDTHS) {
   });
 }
 
-test("a saved row opens nothing, so it takes no hover tint", async ({ page }) => {
+test("a saved row opens its saved figures, so it takes the hover tint", async ({ page }) => {
   const { savedEvaluation, savedMatching } = theArrangement();
   await page.setViewportSize({ width: 1560, height: 900 });
   await page.goto(`/rank?saved=${savedEvaluation}`);
-  const savedTable = page
-    .getByRole("region", { name: "A saved ranking" })
-    .getByRole("table", { name: "Ranked candidates" });
+  const opened = page.getByRole("region", { name: "A saved ranking" });
+  const savedTable = opened.getByRole("table", { name: "Ranked candidates" });
   await expect(savedTable).toBeVisible();
 
   // By its row header, not by text: a row's text runs its cells together ("1Netherlands71").
@@ -225,7 +226,13 @@ test("a saved row opens nothing, so it takes no hover tint", async ({ page }) =>
   await expect(row).toHaveCSS("background-color", PLAIN_GROUND);
 
   await row.hover();
-  await expect(row).toHaveCSS("background-color", PLAIN_GROUND);
+  await expect(row).toHaveCSS("background-color", RAISED_GROUND);
+
+  // PL-144: what it opens is the evidence frozen with it, each figure with its provenance.
+  await row.getByRole("button", { name: savedMatching, exact: true }).click();
+  await expect(
+    opened.getByRole("region", { name: `${savedMatching}: every figure behind the saved score` }),
+  ).toBeVisible();
 });
 
 function theArrangement(): Arranged {

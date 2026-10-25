@@ -208,8 +208,15 @@ const ARRANGEMENTS: Record<ScreenState, () => Promise<void>> = {
     async () => {
       const saved = await saveEvaluation("default", "country", "");
       renderShell(`/rank?saved=${saved.id}`);
-      // The live table's row, by its toggle: the saved table beside it opens nothing.
-      const toggle = await screen.findByRole("button", { name: "Portugal" });
+      // The live table's row, by its toggle: the saved table beside it opens its own evidence.
+      const opened = await screen.findByRole("region", { name: /a saved ranking/i });
+      await waitFor(() =>
+        expect(screen.getAllByRole("table", { name: /ranked candidates/i })).toHaveLength(2),
+      );
+      const live = screen
+        .getAllByRole("table", { name: /ranked candidates/i })
+        .find((table) => !opened.contains(table))!;
+      const toggle = within(live).getByRole("button", { name: "Portugal" });
       const portugal = toggle.closest("tr")!;
       await userEvent.click(toggle);
       await userEvent.click(await within(portugal).findByRole("button", { name: /^Economy:/ }));
@@ -225,8 +232,7 @@ const ARRANGEMENTS: Record<ScreenState, () => Promise<void>> = {
       );
       await drill.findByRole("table");
 
-      const opened = within(await screen.findByRole("region", { name: /a saved ranking/i }));
-      await opened.findByText(/as it was when it was saved/i);
+      await within(opened).findByText(/as it was when it was saved/i);
     },
   "Rank, the score range unset": async () => {
     await scoreRangeUnset();

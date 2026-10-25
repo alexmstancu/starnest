@@ -200,7 +200,10 @@ describe("a saved ranking, frozen at a scale of 50", () => {
   it("says the scale it was scored out of", async () => {
     const opened = await savedOpened();
 
-    expect(await within(opened).findByText(/scored out of 50\b/i)).toBeInTheDocument();
+    const scale = (await within(opened).findAllByRole("term")).find(
+      (term) => term.textContent === "Scored out of",
+    );
+    expect(scale?.nextElementSibling).toHaveTextContent(/^50$/);
     expectNoHundredAssumed(opened);
   });
 

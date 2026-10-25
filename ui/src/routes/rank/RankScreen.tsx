@@ -1,10 +1,5 @@
 import { useCallback, useState } from "react";
-import {
-  fetchCandidates,
-  fetchHousehold,
-  fetchRanking,
-  type Ranking,
-} from "../../api/endpoints";
+import { fetchCandidates, fetchRanking, type Ranking } from "../../api/endpoints";
 import { useResource } from "../../api/useResource";
 import type { RouteDefinition } from "../../navigation/routes";
 import { NothingSelected } from "../../shell/NothingSelected";
@@ -14,7 +9,7 @@ import { CandidateDetail } from "./CandidateDetail";
 import { type OpenCandidate, type OpenRow, choosePillar, toggleRow } from "./openRows";
 import { RankingMeta, RankingTable } from "./RankingTable";
 import { codesByCandidate, type HomeRead } from "./rankTable";
-import { hasErrorCode } from "../../api/ApiError";
+import { useHome } from "./useHome";
 import { SaveControl } from "./SaveControl";
 import { SavedRankingsPanel } from "./SavedRankingsPanel";
 import { useSelection } from "../../shell/SelectionContext";
@@ -38,6 +33,9 @@ import { useSelection } from "../../shell/SelectionContext";
  */
 export function RankScreen({ route }: { route: RouteDefinition }) {
   const { criteriaSetId, levelId } = useSelection();
+  // Read once for both tables: the live ranking and a saved one take Δ home against the same
+  // household, and opening a saved ranking must not read it again.
+  const home = useHome();
 
   return (
     <section className="screen" aria-labelledby="screen-heading">
@@ -53,6 +51,7 @@ export function RankScreen({ route }: { route: RouteDefinition }) {
         label={route.label}
         criteriaSetId={criteriaSetId}
         levelId={levelId}
+        home={home}
       />
 
       {/* **Outside the key, deliberately.** A ranking is arithmetic over stored values,
@@ -61,7 +60,7 @@ export function RankScreen({ route }: { route: RouteDefinition }) {
           takes no filter, and remounting this with the table would re-fetch the same list
           every time a criteria set is switched. */}
       {/* Only when one has been opened from the sidebar; nothing otherwise. */}
-      <SavedRankingsPanel />
+      <SavedRankingsPanel home={home} />
     </section>
   );
 }
@@ -70,10 +69,12 @@ function TheRanking({
   label,
   criteriaSetId,
   levelId,
+  home,
 }: {
   label: string;
   criteriaSetId: string | null;
   levelId: string | null;
+  home: HomeRead;
 }) {
   const fetcher = useCallback(
     async (signal: AbortSignal): Promise<Ranking> => {
@@ -102,18 +103,6 @@ function TheRanking({
   const codes = codesByCandidate(
     roster.resource.status === "ready" ? roster.resource.data.items : null,
   );
-  // Which candidate the household already lives in, for the pill beside its name. Its own
-  // read: a ranking says what a candidate scored, never who lives there.
-  const household = useResource(
-    useCallback((signal: AbortSignal) => fetchHousehold({ signal }), []),
-  );
-  const home: HomeRead =
-    household.resource.status === "ready"
-      ? { state: "ready", household: household.resource.data }
-      : household.resource.status === "error" &&
-          hasErrorCode(household.resource.error, "household_not_configured")
-        ? { state: "not_configured" }
-        : { state: "unknown" };
   const { criteriaSets } = useSelection();
   const setNames = new Map(criteriaSets.map((set) => [set.id, set.name]));
   // Which candidates' evidence is open. Client state in the sense `arch.md` 8.1 permits: it

@@ -1,6 +1,7 @@
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { requestedSavedRanking } from "../../format/savedRanking";
+import type { HomeRead } from "./rankTable";
 import { SavedRankingView } from "./SavedRankingView";
 
 /**
@@ -19,7 +20,7 @@ import { SavedRankingView } from "./SavedRankingView";
  * evaluation freezes the criteria *and* the score scale it used, and reads back as a whole
  * ranking, so there is a real thing to look at and nothing has to be overwritten to see it.
  */
-export function SavedRankingsPanel() {
+export function SavedRankingsPanel({ home }: { home: HomeRead }) {
   const headingId = useId();
 
   // **Which one is open lives in the address, not in a hook.** The sidebar lists the same
@@ -27,6 +28,17 @@ export function SavedRankingsPanel() {
   // something a link can say. It also survives a reload, which local state does not.
   const [parameters, setParameters] = useSearchParams();
   const open = requestedSavedRanking(parameters.get("saved"));
+  const heading = useRef<HTMLHeadingElement>(null);
+
+  // **Brought into sight, and the keyboard with it** (PL-144). It opens under the live table,
+  // a screenful below the sidebar link that asked for it, so without this a click appeared to
+  // do nothing. Each time another one is opened, not on every render.
+  useEffect(() => {
+    if (open === null) return;
+    heading.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
+    heading.current?.focus();
+  }, [open]);
+
   if (open === null) return null;
 
   const close = () => {
@@ -38,14 +50,14 @@ export function SavedRankingsPanel() {
   return (
     <section className="panel" aria-labelledby={headingId}>
       <div className="panel__head">
-        <h2 id={headingId} className="panel__heading">
+        <h2 id={headingId} className="panel__heading" ref={heading} tabIndex={-1}>
           A saved ranking
         </h2>
         <button type="button" className="action" onClick={close}>
           Close
         </button>
       </div>
-      <SavedRankingView evaluationId={open} />
+      <SavedRankingView evaluationId={open} home={home} />
     </section>
   );
 }

@@ -38,6 +38,7 @@ import {
   comparisonFor,
   makeCriteriaSetDetails,
   rankingFor,
+  savedAttributeScoresOf,
 } from "./fixtures";
 
 type Criterion = components["schemas"]["Criterion"];
@@ -48,6 +49,7 @@ type PillarWeight = components["schemas"]["PillarWeight"];
 type Settings = components["schemas"]["Settings"];
 type Household = components["schemas"]["HouseholdInput"];
 type EvaluationSummary = components["schemas"]["EvaluationSummary"];
+type CandidateResult = components["schemas"]["CandidateResult"];
 type DataSource = components["schemas"]["DataSource"];
 
 const BASE = "/v1";
@@ -72,7 +74,12 @@ let matchRuleResults: MatchRuleResult[] = MATCH_RULE_RESULTS.map((each) => ({ ..
 // A copy, because the switch writes to it: serving the shared constant would let one test's
 // switched-off source leak into every test after it.
 let dataSources: DataSource[] = DATA_SOURCES.map((each) => ({ ...each }));
-let savedEvaluations: EvaluationSummary[] = [];
+/** A kept ranking: its summary and the results frozen with it, as the server stores both. */
+interface SavedEvaluation {
+  summary: EvaluationSummary;
+  candidates: CandidateResult[];
+}
+let savedEvaluations: SavedEvaluation[] = [];
 let nextEvaluationId = 1;
 /** When a stopped run records that somebody asked. Fixed, so a test can assert on it. */
 const STOPPED_AT = "2026-09-12T09:00:06Z";
@@ -463,7 +470,7 @@ export const handlers = [
   // Saved rankings. The store is module state rather than a fixture, because the thing worth
   // testing is that saving puts something in the list that was not there before.
   http.get(`${BASE}/evaluations`, () =>
-    HttpResponse.json({ items: [...savedEvaluations] }),
+    HttpResponse.json({ items: savedEvaluations.map((saved) => saved.summary) }),
   ),
 
   http.post(`${BASE}/evaluations`, async ({ request }) => {
@@ -472,30 +479,58 @@ export const handlers = [
       level: string;
       note?: string;
     };
-    // Frozen with it: a saved ranking keeps the scale it was computed on, whatever the
-    // setting does afterwards.
-    const saved = {
+    // Frozen with it: a saved ranking keeps the scale it was computed on, and the results it
+    // computed, whatever the setting and the figures do afterwards.
+    const ranking = rankingFor(body.criteria_set, body.level, scaleInForce());
+    const summary: EvaluationSummary = {
       id: nextEvaluationId++,
       criteria_set: body.criteria_set,
       level: body.level,
       computed_at: "2026-09-21T09:00:00Z",
-      score_scale_max: scaleInForce(),
+      score_scale_max: ranking.score_scale_max,
       ...(body.note === undefined ? {} : { note: body.note }),
     };
-    savedEvaluations = [saved, ...savedEvaluations];
-    return HttpResponse.json(saved, { status: 201 });
+    savedEvaluations = [{ summary, candidates: ranking.candidates }, ...savedEvaluations];
+    return HttpResponse.json(summary, { status: 201 });
   }),
 
   // A saved ranking answers in the same shape as a live one, which is what lets one table
-  // render both.
+  // render both -- with no `evaluation` field, which the server does not send either. Each
+  // refusal and warning carries the evidence it read, frozen with it (D46); only the
+  // difference from home is today's, because the anchor is the household's current home.
   http.get(`${BASE}/evaluations/:evaluationId`, ({ params }) => {
-    const saved = savedEvaluations.find(
-      (entry) => String(entry.id) === String(params["evaluationId"]),
-    );
-    if (!saved) return notFound(String(params["evaluationId"]));
+    const saved = savedEvaluationOf(params["evaluationId"]);
+    if (!saved) return evaluationNotFound(params["evaluationId"]);
     return HttpResponse.json({
-      ...rankingFor(saved.criteria_set, saved.level, saved.score_scale_max),
-      evaluation: saved.id,
+      criteria_set: saved.summary.criteria_set,
+      level: saved.summary.level,
+      computed_at: saved.summary.computed_at,
+      score_scale_max: saved.summary.score_scale_max,
+      candidates: againstHome(saved.candidates, household.home_country_candidate),
+    });
+  }),
+
+  // One saved candidate's contributions, each with the row it scored (D46), on the frozen scale.
+  http.get(`${BASE}/evaluations/:evaluationId/candidates/:candidateId`, ({ params }) => {
+    const saved = savedEvaluationOf(params["evaluationId"]);
+    if (!saved) return evaluationNotFound(params["evaluationId"]);
+    const candidateId = String(params["candidateId"]);
+    const result = againstHome(saved.candidates, household.home_country_candidate).find(
+      (each) => each.candidate === candidateId,
+    );
+    if (!result) {
+      return HttpResponse.json(
+        {
+          code: "not_found",
+          message: `evaluation ${saved.summary.id} has no result for '${candidateId}'`,
+        },
+        { status: 404 },
+      );
+    }
+    return HttpResponse.json({
+      ...result,
+      score_scale_max: saved.summary.score_scale_max,
+      attribute_scores: savedAttributeScoresOf(candidateId, saved.summary.score_scale_max),
     });
   }),
 
@@ -989,6 +1024,40 @@ function invalidRequest(...errors: FieldProblem[]) {
     message: "The request does not match what this operation accepts.",
     details: { errors },
   };
+}
+
+function savedEvaluationOf(id: unknown): SavedEvaluation | undefined {
+  return savedEvaluations.find((saved) => String(saved.summary.id) === String(id));
+}
+
+/** The server's refusal for an evaluation nobody kept: its own words, and the id it names. */
+function evaluationNotFound(id: unknown) {
+  return HttpResponse.json(
+    {
+      code: "not_found",
+      message: `there is no evaluation numbered ${String(id)}`,
+      details: { evaluation: Number(id) },
+    },
+    { status: 404 },
+  );
+}
+
+/**
+ * Each candidate's score minus home's, as `against_home` takes it: nothing for home itself, and
+ * nothing where either score is missing -- including a home this ranking never scored.
+ */
+function againstHome(
+  candidates: readonly CandidateResult[],
+  home: string | null | undefined,
+): CandidateResult[] {
+  const homeScore = candidates.find((each) => each.candidate === home)?.score ?? null;
+  return candidates.map((each) => ({
+    ...each,
+    delta_vs_home:
+      each.candidate === home || homeScore === null || each.score === null
+        ? null
+        : each.score - homeScore,
+  }));
 }
 
 function notFound(id: string) {

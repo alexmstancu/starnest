@@ -1,7 +1,9 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { replaceHousehold } from "../../api/endpoints";
+import { HOUSEHOLD } from "../../mocks/fixtures";
 import { mockServer } from "../../mocks/server";
 import { renderShell } from "../../testing/renderShell";
 
@@ -142,19 +144,17 @@ describe("saved rankings", () => {
     expect(
       await opened.findByText(/as it was when it was saved/i),
     ).toBeInTheDocument();
-    // Frozen, so no drill-down into evidence that has since moved on.
-    const frozen = within(
-      await opened.findByRole("table", { name: /ranked candidates/i }),
-    );
-    expect(frozen.queryByRole("button")).toBeNull();
+    // Shown beside the live one, which is still there: nothing was restored over it.
+    expect(
+      screen.getAllByRole("table", { name: /ranked candidates/i }),
+    ).toHaveLength(2);
   });
 
   /**
-   * PL-076 (UF-120). A saved row opens nothing, yet the stylesheet gives every row of the table
-   * the pointer and the hover tint. The class marks a row that opens, so it is what those two
-   * have to be keyed on.
+   * PL-076 (UF-120), revised by PL-144: a saved row now opens its saved evidence, so it is marked
+   * as one that opens -- and its pillar chart stays a picture, because that panel has no filter.
    */
-  it("marks only a live row as one that opens", async () => {
+  it("marks a saved row as one that opens, with an inert pillar chart", async () => {
     renderShell("/rank");
     await saveOne();
     const list = within(await savedList());
@@ -170,7 +170,7 @@ describe("saved rankings", () => {
       .find((table) => !opened.contains(table))!;
 
     expect(portugalIn(live)).toHaveClass("table__row--toggle");
-    expect(portugalIn(frozen)).not.toHaveClass("table__row--toggle");
+    expect(portugalIn(frozen)).toHaveClass("table__row--toggle");
     expect(within(frozen).queryByRole("toolbar")).toBeNull();
   });
 
@@ -233,3 +233,256 @@ describe("saved rankings", () => {
     expect(list.queryByText("client.unreachable")).toBeNull();
   });
 });
+
+/** Saves one, opens it from the sidebar, and answers the region it opened in. */
+async function openSaved(note?: string): Promise<HTMLElement> {
+  await saveOne(note);
+  const list = within(await savedList());
+  await list.findByText(note ?? /default, country/i);
+  await userEvent.click(list.getAllByRole("link")[0]!);
+  const opened = await screen.findByRole("region", { name: /a saved ranking/i });
+  await within(opened).findByRole("table", { name: /ranked candidates/i });
+  return opened;
+}
+
+/** A candidate's row in the saved table, opened, and the evidence region it opened. */
+async function openSavedCandidate(opened: HTMLElement, name: string): Promise<HTMLElement> {
+  const frozen = within(opened).getByRole("table", { name: /ranked candidates/i });
+  await userEvent.click(within(frozen).getByRole("button", { name }));
+  return within(opened).findByRole("region", {
+    name: new RegExp(`${name}: every figure behind the saved score`, "i"),
+  });
+}
+
+/** The row of the saved figures table whose header names `attribute`. */
+async function savedFigureRow(evidence: HTMLElement, attribute: RegExp): Promise<HTMLElement> {
+  const table = await within(evidence).findByRole("table", { name: /saved figures/i });
+  const header = within(table)
+    .getAllByRole("rowheader")
+    .find((cell) => attribute.test(cell.textContent ?? ""));
+  expect(header, `no saved row for ${attribute}`).toBeDefined();
+  return header!.closest("tr")!;
+}
+
+describe("an opened saved ranking (PL-144)", () => {
+  const scrollIntoView = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+  afterEach(() => {
+    if (scrollIntoView) Object.defineProperty(Element.prototype, "scrollIntoView", scrollIntoView);
+    else delete (Element.prototype as Partial<Element>).scrollIntoView;
+  });
+
+  it("is brought into sight with the keyboard on its heading", async () => {
+    const scrolled = vi.fn();
+    Element.prototype.scrollIntoView = scrolled;
+    renderShell("/rank");
+
+    await openSaved();
+
+    expect(
+      screen.getByRole("heading", { name: /a saved ranking/i }),
+    ).toHaveFocus();
+    expect(scrolled).toHaveBeenCalled();
+  });
+
+  it("says what it is: its note, set, level, date and scale", async () => {
+    renderShell("/rank");
+    const opened = within(await openSaved("before I raised housing"));
+
+    expect(await opened.findByText("“before I raised housing”")).toBeInTheDocument();
+    const facts = new Map(
+      opened
+        .getAllByRole("term")
+        .map((term) => [term.textContent, term.nextElementSibling?.textContent]),
+    );
+    expect(facts.get("Criteria set")).toBe("Default");
+    expect(facts.get("Level")).toBe("Country");
+    expect(facts.get("Saved")).toMatch(/2026/);
+    expect(facts.get("Scored out of")).toBe("100");
+  });
+
+  it("says so when it was kept without a note", async () => {
+    renderShell("/rank");
+    const opened = within(await openSaved());
+    expect(await opened.findByText(/kept without a note/i)).toBeInTheDocument();
+  });
+
+  it("shows each candidate's pillars and its difference from where the household lives now", async () => {
+    await replaceHousehold({ ...HOUSEHOLD, home_country_candidate: "country.netherlands" });
+    renderShell("/rank");
+    const opened = await openSaved();
+    const frozen = within(opened).getByRole("table", { name: /ranked candidates/i });
+
+    const portugal = portugalIn(frozen);
+    expect(portugal).toHaveTextContent("+7");
+    // Economics, drawn inside its bar: the pillars came back with the saved ranking.
+    expect(within(portugal).getByText("81")).toBeInTheDocument();
+    const netherlands = within(frozen)
+      .getAllByRole("rowheader")
+      .find((cell) => cell.textContent?.startsWith("Netherlands"))!
+      .closest("tr")!;
+    expect(netherlands).toHaveTextContent(/baseline/i);
+  });
+
+  it("opens each saved figure with its source and both dates", async () => {
+    renderShell("/rank");
+    const evidence = await openSavedCandidate(await openSaved(), "Portugal");
+
+    const cost = within(await savedFigureRow(evidence, /cost of living/i));
+    expect(cost.getByText(/94\.5/)).toBeInTheDocument();
+    expect(cost.getByText("Eurostat")).toBeInTheDocument();
+    expect(cost.getByText(/2025 to .*2025/)).toBeInTheDocument();
+    expect(cost.getByText(/Sep.*2026|2026.*Sep|11.*2026/)).toBeInTheDocument();
+    // Nothing answered broadband, which is not the same claim as a figure nobody kept.
+    expect(within(await savedFigureRow(evidence, /broadband/i)).getByText("No figure")).toBeInTheDocument();
+  });
+
+  it("opens a refusal with the gate answer it read", async () => {
+    renderShell("/rank");
+    const evidence = within(await openSavedCandidate(await openSaved(), "Spain"));
+
+    const read = within(evidence.getByRole("list", { name: /what the rules read/i }));
+    expect(read.getByText(/no visa route/i)).toBeInTheDocument();
+    expect(read.getByText("Does not match")).toBeInTheDocument();
+    expect(read.getByText(/ministry's page/i)).toBeInTheDocument();
+    expect(read.getByText("Manual entry")).toBeInTheDocument();
+  });
+
+  it("opens a warning with the figures it read", async () => {
+    mockServer.use(
+      http.get("/v1/evaluations/:evaluationId/candidates/:candidateId", () =>
+        HttpResponse.json({
+          candidate: "country.portugal",
+          name: "Portugal",
+          score: 78,
+          coverage: 92.4,
+          match_status: "matching",
+          score_scale_max: 100,
+          warnings: [
+            {
+              compound_rule: "country.rent_within_budget",
+              detail: "Average rent is 52% of the target monthly spend.",
+              inputs: [SAVED_RENT],
+            },
+          ],
+          attribute_scores: [],
+        }),
+      ),
+    );
+    renderShell("/rank");
+    const evidence = within(await openSavedCandidate(await openSaved(), "Portugal"));
+
+    const read = within(evidence.getByRole("list", { name: /what the rules read/i }));
+    expect(read.getByText(/52% of the target/i)).toBeInTheDocument();
+    expect(read.getByText(/1,?460/)).toBeInTheDocument();
+    expect(read.getByText("Eurostat")).toBeInTheDocument();
+  });
+
+  /**
+   * A ranking saved before the evidence was kept (before 0512): every scored figure reads
+   * "not recorded", never a zero and never today's figure, and so does every rule's evidence.
+   */
+  it("opens an older ranking with 'not recorded' where it kept no evidence", async () => {
+    mockServer.use(
+      http.get("/v1/evaluations/:evaluationId/candidates/:candidateId", ({ params }) =>
+        HttpResponse.json(OLD_DETAILS[String(params["candidateId"])] ?? {}),
+      ),
+    );
+    renderShell("/rank");
+    const opened = await openSaved();
+
+    const portugal = await openSavedCandidate(opened, "Portugal");
+    const cost = within(await savedFigureRow(portugal, /cost of living/i));
+    expect(cost.getByText("not recorded")).toBeInTheDocument();
+    expect(cost.queryByText("Eurostat")).toBeNull();
+    // The score it was given is still its own, and nothing was written as nought.
+    expect(cost.getByText("73")).toBeInTheDocument();
+    expect(cost.queryByText("0")).toBeNull();
+
+    const spain = within(await openSavedCandidate(opened, "Spain"));
+    expect(spain.getByText(/gate answer not recorded/i)).toBeInTheDocument();
+    expect(spain.getByText(/figures read not recorded/i)).toBeInTheDocument();
+  });
+
+  it("says when a saved ranking is no longer there", async () => {
+    renderShell("/rank?saved=42");
+
+    const opened = within(await screen.findByRole("region", { name: /a saved ranking/i }));
+    expect(await opened.findByRole("alert")).toBeInTheDocument();
+    expect(opened.queryByRole("table")).toBeNull();
+  });
+
+  it("reports a saved candidate's evidence it could not read, and offers to try again", async () => {
+    mockServer.use(
+      http.get("/v1/evaluations/:evaluationId/candidates/:candidateId", () =>
+        HttpResponse.error(),
+      ),
+    );
+    renderShell("/rank");
+    const evidence = within(await openSavedCandidate(await openSaved(), "Portugal"));
+
+    expect(await evidence.findByRole("alert")).toBeInTheDocument();
+    expect(evidence.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+  });
+});
+
+/** A figure a warning read, with its source and both dates. */
+const SAVED_RENT = {
+  id: 610,
+  candidate: "country.portugal",
+  attribute: "country.average_rent",
+  value_type: "Monetary",
+  payload: { amount: 1460, currency: "EUR", amount_eur: 1460 },
+  data_source: "eurostat",
+  reference_period: { start: "2025-01-01", end: "2025-12-31" },
+  retrieval_date: "2026-09-11T08:00:00Z",
+  confidence_level: "high",
+  is_active: true,
+  is_fresh: true,
+  source_is_enabled: true,
+};
+
+/** What the server answers for a ranking saved before 0512: scores, and no evidence at all. */
+const OLD_DETAILS: Record<string, Record<string, unknown>> = {
+  "country.portugal": {
+    candidate: "country.portugal",
+    name: "Portugal",
+    score: 78,
+    coverage: 92.4,
+    match_status: "matching",
+    score_scale_max: 100,
+    attribute_scores: [
+      {
+        attribute: "country.cost_of_living_index",
+        pillar: "economics",
+        normalised_score: 73,
+        weight: 11.25,
+        effective_weight: 12.5,
+        contribution: 9.125,
+        value: null,
+      },
+    ],
+  },
+  "country.spain": {
+    candidate: "country.spain",
+    name: "Spain",
+    score: 64,
+    coverage: 81.5,
+    match_status: "not_matching",
+    score_scale_max: 100,
+    non_match_reasons: [
+      {
+        match_rule: "country.visa_route_exists",
+        reason_detail: "No visa route this household qualifies for.",
+        gate_answer: null,
+        inputs: [],
+      },
+      {
+        criterion: "country.total_tax_rate_effective",
+        reason_detail: "Total tax rate is above 50%.",
+        gate_answer: null,
+        inputs: [],
+      },
+    ],
+    attribute_scores: [],
+  },
+};
