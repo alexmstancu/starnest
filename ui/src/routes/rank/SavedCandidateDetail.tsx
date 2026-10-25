@@ -6,10 +6,13 @@ import {
 import { useRead } from "../../api/useRead";
 import { useAttributeNames } from "../../api/useAttributeNames";
 import { useSourceNames } from "../../api/useSourceNames";
+import { useCandidateNames } from "../../api/useCandidateNames";
+import { useMatchRuleNames } from "../../api/useMatchRuleNames";
 import { attributeName } from "../../format/display";
 import { scoreRange } from "../../format/scoreScale";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { scoresByAttribute } from "./attributeScores";
+import { citizenshipVerdict, decidedByCitizenship } from "./citizenshipVerdict";
 import {
   NOT_RECORDED,
   savedFigure,
@@ -146,6 +149,7 @@ function RuleEvidence({
   detail: CandidateScoreDetail;
   sources: ReadonlyMap<string, string>;
 }) {
+  const names = { gates: useMatchRuleNames(), candidates: useCandidateNames() };
   const reasons = detail.non_match_reasons ?? [];
   const warnings = detail.warnings ?? [];
   if (reasons.length === 0 && warnings.length === 0) return null;
@@ -156,6 +160,14 @@ function RuleEvidence({
         const gate = reason.match_rule != null;
         const answer = savedGateAnswer(reason.gate_answer, sources);
         const inputs = savedInputs(reason.inputs, sources);
+        // PL-164: the citizenships it read stand where an answer would, and none is claimed.
+        if (decidedByCitizenship(reason)) {
+          return (
+            <li key={`reason-${index}`} className="saved-evidence__item">
+              <span className="saved-evidence__what">{citizenshipVerdict(reason, names)}</span>
+            </li>
+          );
+        }
         return (
           <li key={`reason-${index}`} className="saved-evidence__item">
             <span className="saved-evidence__what">{reason.reason_detail}</span>
@@ -190,13 +202,15 @@ function RuleEvidence({
           </li>
         );
       })}
-      {warnings.map((warning) => (
-        <li key={warning.compound_rule} className="saved-evidence__item">
+      {warnings.map((warning, index) => (
+        <li key={`warning-${String(index)}`} className="saved-evidence__item">
           <span className="saved-evidence__what">
             <span className="chip chip--warning">warning</span>
-            {warning.detail}
+            {decidedByCitizenship(warning) ? citizenshipVerdict(warning, names) : warning.detail}
           </span>
-          <Inputs inputs={savedInputs(warning.inputs, sources)} />
+          {!decidedByCitizenship(warning) && (
+            <Inputs inputs={savedInputs(warning.inputs, sources)} />
+          )}
         </li>
       ))}
     </ul>

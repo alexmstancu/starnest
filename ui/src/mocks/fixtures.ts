@@ -471,9 +471,11 @@ export function rankingFor(
   level: string,
   scaleMax: number = MOCK_SCORE_SCALE,
   rules: RulesInForce = makeCriteriaSetDetails()[criteriaSet] ?? {},
+  /** The household's citizenships, which decide some gates before any answer (Q239). */
+  citizenships: readonly string[] = HOUSEHOLD.citizenships,
 ): Ranking {
   const judged = (level === "city" ? CITY_RESULTS : COUNTRY_RESULTS).map((result) =>
-    judgedBy(result, rules),
+    judgedBy(byCitizenship(result, citizenships), rules),
   );
   return {
     evaluation: null,
@@ -489,8 +491,50 @@ export function rankingFor(
 
 type Finding = { match_rule?: string | null; compound_rule?: string | null; detail: string } & Pick<
   RuleWarning,
-  "gate_answer" | "inputs"
+  "gate_answer" | "inputs" | "citizenships"
 >;
+
+/**
+ * Where a gate decided by citizenship is asked, by candidate: the gate's concerned candidates,
+ * which the contract does not carry (`MatchRule.concerns` on the server).
+ */
+const ASKED_BY_CITIZENSHIP: readonly { candidate: string; match_rule: string }[] = [
+  { candidate: "country.netherlands", match_rule: "country.eu_free_movement" },
+];
+
+/**
+ * What the household's citizenships decide before any answer is read (Q239, `rules.py`): a gate
+ * a held citizenship clears rules nothing out whatever was recorded, and a gate decided by
+ * citizenship that none clears refuses with no answer, naming the citizenships it read.
+ */
+function byCitizenship(result: CandidateResult, held: readonly string[]): CandidateResult {
+  const clears = (gate: string | null | undefined) =>
+    MATCH_RULES.some(
+      (rule) => rule.id === gate && (rule.cleared_by ?? []).some((each) => held.includes(each)),
+    );
+  const read = [...held].sort();
+  const refusals: NonMatchReason[] = ASKED_BY_CITIZENSHIP.filter(
+    (asked) =>
+      asked.candidate === result.candidate && held.length > 0 && !clears(asked.match_rule),
+  ).map((asked) => ({
+    match_rule: asked.match_rule,
+    reason_detail: `${MATCH_RULES.find((rule) => rule.id === asked.match_rule)?.name ?? asked.match_rule}: no citizenship the household holds (${read.map((id) => COUNTRY_CANDIDATES.find((each) => each.id === id)?.name ?? id).join(", ")}) clears it`,
+    gate_answer: null,
+    citizenships: read,
+    inputs: [],
+  }));
+  const reasons = [
+    ...refusals,
+    ...(result.non_match_reasons ?? []).filter((reason) => !clears(reason.match_rule)),
+  ];
+  const warnings = (result.warnings ?? []).filter((warning) => !clears(warning.match_rule));
+  const { non_match_reasons: _reasons, warnings: _warnings, ...rest } = result;
+  return {
+    ...rest,
+    ...(reasons.length > 0 ? { non_match_reasons: reasons } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
+}
 
 /** A candidate's result under a set's rules: as `ranking.py` judges one candidate. */
 function judgedBy(result: CandidateResult, rules: RulesInForce): CandidateResult {

@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { type CandidateResult, type Ranking } from "../../api/endpoints";
 import { usePillarNames, type PillarNames } from "../../api/usePillarNames";
+import { useCandidateNames } from "../../api/useCandidateNames";
+import { useMatchRuleNames } from "../../api/useMatchRuleNames";
 import {
   criteriaSetName,
   deltaTone,
@@ -30,6 +32,7 @@ import {
 } from "./rankTable";
 import { type OpenCandidate, type OpenRow, chosenPillarOf, isOpen } from "./openRows";
 import { barReachedBy, tabStopOf } from "./pillarChartFocus";
+import { citizenshipVerdict, decidedByCitizenship } from "./citizenshipVerdict";
 
 /**
  * The ranking table, and every cell in it.
@@ -87,6 +90,7 @@ export function RankingTable({
   household?: HomeRead;
 }) {
   const names = usePillarNames();
+  const ruleNames: RuleNames = { gates: useMatchRuleNames(), candidates: useCandidateNames() };
   // Where the ranking stops and the set below it starts. Null when everything matches.
   const band = excludedBand(ranking.candidates);
   // **A set rather than one id**, because home is a candidate at every level and this table
@@ -161,6 +165,7 @@ export function RankingTable({
                 detail={detail}
                 code={codes?.get(result.candidate)}
                 atHome={home.has(result.candidate)}
+                ruleNames={ruleNames}
               />
             </Fragment>
           ))}
@@ -269,6 +274,7 @@ function CandidateRow({
   detail,
   code,
   atHome,
+  ruleNames,
 }: {
   names: PillarNames;
   result: CandidateResult;
@@ -284,6 +290,8 @@ function CandidateRow({
   code?: string;
   /** Whether the household lives here, which is what makes its delta column read as zero. */
   atHome: boolean;
+  /** What a gate and a citizenship are called, for a reason said from its codes. */
+  ruleNames: RuleNames;
 }) {
   const matching = result.match_status === "matching";
   // **The chosen pillar travels on the row**, because this object is what `detail(row)` hands
@@ -403,35 +411,7 @@ function CandidateRow({
           {formatMatchStatus(result.match_status)}
         </span>
       </td>
-      <td className="reason-cell">
-        {/* Two kinds of reason, and they are not the same thing. `non_match_reasons` say why a
-            candidate that COULD be scored does not match; `insufficient_reason` says why one
-            could not be scored at all. A screen that showed only the first would leave every
-            unscoreable candidate with an empty cell and no way to find out why. */}
-        {(result.non_match_reasons ?? []).map((reason, index) => (
-          <p key={index} className="table__reason">
-            {reason.reason_detail}
-          </p>
-        ))}
-        {result.insufficient_reason ? (
-          <p className="table__reason">{result.insufficient_reason}</p>
-        ) : null}
-        {/* A warning rules nothing out and changes no score; it sits with the reasons because
-            that is where a reader looks for what a rule had to say (`reqs.md` 3.7a). */}
-        {(result.warnings ?? []).map((warning) => (
-          <p key={warning.compound_rule} className="table__reason">
-            <span className="chip chip--warning">warning</span>
-            {warning.detail}
-          </p>
-        ))}
-        {(result.non_match_reasons ?? []).length === 0 &&
-          (result.warnings ?? []).length === 0 &&
-          !result.insufficient_reason && (
-            <span className="table__reason table__reason--quiet">
-              Passed every rule
-            </span>
-          )}
-      </td>
+      <ReasonCell result={result} names={ruleNames} />
     </tr>
     {/* **Underneath the row it belongs to, not under the whole table.** The evidence behind
         a score is about one candidate, and a panel that appears a screenful below the row
@@ -740,5 +720,49 @@ function ScoreCell({ result }: { result: CandidateResult }) {
 
   return (
     <td className="col--right score-cell">{formatScore(result.score)}</td>
+  );
+}
+
+type RuleNames = Parameters<typeof citizenshipVerdict>[1];
+
+/**
+ * Why a candidate stands where it does: what ruled it out, why it could not be scored, and
+ * what a rule warned of.
+ *
+ * Two kinds of reason, and they are not the same thing. `non_match_reasons` say why a candidate
+ * that COULD be scored does not match; `insufficient_reason` says why one could not be scored at
+ * all. A screen that showed only the first would leave every unscoreable candidate with an empty
+ * cell and no way to find out why. A warning rules nothing out and changes no score; it sits
+ * with the reasons because that is where a reader looks for what a rule had to say
+ * (`reqs.md` 3.7a).
+ *
+ * **A gate the household's citizenships decided is said here, from its codes** (PL-164): it
+ * read no answer, so it must not read like one.
+ */
+function ReasonCell({ result, names }: { result: CandidateResult; names: RuleNames }) {
+  const reasons = result.non_match_reasons ?? [];
+  const warnings = result.warnings ?? [];
+  return (
+    <td className="reason-cell">
+      {reasons.map((reason, index) => (
+        <p key={index} className="table__reason">
+          {decidedByCitizenship(reason)
+            ? citizenshipVerdict(reason, names)
+            : reason.reason_detail}
+        </p>
+      ))}
+      {result.insufficient_reason ? (
+        <p className="table__reason">{result.insufficient_reason}</p>
+      ) : null}
+      {warnings.map((warning, index) => (
+        <p key={`warning-${String(index)}`} className="table__reason">
+          <span className="chip chip--warning">warning</span>
+          {decidedByCitizenship(warning) ? citizenshipVerdict(warning, names) : warning.detail}
+        </p>
+      ))}
+      {reasons.length === 0 && warnings.length === 0 && !result.insufficient_reason && (
+        <span className="table__reason table__reason--quiet">Passed every rule</span>
+      )}
+    </td>
   );
 }
