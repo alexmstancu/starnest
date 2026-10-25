@@ -296,7 +296,8 @@ describe("the confidence chips", () => {
 
     expect(tintOf(table.getByText("medium"))).toEqual({
       background: "var(--colour-surface-sunken)",
-      color: "var(--colour-text-label)",
+      // The design's #344054, which this sheet calls text-strong; text-label is #475467.
+      color: "var(--colour-text-strong)",
       "border-color": "var(--colour-border)",
     });
     expect(tintOf(table.getByText("low"))).toEqual({

@@ -3552,7 +3552,7 @@ select.field__control {
 .chip--medium {
   background: var(--colour-surface-sunken);
   border-color: var(--colour-border);
-  color: var(--colour-text-label);
+  color: var(--colour-text-strong);
 }
 
 .chip--low {
