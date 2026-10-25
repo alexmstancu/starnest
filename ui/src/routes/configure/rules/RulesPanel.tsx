@@ -11,12 +11,13 @@ import { ActRefusal } from "../../../shell/ActRefusal";
 import { ReadFailureCard } from "../../../shell/ReadFailureCard";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import {
+  describeClearance,
   describeCompoundEffect,
-  describeEffect,
-  describeUnreadAnswers,
+  describeGateEffect,
   type RuleEffect,
 } from "./ruleEffect";
-import { useRuleToggles } from "./useRuleToggles";
+import { useGateEvidence } from "./useGateEvidence";
+import { type RuleToggles, useRuleToggles } from "./useRuleToggles";
 
 /**
  * The rules that exist, and which of them this set lets act (`reqs.md` 3.7, 3.7a).
@@ -44,7 +45,21 @@ export function RulesPanel({
   const rules = useRuleToggles(criteriaSet, levelId, answersFreshness);
   // Candidates by name in the sentences, never by id (NEW-06).
   const names = rules.candidateNames;
-  const answers = rules.matchRuleResultsStatus;
+  const evidence = useGateEvidence(
+    criteriaSet.id,
+    levelId,
+    rulesInForce(rules),
+    answersFreshness,
+  );
+  const nameOf = (candidate: string) => candidateName(names, candidate);
+  // Which answers are at this level is unknown until the roster has placed them (PL-151): a
+  // pending roster is "reading", never every level's answers counted as this one's.
+  const answers =
+    rules.matchRuleResultsStatus === "error"
+      ? ("error" as const)
+      : rules.matchRuleResultsStatus === "loading" || evidence.rosterReading
+        ? ("reading" as const)
+        : rules.matchRuleResults;
 
   return (
     <>
@@ -65,6 +80,16 @@ export function RulesPanel({
           rule nobody has answered never fires either way.
         </span>
       </p>
+
+      {/* Every gate that is on, and every compound rule, says whom it acts on from the ranking. */}
+      {evidence.ranking.state === "failed" && (
+        <ReadFailureCard
+          what="Whom the rules remove or flag"
+          error={evidence.ranking.error}
+          onRetry={evidence.reloadRanking}
+          prominence="region"
+        />
+      )}
 
       <h3 className="panel__heading">Gates</h3>
       {/* Hides nothing rather than guess a level: the sentences below then count every
@@ -90,15 +115,17 @@ export function RulesPanel({
             // What the gate tests, as the catalog words it (PL-155): its level alone left a
             // reader to guess what "A visa route exists" is actually checked against.
             detail: rule.description,
-            effect:
-              answers === "ready"
-                ? describeEffect(rule.id, rules.matchRuleResults, {
-                    enforced: rules.isEnforced(rule.id),
-                    outcome: rules.outcomeOfGate(rule.id),
-                    level: levelId,
-                    nameOf: (candidate) => candidateName(names, candidate),
-                  })
-                : describeUnreadAnswers(answers),
+            // Which citizenships clear it, and whether the household holds one (PL-164).
+            clearance: describeClearance(rule, evidence.held, nameOf),
+            effect: describeGateEffect(rule, {
+              enforced: rules.isEnforced(rule.id),
+              outcome: rules.outcomeOfGate(rule.id),
+              level: levelId,
+              ranking: evidence.ranking,
+              answers,
+              held: evidence.held,
+              nameOf,
+            }),
             on: rules.isEnforced(rule.id),
             toggleLabel: `Enforce ${rule.name}`,
             onToggle: (wanted: boolean) => rules.enforce(rule.id, wanted),
@@ -110,14 +137,6 @@ export function RulesPanel({
       />
 
       <h3 className="panel__heading">Compound rules</h3>
-      {rules.ranking.state === "failed" && (
-        <ReadFailureCard
-          what="Whom the compound rules flag"
-          error={rules.ranking.error}
-          onRetry={rules.reloadRanking}
-          prominence="region"
-        />
-      )}
       <RuleList
         read={rules.compoundRules}
         what="The compound rules"
@@ -134,7 +153,7 @@ export function RulesPanel({
             effect: describeCompoundEffect(rule.id, {
               applied: rules.isApplied(rule.id),
               outcome: rules.outcomeOfCompoundRule(rule),
-              ranking: rules.ranking,
+              ranking: evidence.ranking,
               level: levelId,
             }),
             on: rules.isApplied(rule.id),
@@ -156,6 +175,8 @@ interface RuleRow {
   id: string;
   name: string;
   detail: string;
+  /** What clears a gate, and whether the household holds it; absent where nothing clears it. */
+  clearance?: string | null;
   /** What it is doing right now, and so its colour. */
   effect: RuleEffect;
   on: boolean;
@@ -248,6 +269,9 @@ function RuleRows({
           <span className="rule-row__what">
             <span className="rule-row__name">{row.name}</span>
             <span className="rule-row__detail">{row.detail}</span>
+            {row.clearance != null && (
+              <span className="rule-row__detail">{row.clearance}</span>
+            )}
             {/* What it is doing *right now*, which is the question a switch raises and a
                 description cannot answer. */}
             {/* Coloured by what it does, never red for a rule that costs nothing; a rule that is
@@ -280,4 +304,22 @@ function RuleRows({
       ))}
     </ul>
   );
+}
+
+/**
+ * This set's rules as they stand, in one string: what the ranking depends on among them. Null
+ * until both lists are settled, so the ranking is not read once for a half-known set.
+ */
+function rulesInForce(rules: RuleToggles): string | null {
+  if (rules.matchRules.state === "pending" || rules.compoundRules.state === "pending") return null;
+  const gates = rules.matchRules.state === "ready" ? rules.matchRules.data.items : [];
+  const compound = rules.compoundRules.state === "ready" ? rules.compoundRules.data.items : [];
+  return [
+    ...gates.map((gate) =>
+      rules.isEnforced(gate.id) ? `${gate.id}=${rules.outcomeOfGate(gate.id)}` : "",
+    ),
+    ...compound.map((rule) =>
+      rules.isApplied(rule.id) ? `${rule.id}=${rules.outcomeOfCompoundRule(rule)}` : "",
+    ),
+  ].join(",");
 }

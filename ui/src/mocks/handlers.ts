@@ -44,6 +44,7 @@ import {
   comparisonFor,
   makeCriteriaSetDetails,
   rankingFor,
+  type GateEvidence,
   type RulesInForce,
   savedAttributeScoresOf,
 } from "./fixtures";
@@ -702,7 +703,7 @@ export const handlers = [
     const refused = refusedBeforeScoring(criteriaSet);
     if (refused) return refused;
 
-    return HttpResponse.json(rankingFor(criteriaSet, level, scaleInForce(), rulesOf(criteriaSet), household.citizenships));
+    return HttpResponse.json(rankingFor(criteriaSet, level, scaleInForce(), rulesOf(criteriaSet), gateEvidence()));
   }),
 
   /**
@@ -723,7 +724,7 @@ export const handlers = [
     const refused = refusedBeforeScoring(criteriaSet);
     if (refused) return refused;
     const candidateId = String(params["candidateId"]);
-    const ranked = rankingFor(criteriaSet, level, scaleInForce(), rulesOf(criteriaSet), household.citizenships).candidates.find(
+    const ranked = rankingFor(criteriaSet, level, scaleInForce(), rulesOf(criteriaSet), gateEvidence()).candidates.find(
       (each) => each.candidate === candidateId,
     );
     if (!ranked) return notFound(candidateId);
@@ -751,7 +752,7 @@ export const handlers = [
     if (refused) return refused;
     // Frozen with it: a saved ranking keeps the scale it was computed on, and the results it
     // computed, whatever the setting and the figures do afterwards.
-    const ranking = rankingFor(body.criteria_set, body.level, scaleInForce(), rulesOf(body.criteria_set), household.citizenships);
+    const ranking = rankingFor(body.criteria_set, body.level, scaleInForce(), rulesOf(body.criteria_set), gateEvidence());
     // Who was ranked first, by the roster's name; nobody when nothing was ranked (PL-145).
     const first = ranking.candidates.find((each) => each.rank === 1);
     const summary: EvaluationSummary = {
@@ -934,7 +935,7 @@ export const handlers = [
     }
     const repeated = [...new Set(comparators.filter((each, at) => comparators.indexOf(each) !== at))];
     const ranked = new Map(
-      rankingFor(criteriaSet, level, scaleInForce(), rulesOf(criteriaSet), household.citizenships).candidates.map((result) => [result.candidate, result]),
+      rankingFor(criteriaSet, level, scaleInForce(), rulesOf(criteriaSet), gateEvidence()).candidates.map((result) => [result.candidate, result]),
     );
     const unranked = [focus, ...comparators].find((candidate) => !ranked.has(candidate));
     const refused: [string, string[]] | null =
@@ -2003,6 +2004,11 @@ function rebalancePillarWeights(
 }
 
 /** The rules a set turns on as it stands now, edits included; none for a set that is not there. */
+/** What the gates read besides the set, as stored now: the household and the answers. */
+function gateEvidence(): GateEvidence {
+  return { citizenships: household.citizenships, answers: matchRuleResults };
+}
+
 function rulesOf(criteriaSet: string): RulesInForce {
   return criteriaSetDetails[criteriaSet] ?? {};
 }

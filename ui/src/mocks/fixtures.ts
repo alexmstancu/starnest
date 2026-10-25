@@ -471,11 +471,10 @@ export function rankingFor(
   level: string,
   scaleMax: number = MOCK_SCORE_SCALE,
   rules: RulesInForce = makeCriteriaSetDetails()[criteriaSet] ?? {},
-  /** The household's citizenships, which decide some gates before any answer (Q239). */
-  citizenships: readonly string[] = HOUSEHOLD.citizenships,
+  evidence: GateEvidence = { citizenships: HOUSEHOLD.citizenships, answers: MATCH_RULE_RESULTS },
 ): Ranking {
   const judged = (level === "city" ? CITY_RESULTS : COUNTRY_RESULTS).map((result) =>
-    judgedBy(byCitizenship(result, citizenships), rules),
+    judgedBy(result, rules, gateFindings(result, level, evidence)),
   );
   return {
     evaluation: null,
@@ -495,53 +494,88 @@ type Finding = { match_rule?: string | null; compound_rule?: string | null; deta
 >;
 
 /**
- * Where a gate decided by citizenship is asked, by candidate: the gate's concerned candidates,
- * which the contract does not carry (`MatchRule.concerns` on the server).
+ * What the gates read besides the set: the household's citizenships (null with no household
+ * recorded) and the stored answers.
  */
-const ASKED_BY_CITIZENSHIP: readonly { candidate: string; match_rule: string }[] = [
-  { candidate: "country.netherlands", match_rule: "country.eu_free_movement" },
-];
+export interface GateEvidence {
+  citizenships: readonly string[] | null;
+  answers: readonly MatchRuleResult[];
+}
 
 /**
- * What the household's citizenships decide before any answer is read (Q239, `rules.py`): a gate
- * a held citizenship clears rules nothing out whatever was recorded, and a gate decided by
- * citizenship that none clears refuses with no answer, naming the citizenships it read.
+ * The candidates a gate is asked of, where the catalog names them (0517's `match_rule_candidate`
+ * rows): free movement is a question about the 27 EU and 3 EEA states, so not Switzerland, which
+ * has its own quota gate, and not the United Kingdom.
  */
-function byCitizenship(result: CandidateResult, held: readonly string[]): CandidateResult {
-  const clears = (gate: string | null | undefined) =>
-    MATCH_RULES.some(
-      (rule) => rule.id === gate && (rule.cleared_by ?? []).some((each) => held.includes(each)),
-    );
-  const read = [...held].sort();
-  const refusals: NonMatchReason[] = ASKED_BY_CITIZENSHIP.filter(
-    (asked) =>
-      asked.candidate === result.candidate && held.length > 0 && !clears(asked.match_rule),
-  ).map((asked) => ({
-    match_rule: asked.match_rule,
-    reason_detail: `${MATCH_RULES.find((rule) => rule.id === asked.match_rule)?.name ?? asked.match_rule}: no citizenship the household holds (${read.map((id) => COUNTRY_CANDIDATES.find((each) => each.id === id)?.name ?? id).join(", ")}) clears it`,
+function concernedBy(gate: string): readonly string[] | undefined {
+  return gate === "country.eu_free_movement"
+    ? FREE_MOVEMENT_CITIZENSHIPS.filter((candidate) => candidate !== "country.switzerland")
+    : undefined;
+}
+
+/**
+ * Every gate that fails one candidate, before the set decides which act (`evaluation/rules.py`,
+ * Q239): a confirmed `not_matching` answer -- the fixture's own, or one stored since -- unless a
+ * held citizenship clears the gate, and a gate decided by citizenship where none clears it. No
+ * household recorded decides nothing. Which candidates a gate concerns is not served; the gate
+ * decided by citizenship concerns the candidates 0517 names (`concernedBy`), any other every
+ * candidate at its level.
+ */
+function gateFindings(result: CandidateResult, level: string, evidence: GateEvidence): Finding[] {
+  const fixed: Finding[] = (result.non_match_reasons ?? [])
+    .filter((reason) => reason.match_rule)
+    .map(({ reason_detail, criterion: _criterion, ...rest }) => ({ ...rest, detail: reason_detail }));
+  const answered: Finding[] = evidence.answers
+    .filter(
+      (answer) =>
+        answer.candidate === result.candidate &&
+        answer.match_result === "not_matching" &&
+        answer.is_proposal !== true &&
+        !fixed.some((each) => each.match_rule === answer.match_rule),
+    )
+    .map((answer) => ({
+      match_rule: answer.match_rule,
+      detail: answer.reason ?? `${gateName(answer.match_rule)} answered not matching, with no reason recorded`,
+      gate_answer: answer,
+      inputs: [],
+    }));
+  const held = evidence.citizenships ?? [];
+  const clears = (gate: string) =>
+    MATCH_RULES.find((rule) => rule.id === gate)?.cleared_by.some((each) => held.includes(each)) ??
+    false;
+  const decided: Finding[] = MATCH_RULES.filter(
+    (rule) =>
+      rule.decided_by_citizenship &&
+      (rule.level === null || rule.level === level) &&
+      (concernedBy(rule.id)?.includes(result.candidate) ?? true) &&
+      held.length > 0 &&
+      !clears(rule.id),
+  ).map((rule) => ({
+    match_rule: rule.id,
+    detail: `${rule.name}: none of the household's citizenships clears it`,
     gate_answer: null,
-    citizenships: read,
+    // Sorted by id, as `rules.py` reads them (`tuple(sorted(citizenship.held))`).
+    citizenships: [...held].sort(),
     inputs: [],
   }));
-  const reasons = [
-    ...refusals,
-    ...(result.non_match_reasons ?? []).filter((reason) => !clears(reason.match_rule)),
-  ];
-  const warnings = (result.warnings ?? []).filter((warning) => !clears(warning.match_rule));
-  const { non_match_reasons: _reasons, warnings: _warnings, ...rest } = result;
-  return {
-    ...rest,
-    ...(reasons.length > 0 ? { non_match_reasons: reasons } : {}),
-    ...(warnings.length > 0 ? { warnings } : {}),
-  };
+  return [...[...fixed, ...answered].filter((each) => !clears(each.match_rule ?? "")), ...decided];
+}
+
+function gateName(gate: string): string {
+  return MATCH_RULES.find((rule) => rule.id === gate)?.name ?? gate;
 }
 
 /** A candidate's result under a set's rules: as `ranking.py` judges one candidate. */
-function judgedBy(result: CandidateResult, rules: RulesInForce): CandidateResult {
+function judgedBy(
+  result: CandidateResult,
+  rules: RulesInForce,
+  gates: readonly Finding[],
+): CandidateResult {
   const findings: Finding[] = [
+    ...gates,
     ...(result.warnings ?? []),
     ...(result.non_match_reasons ?? [])
-      .filter((reason) => !reason.criterion)
+      .filter((reason) => !reason.criterion && !reason.match_rule)
       .map(({ reason_detail, criterion: _criterion, ...rest }) => ({ ...rest, detail: reason_detail })),
   ];
   const warnings: RuleWarning[] = [];

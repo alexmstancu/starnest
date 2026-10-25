@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CandidateResult, Ranking } from "../../../api/endpoints";
 import type { Idle, Read } from "../../../api/read";
 import {
+  describeClearance,
   type RuleResult,
   describeCompoundEffect,
   describeEffect,
@@ -323,6 +324,32 @@ describe("what a compound rule does", () => {
     expect(describeCompoundEffect(RULE, off).sentence).toBe("Not applied, so it flags nobody.");
     expect(describeCompoundEffect(RULE, { ...off, outcome: "not_matching" }).sentence).toBe(
       "Not applied, so it removes nobody.",
+    );
+  });
+});
+
+/** PL-164. What clears a gate, said with names, and what is not known said as such. */
+describe("what clears a gate", () => {
+  const nameOf = (id: string) => id.replace("country.", "").toUpperCase();
+  const gate = (cleared_by: string[], decided_by_citizenship = false) => ({
+    id: "g",
+    cleared_by,
+    decided_by_citizenship,
+  });
+
+  it("says nothing for a gate no citizenship clears", () => {
+    expect(describeClearance(gate([]), { state: "reading" }, nameOf)).toBeNull();
+  });
+
+  it("counts a long list of clearing citizenships rather than naming them all", () => {
+    expect(
+      describeClearance(gate(["country.a", "country.b", "country.c", "country.d"]), { state: "reading" }, nameOf),
+    ).toBe("Cleared by a citizenship of any of 4 countries.");
+  });
+
+  it("says a citizenship decision is unknown when the household cannot be read", () => {
+    expect(describeClearance(gate(["country.a"], true), { state: "failed" }, nameOf)).toBe(
+      "Decided by citizenship. Yours could not be read.",
     );
   });
 });

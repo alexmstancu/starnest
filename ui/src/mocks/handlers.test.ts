@@ -507,6 +507,45 @@ describe("the mock ranking's rules", () => {
   });
 });
 
+/** Q239, as `evaluation/rules.py` judges: a held citizenship clears a gate, answer or none. */
+describe("the mock ranking's citizenships", () => {
+  const spain = async () =>
+    (await fetchRanking("default", "country")).candidates.find(
+      (each) => each.candidate === "country.spain",
+    )!;
+
+  it("drops a recorded refusal a held citizenship clears", async () => {
+    await setMatchRuleEnforcement("default", "country.uk_skilled_worker", true);
+    await putMatchRuleResult("country.uk_skilled_worker", "country.spain", {
+      match_result: "not_matching",
+      data_source: "manual",
+    });
+    expect((await spain()).non_match_reasons?.map((each) => each.match_rule)).toContain(
+      "country.uk_skilled_worker",
+    );
+
+    await replaceHousehold({ ...HOUSEHOLD, citizenships: ["country.romania", "country.ireland"] });
+
+    expect((await spain()).non_match_reasons?.map((each) => each.match_rule)).not.toContain(
+      "country.uk_skilled_worker",
+    );
+  });
+
+  it("rules out by free movement where no held citizenship clears it, naming them", async () => {
+    await setMatchRuleEnforcement("default", "country.eu_free_movement", true);
+    expect((await spain()).non_match_reasons?.map((each) => each.match_rule)).not.toContain(
+      "country.eu_free_movement",
+    );
+
+    await replaceHousehold({ ...HOUSEHOLD, citizenships: ["country.united_kingdom"] });
+
+    const reason = (await spain()).non_match_reasons?.find(
+      (each) => each.match_rule === "country.eu_free_movement",
+    );
+    expect(reason?.citizenships).toEqual(["country.united_kingdom"]);
+  });
+});
+
 describe("the mock's holdings", () => {
   const SINCE = "2026-08-01T00:00:00+02:00";
 

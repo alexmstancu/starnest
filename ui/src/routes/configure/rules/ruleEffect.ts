@@ -158,7 +158,19 @@ export function describeCompoundEffect(
     const verb = options.outcome === "warning" ? "flags" : "removes";
     return { sentence: `Not applied, so it ${verb} nobody.`, tone: "nothing" };
   }
-  const { ranking } = options;
+  return effectInRanking(options.ranking, "compound_rule", ruleId, options.level);
+}
+
+/**
+ * Whom a rule removes or flags in the live ranking: the candidates whose reasons for not
+ * matching, or warnings, name it -- exactly what the server's evaluation decided (PL-156, PL-164).
+ */
+function effectInRanking(
+  ranking: Read<Ranking> | Idle,
+  kind: "compound_rule" | "match_rule",
+  ruleId: string,
+  level: string,
+): RuleEffect {
   if (ranking.state === "failed") {
     return {
       sentence: "The ranking could not be read, so whom this rule acts on is not known.",
@@ -169,24 +181,151 @@ export function describeCompoundEffect(
 
   const results = ranking.data.candidates;
   const removed = results
-    .filter((each) => (each.non_match_reasons ?? []).some((reason) => reason.compound_rule === ruleId))
+    .filter((each) => (each.non_match_reasons ?? []).some((reason) => reason[kind] === ruleId))
     .map((each) => each.name)
     .sort();
   const flagged = results
-    .filter((each) => (each.warnings ?? []).some((warning) => warning.compound_rule === ruleId))
+    .filter((each) => (each.warnings ?? []).some((warning) => warning[kind] === ruleId))
     .map((each) => each.name)
     .sort();
   if (removed.length === 0 && flagged.length === 0) {
-    return { sentence: `Applies to no ${options.level} right now.`, tone: "nothing" };
+    return { sentence: `Applies to no ${level} right now.`, tone: "nothing" };
   }
   const sentences = [
-    removed.length > 0 ? `Removes ${list(removed, options.level)}.` : "",
-    flagged.length > 0 ? `Flags ${list(flagged, options.level)}.` : "",
+    removed.length > 0 ? `Removes ${list(removed, level)}.` : "",
+    flagged.length > 0 ? `Flags ${list(flagged, level)}.` : "",
   ];
   return {
     sentence: sentences.filter(Boolean).join(" "),
     tone: removed.length > 0 ? "removes" : "flags",
   };
+}
+
+/** The household's citizenships as far as they are known: still read, absent, unreadable, or held. */
+export type HeldCitizenships =
+  | { readonly state: "reading" }
+  | { readonly state: "no-household" }
+  | { readonly state: "failed" }
+  | { readonly state: "held"; readonly citizenships: readonly string[] };
+
+/** What a gate's line needs to know about the gate: the catalog's clearing citizenships. */
+export interface GateClearing {
+  readonly id: string;
+  /** Optional here, as a gate written before 0517 lacks them: nothing then clears it. */
+  readonly cleared_by?: readonly string[];
+  readonly decided_by_citizenship?: boolean;
+}
+
+/**
+ * The sentence beside one gate (PL-164): agreeing with the server's evaluation.
+ *
+ * **A gate that is on is the ranking's to say**, as a compound rule is: a citizenship that clears
+ * it removes its refusal even where an answer was recorded, and free movement rules a candidate
+ * out without one, so the answers alone would contradict the ranking. **A gate that is off is
+ * not evaluated**, so its line says what the answers would do -- less any the household's
+ * citizenships clear -- and free movement, which the answers do not decide, says so.
+ */
+export function describeGateEffect(
+  gate: GateClearing,
+  options: {
+    enforced: boolean;
+    outcome: RuleOutcome;
+    level: string;
+    ranking: Read<Ranking> | Idle;
+    /** "reading" while the answers, or the roster that places them at a level, are on their way. */
+    answers: readonly RuleResult[] | "reading" | "error";
+    held: HeldCitizenships;
+    nameOf?: (candidate: string) => string;
+  },
+): RuleEffect {
+  const { answers } = options;
+  if (options.enforced) {
+    const effect = effectInRanking(options.ranking, "match_rule", gate.id, options.level);
+    const proposed =
+      typeof answers === "string"
+        ? 0
+        : answers.filter((each) => each.match_rule === gate.id && each.is_proposal === true).length;
+    return proposed === 0
+      ? effect
+      : {
+          ...effect,
+          sentence: `${effect.sentence} ${awaiting(proposed)} confirmation and ${proposed === 1 ? "rules" : "rule"} nobody out until then.`,
+        };
+  }
+  if (gate.decided_by_citizenship) {
+    return offWhen(true, {
+      sentence: "Decided by your citizenships, not by a recorded answer.",
+      tone: "nothing",
+    });
+  }
+  if (answers === "reading") return describeUnreadAnswers("loading");
+  if (answers === "error") return describeUnreadAnswers("error");
+  const clearers = gate.cleared_by ?? [];
+  if (clearers.length > 0) {
+    if (options.held.state === "reading") {
+      return { sentence: "Reading your citizenships…", tone: "unknown" };
+    }
+    if (options.held.state === "failed") {
+      return {
+        sentence: "Your citizenships could not be read, so what this rule would do is not known.",
+        tone: "unknown",
+      };
+    }
+    if (holdsOneOf(options.held, clearers)) {
+      return offWhen(true, { sentence: "Removes nobody: your citizenship clears it.", tone: "nothing" });
+    }
+  }
+  return describeEffect(gate.id, answers, {
+    enforced: false,
+    outcome: options.outcome,
+    level: options.level,
+    nameOf: options.nameOf,
+  });
+}
+
+/**
+ * What clears a gate, naming citizenships, and whether the household holds one (PL-164). Null
+ * for a gate no citizenship clears.
+ */
+export function describeClearance(
+  gate: GateClearing,
+  held: HeldCitizenships,
+  nameOf: (candidate: string) => string,
+): string | null {
+  const yours = held.state === "held" ? held.citizenships : [];
+  const catalog = gate.cleared_by ?? [];
+  const clearing = yours.filter((each) => catalog.includes(each)).map(nameOf).sort();
+  const cleared = clearing.length > 0 ? ` Cleared: you hold ${citizenshipOf(clearing, "and")}.` : "";
+  if (gate.decided_by_citizenship) {
+    if (held.state === "no-household") {
+      return "Decided by citizenship, and no household is recorded, so it decides nothing yet.";
+    }
+    if (held.state === "failed") return "Decided by citizenship. Yours could not be read.";
+    if (held.state === "held" && clearing.length === 0) {
+      return `Decided by citizenship, and none of yours clears it: you hold ${citizenshipOf(yours.map(nameOf).sort(), "and")}.`;
+    }
+    return `Decided by citizenship.${cleared}`;
+  }
+  if (catalog.length === 0) return null;
+  const clearers = catalog.map(nameOf).sort();
+  const what =
+    clearers.length > 3
+      ? `a citizenship of any of ${clearers.length} countries`
+      : citizenshipOf(clearers, "or");
+  return `Cleared by ${what}.${cleared}`;
+}
+
+function holdsOneOf(held: HeldCitizenships, clearing: readonly string[]): boolean {
+  return held.state === "held" && held.citizenships.some((each) => clearing.includes(each));
+}
+
+/** "citizenship of Ireland", "citizenship of Ireland or United Kingdom". */
+function citizenshipOf(names: readonly string[], joiner: "and" | "or"): string {
+  const joined =
+    names.length <= 1
+      ? (names[0] ?? "")
+      : `${names.slice(0, -1).join(", ")} ${joiner} ${names[names.length - 1]}`;
+  return `citizenship of ${joined}`;
 }
 
 /**

@@ -2,7 +2,12 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { makeCriteriaSetDetails, rankingFor } from "../../../mocks/fixtures";
+import {
+  putMatchRuleResult,
+  replaceHousehold,
+  setMatchRuleEnforcement,
+} from "../../../api/endpoints";
+import { HOUSEHOLD, makeCriteriaSetDetails, rankingFor } from "../../../mocks/fixtures";
 import { mockServer } from "../../../mocks/server";
 import { renderShell } from "../../../testing/renderShell";
 
@@ -234,38 +239,28 @@ describe("what each rule says it is doing", () => {
     renderShell("/configure");
     await panel();
 
+    // Spain is the ranking's refusal; Portugal's answer is only proposed.
     const gate = await rowOf("A visa route exists");
     await waitFor(() =>
       expect(gate).toHaveTextContent(
-        "1 proposed answer awaits confirmation, so this rules nobody out yet.",
+        "Removes Spain. 1 proposed answer awaits confirmation and rules nobody out until then.",
       ),
     );
-    expect(gate).not.toHaveTextContent(/Removes/);
+    expect(gate).not.toHaveTextContent(/Removes.*Portugal/);
   });
 
   it("names the candidate a confirmed answer removes, never its id", async () => {
-    mockServer.use(
-      http.get("/v1/match-rule-results", () =>
-        HttpResponse.json({
-          items: [
-            {
-              match_rule: "country.visa_route_exists",
-              candidate: "country.united_kingdom",
-              match_result: "not_matching",
-              data_source: "manual",
-              retrieval_date: "2026-09-12T09:00:00Z",
-              is_proposal: false,
-            },
-          ],
-        }),
-      ),
-    );
+    // Recorded, so the ranking reads it as the server's does.
+    await putMatchRuleResult("country.visa_route_exists", "country.portugal", {
+      match_result: "not_matching",
+      data_source: "manual",
+    });
     renderShell("/configure");
     await panel();
 
     const gate = await rowOf("A visa route exists");
     await waitFor(() =>
-      expect(gate).toHaveTextContent("Removes United Kingdom."),
+      expect(gate).toHaveTextContent("Removes 2 countries: Portugal and Spain."),
     );
     expect(gate).not.toHaveTextContent("country.");
   });
@@ -283,15 +278,15 @@ describe("what each rule says it is doing", () => {
     renderShell("/configure");
     await panel();
 
-    const freeMovement = await rowOf("Free movement applies");
-    expect(freeMovement).toHaveTextContent("Reading the answers…");
-    expect(freeMovement).not.toHaveTextContent(/never fires/);
+    const quota = await rowOf("A residence quota is open");
+    expect(quota).toHaveTextContent("Reading the answers…");
+    expect(quota).not.toHaveTextContent(/never fires/);
 
     release();
 
     await waitFor(() =>
-      expect(freeMovement).toHaveTextContent(
-        "Answered for one candidate, and rules nobody out — not while this is off.",
+      expect(quota).toHaveTextContent(
+        "No answer has been recorded for this rule, so it never fires — not while this is off.",
       ),
     );
   });
@@ -308,7 +303,7 @@ describe("what each rule says it is doing", () => {
     renderShell("/configure");
     await panel();
 
-    const gate = await rowOf("A visa route exists");
+    const gate = await rowOf("A residence quota is open");
     await waitFor(() =>
       expect(gate).toHaveTextContent(
         "The answers could not be read, so what this rule does is not known.",
@@ -569,7 +564,7 @@ describe("what a rule costs, and its colour", () => {
       ),
     ).toHaveClass("rule-row__effect--unknown");
     expect(
-      rules.getByText("Whom the compound rules flag could not be loaded"),
+      rules.getByText("Whom the rules remove or flag could not be loaded"),
     ).toBeInTheDocument();
 
     failing = false;
@@ -586,7 +581,7 @@ describe("what a rule costs, and its colour", () => {
         HttpResponse.json({
           items: [
             {
-              match_rule: "country.eu_free_movement",
+              match_rule: "country.residence_quota_open",
               candidate: "country.united_kingdom",
               match_result: "not_matching",
               data_source: "manual",
@@ -601,7 +596,7 @@ describe("what a rule costs, and its colour", () => {
     await panel();
 
     const gate = await effectOf(
-      "Free movement applies",
+      "A residence quota is open",
       "Removes United Kingdom — not while this is off.",
     );
     expect(gate).toHaveClass("rule-row__effect--off");
@@ -612,27 +607,16 @@ describe("what a rule costs, and its colour", () => {
   });
 
   it("removes in red, and flags in amber once the gate is held as a warning", async () => {
-    mockServer.use(
-      http.get("/v1/match-rule-results", () =>
-        HttpResponse.json({
-          items: [
-            {
-              match_rule: "country.visa_route_exists",
-              candidate: "country.united_kingdom",
-              match_result: "not_matching",
-              data_source: "manual",
-              retrieval_date: "2026-09-12T09:00:00Z",
-              is_proposal: false,
-            },
-          ],
-        }),
-      ),
-    );
+    // Recorded, so the ranking reads it as the server's does.
+    await putMatchRuleResult("country.visa_route_exists", "country.portugal", {
+      match_result: "not_matching",
+      data_source: "manual",
+    });
     const user = userEvent.setup();
     renderShell("/configure");
     await panel();
     expect(
-      await effectOf("A visa route exists", "Removes United Kingdom."),
+      await effectOf("A visa route exists", "Removes 2 countries: Portugal and Spain."),
     ).toHaveClass("rule-row__effect--removes");
 
     await user.selectOptions(
@@ -641,7 +625,7 @@ describe("what a rule costs, and its colour", () => {
     );
 
     expect(
-      await effectOf("A visa route exists", "Flags United Kingdom."),
+      await effectOf("A visa route exists", "Flags 2 countries: Portugal and Spain."),
     ).toHaveClass("rule-row__effect--flags");
   });
 });
@@ -652,7 +636,7 @@ describe("what a rule costs, and its colour", () => {
  */
 describe("a gate's answers at the panel's level", () => {
   const answer = (candidate: string) => ({
-    match_rule: "country.visa_route_exists",
+    match_rule: "country.residence_quota_open",
     candidate,
     match_result: "not_matching",
     data_source: "manual",
@@ -671,8 +655,8 @@ describe("a gate's answers at the panel's level", () => {
     renderShell("/configure");
     await panel();
 
-    const gate = await screen.findByRole("listitem", { name: "A visa route exists" });
-    await waitFor(() => expect(gate).toHaveTextContent("Removes United Kingdom."));
+    const gate = await screen.findByRole("listitem", { name: "A residence quota is open" });
+    await waitFor(() => expect(gate).toHaveTextContent("Removes United Kingdom"));
     expect(gate).not.toHaveTextContent(/Lisbon/);
   });
 
@@ -690,7 +674,7 @@ describe("a gate's answers at the panel's level", () => {
     renderShell("/configure");
     const rules = await panel();
 
-    const gate = await screen.findByRole("listitem", { name: "A visa route exists" });
+    const gate = await screen.findByRole("listitem", { name: "A residence quota is open" });
     await waitFor(() => expect(gate).toHaveTextContent(/Removes 2 countries/));
     const note = await rules.findByText(
       /The list of places could not be read, so each gate counts its answers at every level\./,
@@ -699,9 +683,231 @@ describe("a gate's answers at the panel's level", () => {
     rosterDown = false;
     await user.click(within(note).getByRole("button", { name: "Try again" }));
 
-    await waitFor(() => expect(gate).toHaveTextContent("Removes United Kingdom."));
+    await waitFor(() => expect(gate).toHaveTextContent("Removes United Kingdom"));
     expect(
       rules.queryByText(/The list of places could not be read/),
     ).toBeNull();
+  });
+});
+
+/**
+ * PL-164 (Q239). **A gate says which citizenships clear it, and whether the household holds
+ * one**; its cost line agrees with the server's evaluation, which a held citizenship clears
+ * even where a refusal was recorded, and which free movement decides from the citizenships.
+ */
+describe("a gate and the household's citizenships", () => {
+  const UK_GATE = "country.uk_skilled_worker";
+  const refusal = (gate: string, candidate: string) => ({
+    match_rule: gate,
+    candidate,
+    match_result: "not_matching",
+    data_source: "manual",
+    retrieval_date: "2026-09-12T09:00:00Z",
+    is_proposal: false,
+  });
+
+  function rowOf(name: string): Promise<HTMLElement> {
+    return screen.findByRole("listitem", { name });
+  }
+
+  /** The household as the mock stores it, with these citizenships; read by the ranking too. */
+  async function holding(...citizenships: string[]) {
+    await replaceHousehold({ ...HOUSEHOLD, citizenships });
+  }
+
+  it("names the citizenships that clear a gate", async () => {
+    renderShell("/configure");
+    await panel();
+
+    const gate = await rowOf("UK Skilled Worker route");
+    await waitFor(() =>
+      expect(gate).toHaveTextContent("Cleared by citizenship of Ireland or United Kingdom."),
+    );
+    expect(gate).not.toHaveTextContent(/Cleared: you hold/);
+    expect(gate).not.toHaveTextContent("country.");
+  });
+
+  it("says the household holds one, and that a refusal recorded for it removes nobody", async () => {
+    await holding("country.romania", "country.ireland");
+    mockServer.use(
+      http.get("/v1/match-rule-results", () =>
+        HttpResponse.json({ items: [refusal(UK_GATE, "country.portugal")] }),
+      ),
+    );
+    renderShell("/configure");
+    await panel();
+
+    const gate = await rowOf("UK Skilled Worker route");
+    await waitFor(() =>
+      expect(gate).toHaveTextContent("Cleared: you hold citizenship of Ireland."),
+    );
+    await waitFor(() =>
+      expect(gate).toHaveTextContent(
+        "Removes nobody: your citizenship clears it — not while this is off.",
+      ),
+    );
+  });
+
+  it("takes an enforced gate's cost from the ranking, which the citizenship clears", async () => {
+    await holding("country.romania", "country.ireland");
+    await setMatchRuleEnforcement("default", UK_GATE, true);
+    mockServer.use(
+      http.get("/v1/match-rule-results", () =>
+        HttpResponse.json({ items: [refusal(UK_GATE, "country.portugal")] }),
+      ),
+    );
+    renderShell("/configure");
+    await panel();
+
+    expect(
+      await within(await rowOf("UK Skilled Worker route")).findByText(
+        "Applies to no country right now.",
+      ),
+    ).not.toHaveClass("rule-row__effect--removes");
+  });
+
+  it("says free movement is decided by citizenship, and cleared by the one held", async () => {
+    renderShell("/configure");
+    await panel();
+
+    const gate = await rowOf("Free movement applies");
+    await waitFor(() =>
+      expect(gate).toHaveTextContent("Decided by citizenship. Cleared: you hold citizenship of Romania."),
+    );
+    expect(gate).toHaveTextContent(
+      "Decided by your citizenships, not by a recorded answer — not while this is off.",
+    );
+  });
+
+  it("says no household decides nothing, and hides no refusal for it", async () => {
+    mockServer.use(
+      http.get("/v1/household", () =>
+        HttpResponse.json(
+          { code: "household_not_configured", message: "no household" },
+          { status: 404 },
+        ),
+      ),
+      http.get("/v1/match-rule-results", () =>
+        HttpResponse.json({ items: [refusal(UK_GATE, "country.united_kingdom")] }),
+      ),
+    );
+    renderShell("/configure");
+    await panel();
+
+    await waitFor(async () =>
+      expect(await rowOf("Free movement applies")).toHaveTextContent(
+        "Decided by citizenship, and no household is recorded, so it decides nothing yet.",
+      ),
+    );
+    await waitFor(async () =>
+      expect(await rowOf("UK Skilled Worker route")).toHaveTextContent(
+        "Removes United Kingdom — not while this is off.",
+      ),
+    );
+  });
+
+  it("says what an enforced gate costs is unknown when the ranking cannot be read", async () => {
+    mockServer.use(
+      http.get("/v1/rankings", () =>
+        HttpResponse.json({ code: "internal_error", message: "no ranking" }, { status: 500 }),
+      ),
+    );
+    renderShell("/configure");
+    const rules = await panel();
+
+    expect(
+      await within(await rowOf("A visa route exists")).findByText(
+        /^The ranking could not be read, so whom this rule acts on is not known\./,
+      ),
+    ).toHaveClass("rule-row__effect--unknown");
+    expect(rules.getByText("Whom the rules remove or flag could not be loaded")).toBeInTheDocument();
+  });
+
+  /** Batch review (Medium): a citizenship edit moves the lines at once, through the household form. */
+  it("moves free movement's line the moment a citizenship change is saved", async () => {
+    await setMatchRuleEnforcement("default", "country.eu_free_movement", true);
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+    const gate = await rowOf("Free movement applies");
+    await waitFor(() => expect(gate).toHaveTextContent("Applies to no country right now."));
+
+    const passports = screen.getByRole("combobox", { name: "Passports held" });
+    await user.click(passports);
+    await user.type(passports, "United");
+    await user.tab();
+    await user.keyboard("{Enter}");
+    await user.click(await screen.findByRole("button", { name: "Remove Romania" }));
+    await user.click(screen.getByRole("button", { name: "Save household" }));
+
+    await waitFor(() =>
+      expect(gate).toHaveTextContent(
+        "Decided by citizenship, and none of yours clears it: you hold citizenship of United Kingdom.",
+      ),
+    );
+    await waitFor(() =>
+      expect(gate).toHaveTextContent(
+        "Removes 4 countries: Estonia, Netherlands, Portugal and 1 more.",
+      ),
+    );
+  });
+
+  /** Batch review (Medium): a source switched reads the ranking again for the rules' lines. */
+  it("reads the ranking again when a source is switched", async () => {
+    let switched = false;
+    mockServer.use(
+      http.patch("/v1/data-sources/:dataSourceId", () => {
+        switched = true;
+      }),
+      http.get("/v1/rankings", () =>
+        HttpResponse.json(
+          switched
+            ? { ...rankingFor("default", "country"), candidates: [] }
+            : rankingFor("default", "country"),
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+    const gate = await rowOf("A visa route exists");
+    await waitFor(() => expect(gate).toHaveTextContent("Removes Spain."));
+
+    await user.click((await screen.findAllByRole("switch", { name: /^Consult / }))[0]!);
+
+    await waitFor(() => expect(gate).toHaveTextContent("Applies to no country right now."));
+  });
+
+  /** Batch review (Low): a roster still on its way places no answer, so nothing is removed yet. */
+  it("reads rather than removes while the roster is still on its way", async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockServer.use(
+      http.get("/v1/candidates", async () => {
+        await held;
+      }),
+      http.get("/v1/match-rule-results", () =>
+        HttpResponse.json({
+          items: [
+            refusal("country.residence_quota_open", "country.united_kingdom"),
+            refusal("country.residence_quota_open", "city.lisbon"),
+          ],
+        }),
+      ),
+    );
+    renderShell("/configure");
+    await panel();
+
+    const quota = await rowOf("A residence quota is open");
+    await waitFor(() => expect(quota).toHaveTextContent("Reading the answers…"));
+    expect(quota).not.toHaveTextContent(/Removes/);
+
+    release();
+
+    await waitFor(() =>
+      expect(quota).toHaveTextContent("Removes United Kingdom — not while this is off."),
+    );
   });
 });

@@ -1875,7 +1875,7 @@ describe("a gate's sentence once its answers change", () => {
     const gate = await visaGate();
     await waitFor(() =>
       expect(gate).toHaveTextContent(
-        "1 proposed answer awaits confirmation, so this rules nobody out yet.",
+        "Removes Spain. 1 proposed answer awaits confirmation and rules nobody out until then.",
       ),
     );
 
@@ -1885,7 +1885,7 @@ describe("a gate's sentence once its answers change", () => {
       }),
     );
 
-    await waitFor(() => expect(gate).toHaveTextContent("Removes Portugal."));
+    await waitFor(() => expect(gate).toHaveTextContent("Removes 2 countries: Portugal and Spain."));
     expect(gate).not.toHaveTextContent(/awaits confirmation/);
   });
 
@@ -1925,7 +1925,7 @@ describe("a gate's sentence once its answers change", () => {
 
     await waitFor(() =>
       expect(gate).toHaveTextContent(
-        "2 proposed answers await confirmation, so this rules nobody out yet.",
+        "2 proposed answers await confirmation and rule nobody out until then.",
       ),
     );
   });
@@ -1969,7 +1969,7 @@ describe("a gate's sentence once its answers change", () => {
     ).toBeGreaterThan(0);
     await waitFor(() =>
       expect(gate).toHaveTextContent(
-        "2 proposed answers await confirmation, so this rules nobody out yet.",
+        "2 proposed answers await confirmation and rule nobody out until then.",
       ),
     );
     // In the list too, where it can be confirmed rather than paid for a second time.
@@ -2020,7 +2020,7 @@ describe("a gate's sentence once its answers change", () => {
         name: "Confirm A visa route exists for Portugal",
       }),
     );
-    await waitFor(() => expect(gate).toHaveTextContent("Removes Portugal."));
+    await waitFor(() => expect(gate).toHaveTextContent("Removes 2 countries: Portugal and Spain."));
 
     return reads.count - before - 3;
   }
