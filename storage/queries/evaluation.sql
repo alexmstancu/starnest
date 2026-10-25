@@ -317,6 +317,7 @@ SELECT r.id,
                                       'retrieval_date',         version.retrieval_date,
                                       'override_reason',        version.override_reason,
                                       'override_date',          version.override_date,
+                                      'recorded_at',            version.recorded_at,
                                       'is_proposal',            source.source_kind = 'llm',
                                       'citations',              COALESCE(
                                           (SELECT jsonb_agg(page.url ORDER BY page.url)
@@ -353,6 +354,7 @@ SELECT r.id,
                                               'retrieval_date',         version.retrieval_date,
                                               'override_reason',        version.override_reason,
                                               'override_date',          version.override_date,
+                                              'recorded_at',            version.recorded_at,
                                               'is_proposal',            source.source_kind = 'llm',
                                               'citations',              COALESCE(
                                                   (SELECT jsonb_agg(page.url ORDER BY page.url)
@@ -497,6 +499,7 @@ SELECT r.id,
                                       'retrieval_date',         version.retrieval_date,
                                       'override_reason',        version.override_reason,
                                       'override_date',          version.override_date,
+                                      'recorded_at',            version.recorded_at,
                                       'is_proposal',            source.source_kind = 'llm',
                                       'citations',              COALESCE(
                                           (SELECT jsonb_agg(page.url ORDER BY page.url)
@@ -533,6 +536,7 @@ SELECT r.id,
                                               'retrieval_date',         version.retrieval_date,
                                               'override_reason',        version.override_reason,
                                               'override_date',          version.override_date,
+                                              'recorded_at',            version.recorded_at,
                                               'is_proposal',            source.source_kind = 'llm',
                                               'citations',              COALESCE(
                                                   (SELECT jsonb_agg(page.url ORDER BY page.url)

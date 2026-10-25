@@ -491,7 +491,7 @@ def _result_body(
                 match_rule=None if flag.match_rule is None else str(flag.match_rule),
                 detail=flag.detail,
                 gate_answer=(
-                    None if flag.gate_answer is None else _gate_answer_body(flag.gate_answer)
+                    None if flag.gate_answer is None else _evidence_body(flag.gate_answer)
                 ),
                 inputs=_cited(flag.input_values, evidence),
             )
@@ -504,10 +504,16 @@ def _result_body(
                 match_rule=None if reason.match_rule is None else str(reason.match_rule),
                 compound_rule=(None if reason.compound_rule is None else str(reason.compound_rule)),
                 gate_answer=(
-                    None if reason.gate_answer is None else _gate_answer_body(reason.gate_answer)
+                    None if reason.gate_answer is None else _evidence_body(reason.gate_answer)
                 ),
                 inputs=_cited(reason.input_values, evidence),
             )
             for reason in result.non_match_reasons
         ),
     )
+
+
+def _evidence_body(answer: MatchRuleResult) -> MatchRuleResultBody:
+    """The answer a refusal or warning read, as evidence: what a re-check proposed since is not
+    evidence, and a saved ranking never has it, so a live one shows none either (D53)."""
+    return _gate_answer_body(answer.model_copy(update={"pending_proposal": None}))

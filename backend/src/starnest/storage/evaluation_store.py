@@ -660,6 +660,7 @@ def _gate_answer_from(frozen: dict[str, Any] | None) -> MatchRuleResult | None:
             if frozen["override_date"] is None
             else datetime.fromisoformat(frozen["override_date"])
         ),
+        recorded_at=datetime.fromisoformat(frozen["recorded_at"]),
     )
 
 

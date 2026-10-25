@@ -608,6 +608,12 @@ VALUES (:criterion, 'ShareComposition', :label, :min_share, :max_share);
 -- match_rule_answer (Q237), and none of them is read here -- a superseded not_matching that
 -- reached the ranking would rule a candidate out on an answer somebody corrected. r.answer names
 -- the version the live row shows, so a saved refusal can pin it.
+--
+-- **Beside a person's answer, the proposal a re-check stored after it** (D53): the newest model
+-- version written later than the live one, which never became live because a model never
+-- replaces a person. It is pending until a person records again, which makes the live version
+-- newer than it -- so "take the proposal" and "answer differently" both settle it, and nothing
+-- has to be deleted or flagged. Versions are ordered by (recorded_at, id), as history is.
 SELECT r.match_rule,
        r.candidate,
        r.answer,
@@ -631,9 +637,36 @@ SELECT r.match_rule,
             FROM   match_rule_result_citation AS citation
             WHERE  citation.match_rule = r.match_rule
               AND  citation.candidate = r.candidate),
-           '[]'::jsonb) AS citations
+           '[]'::jsonb) AS citations,
+       live.recorded_at,
+       pending.id                     AS pending_answer,
+       pending.match_result           AS pending_match_result,
+       pending.reason                 AS pending_reason,
+       pending.data_source            AS pending_data_source,
+       pending.reference_period_start AS pending_reference_period_start,
+       pending.reference_period_end   AS pending_reference_period_end,
+       pending.retrieval_date         AS pending_retrieval_date,
+       pending.recorded_at            AS pending_recorded_at,
+       COALESCE(
+           (SELECT jsonb_agg(citation.url ORDER BY citation.url)
+            FROM   match_rule_answer_citation AS citation
+            WHERE  citation.answer = pending.id),
+           '[]'::jsonb) AS pending_citations
 FROM   match_rule_result AS r
 JOIN   candidate AS c ON c.id = r.candidate
+JOIN   match_rule_answer AS live ON live.id = r.answer
+LEFT   JOIN LATERAL (
+       SELECT version.*
+       FROM   match_rule_answer AS version
+       JOIN   data_source AS model ON model.id = version.data_source AND model.source_kind = 'llm'
+       WHERE  version.match_rule = r.match_rule
+         AND  version.candidate = r.candidate
+         AND  (version.recorded_at, version.id) > (live.recorded_at, live.id)
+         AND  NOT EXISTS (SELECT 1 FROM data_source AS s
+                          WHERE s.id = r.data_source AND s.source_kind = 'llm')
+       ORDER  BY version.recorded_at DESC, version.id DESC
+       LIMIT  1
+) AS pending ON true
 WHERE  (:candidate::text IS NULL OR r.candidate = :candidate)
   AND  (:match_rule::text IS NULL OR r.match_rule = :match_rule)
   AND  (:level::text IS NULL OR c.level = :level)
@@ -650,6 +683,15 @@ VALUES (:match_rule, :candidate, :match_result, :reason, :data_source,
         :reference_period_start, :reference_period_end, :retrieval_date,
         :override_reason, :override_date)
 RETURNING id;
+
+-- name: lock_match_rule_result(match_rule, candidate)^
+-- The live answer of one pair, locked, and whether a person gave it. Read before a re-check's
+-- finding is stored beside it, so a person cannot replace it between the check and the write.
+SELECT (SELECT s.source_kind <> 'llm' FROM data_source AS s WHERE s.id = r.data_source)
+           AS answered_by_a_person
+FROM   match_rule_result AS r
+WHERE  r.match_rule = :match_rule AND r.candidate = :candidate
+FOR    UPDATE;
 
 -- name: insert_match_rule_answer_citations(answer, urls)!
 -- The pages one version was read from, kept with it for good.

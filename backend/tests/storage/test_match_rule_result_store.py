@@ -315,3 +315,71 @@ class TestEveryAnswerIsKept:
         assert len(versions) == 2
         (shown,) = [version for version in versions if version[0] == live.id]
         assert (str(live.match_result), list(live.citations)) == (shown[2], shown[7])
+
+
+class TestARecheckIsKeptBesideAPerson:
+    """D53. A re-check asks again about a person's answer because a person asked, and what it
+    finds is a version beside that answer -- served as its pending proposal -- never over it."""
+
+    async def test_a_rechecked_proposal_is_kept_beside_the_person_s_answer(
+        self, answers: PostgresMatchRuleResultStore
+    ) -> None:
+        await answers.record(an_answer("manual", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING))
+        before = await the_answer(answers)
+
+        kept = await answers.propose_beside(
+            an_answer("llm", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON, is_proposal=True)
+        )
+
+        after = await the_answer(answers)
+        assert kept is True
+        assert after.model_copy(update={"pending_proposal": None}) == before
+        pending = after.pending_proposal
+        assert pending is not None
+        assert (pending.data_source, pending.match_result) == ("llm", MatchResult.NOT_MATCHING)
+        assert (pending.retrieval_date, pending.citations) == (NOON, (ANOTHER_PAGE,))
+        assert pending.is_proposal is True
+        assert pending.recorded_at is not None and pending.recorded_at >= after.recorded_at
+
+    async def test_a_person_recording_again_settles_the_pending_proposal(
+        self, answers: PostgresMatchRuleResultStore
+    ) -> None:
+        """Taking the proposal is recording its answer; either way it is no longer pending."""
+        await answers.record(an_answer("manual", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING))
+        await answers.propose_beside(
+            an_answer("llm", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON, is_proposal=True)
+        )
+
+        await answers.record(an_answer("manual", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON))
+
+        settled = await the_answer(answers)
+        assert settled.match_result is MatchResult.NOT_MATCHING
+        assert settled.pending_proposal is None
+
+    async def test_nothing_is_kept_where_no_person_answered(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        await answers.record(an_answer("llm", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING))
+
+        kept = await answers.propose_beside(
+            an_answer("llm", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON, is_proposal=True)
+        )
+        unanswered = await answers.propose_beside(
+            an_answer(
+                "llm", MatchResult.NOT_MATCHING, ANOTHER_PAGE, at=NOON, is_proposal=True
+            ).model_copy(update={"match_rule": "ch_eu_efta_quota"})
+        )
+
+        assert (kept, unanswered) == (False, False)
+        assert (await the_answer(answers)).pending_proposal is None
+        async with pool.connection() as connection:
+            cursor = await connection.execute("SELECT count(*) FROM match_rule_answer")
+            assert await cursor.fetchone() == (1,)
+
+    async def test_a_person_s_answer_is_never_kept_beside_another(
+        self, answers: PostgresMatchRuleResultStore
+    ) -> None:
+        with pytest.raises(ValueError, match="only a proposal"):
+            await answers.propose_beside(
+                an_answer("manual", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING)
+            )

@@ -42,6 +42,7 @@ from starnest.data_acquisition.holdings import Gap, Holdings, MonthlySpend
 from starnest.data_acquisition.research import (
     GateResearcher,
     NoResearcherConfiguredError,
+    NothingRecordedToRecheckError,
     Researched,
     ResearchLedger,
     ResearchOutcome,
@@ -83,6 +84,7 @@ __all__ = [
     "MonthlySpend",
     "NoResearcherConfiguredError",
     "NotReachedItem",
+    "NothingRecordedToRecheckError",
     "NothingToAskAgainError",
     "NothingToFetchError",
     "NothingToRetryError",

@@ -219,6 +219,21 @@ class MatchRuleResult(BaseModel):
             "refusal that names it reopens to exactly the answer it read."
         ),
     )
+    recorded_at: datetime | None = Field(
+        default=None,
+        description=(
+            "When this version was stored, by the database's clock -- unlike `retrieval_date`, "
+            "which the client may send. Absent on an answer not yet stored."
+        ),
+    )
+    pending_proposal: "MatchRuleResult | None" = Field(
+        default=None,
+        description=(
+            "What a re-check found about an answer a person recorded, stored as a version "
+            "beside it and never over it (`reqs.md` Q237, D53). It rules nothing out; it stops "
+            "being pending once a person records an answer again."
+        ),
+    )
 
     @model_validator(mode="after")
     def _enforce_what_an_answer_may_claim(self) -> "MatchRuleResult":

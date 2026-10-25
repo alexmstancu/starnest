@@ -57,6 +57,7 @@ from starnest.data import (
 )
 from starnest.data_acquisition import (
     NoResearcherConfiguredError,
+    NothingRecordedToRecheckError,
     NothingToAskAgainError,
     NothingToFetchError,
     NothingToRetryError,
@@ -172,6 +173,8 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     MalformedMatchRuleResultError: _refusal(422, "invalid_match_rule_result"),
     UnknownDataSourceError: _refusal(422, "unknown_data_source"),
     InvalidSourceOrderError: _refusal(422, "invalid_source_order"),
+    # A re-check names answers as a scope names ids; one that is not there is the same refusal.
+    NothingRecordedToRecheckError: _refusal(422, "unknown_scope"),
 }
 """Which domain fault is which kind of refusal.
 

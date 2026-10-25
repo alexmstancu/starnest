@@ -47,6 +47,29 @@ class ProposalStore(Protocol):
 
     async def record(self, result: MatchRuleResult) -> bool: ...
 
+    async def propose_beside(self, result: MatchRuleResult) -> bool:
+        """Keep a re-check's proposal beside a person's answer, never over it (D53)."""
+        ...
+
+
+GatePair = tuple[str, str]
+"""A gate and a candidate, by id: the unit a re-check names (D53)."""
+
+
+class NothingRecordedToRecheckError(ValueError):
+    """A re-check named a pair nobody has recorded an answer to.
+
+    A re-check asks again about what a person decided, because a person asked (D53); a pair with
+    no such answer belongs to an ordinary pass. Refused before anything is asked, naming each
+    pair by the catalog's names, and listing them by id in `details` for a client to act on.
+    """
+
+    def __init__(self, message: str, *, pairs: Sequence[GatePair]) -> None:
+        super().__init__(message)
+        self.details = {
+            "recheck": [{"match_rule": rule, "candidate": candidate} for rule, candidate in pairs]
+        }
+
 
 @dataclass(frozen=True)
 class ResearchSpend:
@@ -142,6 +165,7 @@ async def research_gates(
     spend_cap_eur: Decimal | None = None,
     uncapped_is_accepted: bool = False,
     ledger: ResearchLedger | None = None,
+    recheck: Sequence[GatePair] | None = None,
 ) -> ResearchOutcome:
     """Ask about every gate nobody has confirmed, and store what comes back as a proposal.
 
@@ -149,9 +173,11 @@ async def research_gates(
     about a candidate it concerns (NEW-01). A pass with none to ask spends nothing, so it needs
     no cap either.
 
-    **A confirmed answer is never re-asked.** Somebody looked, wrote it down, and paying a model
-    to disagree with them is not research -- it is noise with a bill. A previous *proposal* is
-    asked again, because nothing about it was settled.
+    **A confirmed answer is never re-asked** -- unless a person names it in `recheck` (D53).
+    Somebody looked, wrote it down, and paying a model to disagree with them unasked is not
+    research -- it is noise with a bill. A previous *proposal* is asked again, because nothing
+    about it was settled. A re-check asks only the pairs it names, and keeps what it finds
+    beside the person's answer, which goes on applying unchanged.
 
     **The cap applies here as it does to a run** (`reqs.md` 6.3): refused before anything is
     asked when this would spend with no ceiling set, and it stops at the ceiling with everything
@@ -161,7 +187,7 @@ async def research_gates(
     proposal is stored and before the next question is asked, so a pass that dies keeps the
     record of what it paid for. Given no ledger, the spend is reported and logged only.
     """
-    to_ask = gates_to_ask(rules, candidates, already_answered)
+    to_ask = gates_to_ask(rules, candidates, already_answered, recheck=recheck)
     refuse_unless_capped(
         costs_money=researcher.costs_money and bool(to_ask),
         cap_eur=spend_cap_eur,
@@ -200,6 +226,17 @@ async def research_gates(
             continue
 
         proposal = _proposal_from(rule, candidate, found)
+        if recheck is not None:
+            # Beside the person's answer, never over it (D53). `gates_to_ask` saw one for every
+            # pair, and nothing deletes it, so a decline here is a store that disagrees.
+            if not await results.propose_beside(proposal):
+                refusals.append(
+                    f"{rule.name} for {candidate.name}: no answer a person recorded was found to "
+                    "keep the proposal beside, so it was not stored"
+                )
+                continue
+            proposals.append(proposal)
+            continue
         if not await results.record(proposal):
             # A person answered this gate while the model was being asked, and a model never
             # replaces a person (NEW-02). Listing the proposal would show one that is not stored;
@@ -267,6 +304,8 @@ def gates_to_ask(
     rules: Sequence[MatchRule],
     candidates: Sequence[Candidate],
     already_answered: Sequence[MatchRuleResult] = (),
+    *,
+    recheck: Sequence[GatePair] | None = None,
 ) -> tuple[tuple[MatchRule, Candidate], ...]:
     """Every (gate, candidate) a pass would ask about, in the order it would ask.
 
@@ -282,13 +321,18 @@ def gates_to_ask(
 
     A previous *proposal* is asked again, because nothing about it was settled; a confirmed
     answer never is, because paying a model to disagree with somebody who looked is noise with
-    a bill.
+    a bill -- **unless a person asks for it** (D53). Given `recheck`, those confirmed pairs are
+    the whole scope, still narrowed by what research can answer; one nobody confirmed is refused
+    before anything is asked.
     """
     confirmed = {
         (str(answer.match_rule), str(answer.candidate))
         for answer in already_answered
         if not answer.is_proposal
     }
+    if recheck is not None:
+        _refuse_a_recheck_of_nothing(recheck, confirmed, rules, candidates)
+    rechecked = None if recheck is None else set(recheck)
     return tuple(
         (rule, candidate)
         for rule in rules
@@ -296,7 +340,34 @@ def gates_to_ask(
         for candidate in candidates
         if rule.applies_at(str(candidate.id.level_id))
         and rule.concerns(str(candidate.id))
-        and (str(rule.id), str(candidate.id)) not in confirmed
+        and _is_asked((str(rule.id), str(candidate.id)), confirmed, rechecked)
+    )
+
+
+def _is_asked(pair: GatePair, confirmed: set[GatePair], rechecked: set[GatePair] | None) -> bool:
+    """An ordinary pass asks what nobody confirmed; a re-check asks only what it names."""
+    return pair not in confirmed if rechecked is None else pair in rechecked
+
+
+def _refuse_a_recheck_of_nothing(
+    recheck: Sequence[GatePair],
+    confirmed: set[GatePair],
+    rules: Sequence[MatchRule],
+    candidates: Sequence[Candidate],
+) -> None:
+    unrecorded = [pair for pair in recheck if pair not in confirmed]
+    if not unrecorded:
+        return
+    rule_names = {str(rule.id): rule.name for rule in rules}
+    candidate_names = {str(candidate.id): candidate.name for candidate in candidates}
+    named = "; ".join(
+        f"{rule_names.get(rule, rule)} for {candidate_names.get(candidate, candidate)}"
+        for rule, candidate in unrecorded
+    )
+    raise NothingRecordedToRecheckError(
+        f"a re-check asks again only about an answer a person recorded, and nobody has recorded "
+        f"one for {named}: nothing was asked",
+        pairs=unrecorded,
     )
 
 
@@ -306,6 +377,7 @@ def plan_research(
     rules: Sequence[MatchRule],
     candidates: Sequence[Candidate],
     already_answered: Sequence[MatchRuleResult] = (),
+    recheck: Sequence[GatePair] | None = None,
 ) -> Estimate:
     """What a research pass would cost, without asking anything.
 
@@ -313,4 +385,6 @@ def plan_research(
     researcher is built -- and the money is the researcher's own arithmetic, because it is the
     only thing that knows what it charges.
     """
-    return researcher.estimate_for(len(gates_to_ask(rules, candidates, already_answered)))
+    return researcher.estimate_for(
+        len(gates_to_ask(rules, candidates, already_answered, recheck=recheck))
+    )

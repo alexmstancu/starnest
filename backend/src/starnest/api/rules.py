@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime
 from typing import ClassVar
 
 from fastapi import APIRouter
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from starnest.api.bodies import NullRefusingBody
 from starnest.api.dependencies import (
@@ -84,6 +84,18 @@ class MatchRuleResultInputBody(NullRefusingBody):
     citations: tuple[str, ...] = ()
 
 
+class PendingProposalBody(BaseModel):
+    """What a re-check found beside a person's answer: a proposal, so it rules nothing out."""
+
+    match_result: str
+    reason: str | None = None
+    data_source: str
+    reference_period: ReferencePeriodBody | None = None
+    retrieval_date: datetime
+    recorded_at: datetime
+    citations: tuple[str, ...] = ()
+
+
 class MatchRuleResultBody(BaseModel):
     match_rule: str
     candidate: str
@@ -96,6 +108,17 @@ class MatchRuleResultBody(BaseModel):
     override_date: datetime | None = None
     citations: tuple[str, ...] = ()
     is_proposal: bool = False
+    # The dates an answer's age and ended period are read from in the browser (D54); the server
+    # computes neither, and an ended period expires nothing.
+    recorded_at: datetime | None = None
+    pending_proposal: PendingProposalBody | None = None
+
+
+class GatePairBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    match_rule: str
+    candidate: str
 
 
 class ResearchRequestBody(BaseModel):
@@ -110,7 +133,26 @@ class ResearchRequestBody(BaseModel):
     level: str
     match_rules: tuple[str, ...] | None = None
     candidates: tuple[str, ...] | None = None
+    recheck: tuple[GatePairBody, ...] | None = Field(default=None, min_length=1)
     accept_uncapped_spend: bool = False
+
+    @model_validator(mode="after")
+    def _a_recheck_is_its_own_scope(self) -> "ResearchRequestBody":
+        """A re-check names its pairs, so a gate or candidate list beside it would narrow it --
+        and a narrowed paid scope is the drop BE-24 refuses rather than conceals (D53)."""
+        if self.recheck is not None and (
+            self.match_rules is not None or self.candidates is not None
+        ):
+            raise ValueError(
+                "a re-check names its answers, so match_rules and candidates are left out"
+            )
+        return self
+
+    @property
+    def rechecked_pairs(self) -> list[tuple[str, str]] | None:
+        if self.recheck is None:
+            return None
+        return [(pair.match_rule, pair.candidate) for pair in self.recheck]
 
 
 async def _research_targets(
@@ -128,8 +170,15 @@ async def _research_targets(
     rules = await catalog.read_match_rules()
     roster = await candidates.read_candidates(level=body.level)
     unknown_levels = [] if body.level in levels else [body.level]
-    unknown_rules = absent(body.match_rules, {str(rule.id) for rule in rules})
-    unknown_candidates = absent(body.candidates, {str(candidate.id) for candidate in roster})
+    rechecked = body.rechecked_pairs or []
+    unknown_rules = absent(
+        _distinct([*(body.match_rules or ()), *(rule for rule, _ in rechecked)]),
+        {str(rule.id) for rule in rules},
+    )
+    unknown_candidates = absent(
+        _distinct([*(body.candidates or ()), *(candidate for _, candidate in rechecked)]),
+        {str(candidate.id) for candidate in roster},
+    )
     if unknown_levels or unknown_rules or unknown_candidates:
         raise unknown_scope_refusal(
             body.level,
@@ -146,6 +195,10 @@ async def _research_targets(
         if body.candidates is None or str(candidate.id) in set(body.candidates)
     ]
     return wanted_rules, chosen
+
+
+def _distinct(ids: list[str]) -> list[str]:
+    return list(dict.fromkeys(ids))
 
 
 async def _refuse_while_the_llm_source_is_off(catalog: Catalog) -> None:
@@ -334,6 +387,7 @@ async def plan_match_rule_research(
         rules=wanted_rules,
         candidates=roster,
         already_answered=await results.read_results(),
+        recheck=body.rechecked_pairs,
     )
     return ResearchPlanBody(
         gates_total=estimate.calls,
@@ -370,6 +424,9 @@ async def research_match_rules(
     spend is on record even when this response never arrives. With no model configured there is
     nothing to ask, which is a 501 rather than an empty success -- an empty success would read as
     "no gate needed researching".
+
+    **A re-check** (`recheck`, D53) asks again about answers a person recorded, and only those;
+    what it finds is kept beside each answer as its pending proposal, never over it.
     """
     if researcher is None:
         raise NoResearcherConfiguredError(
@@ -391,6 +448,7 @@ async def research_match_rules(
         spend_cap_eur=(await households.get_settings()).run_spend_cap_eur,
         uncapped_is_accepted=body.accept_uncapped_spend,
         ledger=runs,
+        recheck=body.rechecked_pairs,
     )
     return ResearchOutcomeBody(
         proposals=tuple(_result_body(proposal) for proposal in outcome.proposals),
@@ -490,4 +548,23 @@ def _result_body(result: MatchRuleResult) -> MatchRuleResultBody:
         # A model answered and nobody has confirmed it (`reqs.md` 6.10 use 3). Shown, so the
         # screen can mark it as something to check rather than something decided.
         is_proposal=result.is_proposal,
+        recorded_at=result.recorded_at,
+        pending_proposal=_pending_body(result.pending_proposal),
+    )
+
+
+def _pending_body(pending: MatchRuleResult | None) -> PendingProposalBody | None:
+    if pending is None or pending.recorded_at is None:
+        return None
+    period = pending.reference_period
+    return PendingProposalBody(
+        match_result=str(pending.match_result),
+        reason=pending.reason,
+        data_source=str(pending.data_source),
+        reference_period=ReferencePeriodBody(start=period.start, end=period.end)
+        if period
+        else None,
+        retrieval_date=pending.retrieval_date,
+        recorded_at=pending.recorded_at,
+        citations=pending.citations,
     )

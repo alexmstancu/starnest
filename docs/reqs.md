@@ -1537,6 +1537,13 @@ eligibility but are not measurements of the place.
 > Worker verdict researched in 2026 and still displayed in 2028 is worse than no verdict, because
 > it looks current. The reference period lets the interface mark an expired judgement and prompt
 > a re-check, and it is why an annual quota can be stated as the annual fact it is.
+>
+> **An ended period expires nothing** (the household policy of 2026-10-13): a person's answer
+> applies until a person changes it. A **re-check** is research a person asks for, naming the
+> answers to ask about again; it is estimated and capped like any paid pass, and what it finds
+> is stored as a version *beside* the person's answer, never over it, and served as that
+> answer's pending proposal until a person records again (D53, BE-36). The read serves the dates
+> the interface computes an answer's age and ended period from (D54).
 
 **Whether a rule is enforced is not stored here.** That belongs to a criteria set
 (`criteria_set_match_rule`, section 3.4): the existence of a visa route is a fact, but treating its

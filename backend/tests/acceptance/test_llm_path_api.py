@@ -9,6 +9,7 @@ reads is `make live-llm`'s question, and that is the only thing in this reposito
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import ClassVar
 
 import httpx
 import psycopg
@@ -19,7 +20,7 @@ from starnest.data import MatchResult, MatchRule
 from starnest.data_acquisition import Estimate, GateResearcher, Researched
 
 from .conftest import a_stub_source, an_api
-from .contract import validate
+from .contract import validate, validate_refusal
 
 pytestmark = pytest.mark.acceptance
 
@@ -866,3 +867,211 @@ class TestResearchRefusesAFieldItDoesNotDeclare:
         assert response.status_code == 422, f"answered {response.status_code}: {response.text[:80]}"
         assert response.json()["code"] == "invalid_request"
         validate("planMatchRuleResearch", response.json(), status=422)
+
+
+class TestRecheckingARecordedAnswer:
+    """D53, BE-36 stage 2. A person asks for an answer they recorded to be researched again. It
+    is estimated and capped like any paid act, and what it finds is served beside their answer
+    as a pending proposal -- never over it, so the answer they gave keeps applying unchanged."""
+
+    THE_RECHECK: ClassVar[list[dict[str, str]]] = [
+        {"match_rule": "uk_skilled_worker", "candidate": THE_UK}
+    ]
+
+    async def _a_person_answers(self, api: httpx.AsyncClient) -> dict:
+        answered = await api.put(
+            f"/v1/match-rule-results/uk_skilled_worker/{THE_UK}",
+            json={
+                "match_result": "matching",
+                "reason": "checked the official page myself",
+                "reference_period": {"start": "2025-01-01", "end": "2025-12-31"},
+                "citations": ["https://www.gov.uk/skilled-worker-visa"],
+            },
+        )
+        assert answered.status_code == 200, answered.text
+        return answered.json()
+
+    async def test_the_estimate_counts_the_rechecked_answer(self, database_url: str) -> None:
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            await self._a_person_answers(api)
+
+            plan = await api.post(
+                "/v1/match-rule-research/plan", json={"level": COUNTRY, "recheck": self.THE_RECHECK}
+            )
+
+        assert plan.status_code == 200, plan.text
+        assert (plan.json()["gates_total"], plan.json()["estimated_cost_eur"]) == (
+            1,
+            pytest.approx(0.02),
+        )
+
+    async def test_it_is_refused_without_a_cap_and_asks_nothing(self, database_url: str) -> None:
+        researcher = StubResearcher()
+        async with an_api(database_url, (a_stub_source(),), researcher=researcher) as api:
+            await _with_a_household(api)
+            await self._a_person_answers(api)
+
+            refused = await api.post(
+                "/v1/match-rule-research", json={"level": COUNTRY, "recheck": self.THE_RECHECK}
+            )
+
+        assert refused.status_code == 409
+        assert refused.json()["code"] == "spend_cap_not_set"
+        assert researcher.asked == 0
+
+    async def test_it_may_be_accepted_uncapped_in_its_own_request(self, database_url: str) -> None:
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            await _with_a_household(api)
+            await self._a_person_answers(api)
+
+            response = await api.post(
+                "/v1/match-rule-research",
+                json={
+                    "level": COUNTRY,
+                    "recheck": self.THE_RECHECK,
+                    "accept_uncapped_spend": True,
+                },
+            )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["calls"] == 1
+
+    async def test_its_proposal_is_served_beside_the_person_s_answer(
+        self, database_url: str
+    ) -> None:
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            await _with_a_cap(api, 50)
+            await _with_a_household(api)
+            await self._a_person_answers(api)
+
+            response = await api.post(
+                "/v1/match-rule-research", json={"level": COUNTRY, "recheck": self.THE_RECHECK}
+            )
+            listed = (await api.get(f"/v1/match-rule-results?candidate={THE_UK}")).json()
+
+        assert response.status_code == 200, response.text
+        validate("researchMatchRules", response.json())
+        validate("listMatchRuleResults", listed)
+        (answer,) = listed["items"]
+        pending = answer["pending_proposal"]
+        assert pending["match_result"] == "not_matching"
+        assert pending["data_source"] == "llm"
+        assert pending["citations"] == [A_PAGE]
+        assert pending["recorded_at"] >= answer["recorded_at"]
+
+    async def test_the_person_s_answer_is_left_unchanged_and_still_applies(
+        self, database_url: str
+    ) -> None:
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            await _with_a_cap(api, 50)
+            await _with_a_household(api)
+            before = await self._a_person_answers(api)
+
+            await api.post(
+                "/v1/match-rule-research", json={"level": COUNTRY, "recheck": self.THE_RECHECK}
+            )
+            (after,) = (await api.get(f"/v1/match-rule-results?candidate={THE_UK}")).json()["items"]
+
+        assert after["pending_proposal"] is not None
+        assert {**after, "pending_proposal": None} == before
+        assert (after["data_source"], after["is_proposal"]) == ("manual", False)
+
+    async def test_taking_the_proposal_settles_it(self, database_url: str) -> None:
+        """Taking it is recording its answer by hand, after which nothing is pending."""
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            await _with_a_cap(api, 50)
+            await _with_a_household(api)
+            await self._a_person_answers(api)
+            await api.post(
+                "/v1/match-rule-research", json={"level": COUNTRY, "recheck": self.THE_RECHECK}
+            )
+
+            taken = await api.put(
+                f"/v1/match-rule-results/uk_skilled_worker/{THE_UK}",
+                json={"match_result": "not_matching", "citations": [A_PAGE]},
+            )
+
+        assert taken.status_code == 200, taken.text
+        assert taken.json()["match_result"] == "not_matching"
+        assert taken.json()["pending_proposal"] is None
+
+    async def test_a_pair_nobody_answered_is_refused_by_name(self, database_url: str) -> None:
+        researcher = StubResearcher()
+        async with an_api(database_url, (a_stub_source(),), researcher=researcher) as api:
+            await _with_a_cap(api, 50)
+            await _with_a_household(api)
+
+            refused = await api.post(
+                "/v1/match-rule-research", json={"level": COUNTRY, "recheck": self.THE_RECHECK}
+            )
+
+        assert refused.status_code == 422
+        body = refused.json()
+        validate_refusal(body)
+        assert body["code"] == "unknown_scope"
+        assert "UK Skilled Worker route for United Kingdom" in body["message"]
+        assert body["details"] == {"recheck": self.THE_RECHECK}
+        assert researcher.asked == 0
+
+    async def test_a_recheck_beside_a_gate_list_is_refused(self, database_url: str) -> None:
+        """A list beside it would narrow a paid scope, which is refused rather than concealed."""
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            refused = await api.post(
+                "/v1/match-rule-research/plan",
+                json={
+                    "level": COUNTRY,
+                    "recheck": self.THE_RECHECK,
+                    "match_rules": ["uk_skilled_worker"],
+                },
+            )
+
+        assert refused.status_code == 422
+        assert refused.json()["code"] == "invalid_request"
+
+    async def test_a_recheck_naming_an_unknown_gate_is_an_unknown_scope(
+        self, database_url: str
+    ) -> None:
+        async with an_api(database_url, (a_stub_source(),), researcher=StubResearcher()) as api:
+            refused = await api.post(
+                "/v1/match-rule-research/plan",
+                json={
+                    "level": COUNTRY,
+                    "recheck": [{"match_rule": "no_such_gate", "candidate": THE_UK}],
+                },
+            )
+
+        assert refused.status_code == 422
+        assert refused.json()["details"]["unknown_match_rules"] == ["no_such_gate"]
+
+    async def test_the_person_s_refusal_still_rules_out_beside_a_proposal_to_the_contrary(
+        self, database_url: str, a_scratch_criteria_set: str
+    ) -> None:
+        """A pending proposal changes nothing, and is not the evidence a refusal read."""
+        async with an_api(
+            database_url,
+            (a_stub_source(silent_about=()),),
+            researcher=StubResearcher(MatchResult.MATCHING),
+        ) as api:
+            await _with_a_cap(api, 50)
+            await _with_a_household(api)
+            await api.put(
+                f"/v1/criteria-sets/{a_scratch_criteria_set}/match-rules/uk_skilled_worker",
+                json={"is_enforced": True},
+            )
+            refused = await api.put(
+                f"/v1/match-rule-results/uk_skilled_worker/{THE_UK}",
+                json={"match_result": "not_matching", "reason": "no sponsor in this field"},
+            )
+            await api.post(
+                "/v1/match-rule-research", json={"level": COUNTRY, "recheck": self.THE_RECHECK}
+            )
+            ranking = (
+                await api.get(f"/v1/rankings?criteria_set={a_scratch_criteria_set}&level={COUNTRY}")
+            ).json()
+
+        assert refused.status_code == 200, refused.text
+        united_kingdom = next(row for row in ranking["candidates"] if row["candidate"] == THE_UK)
+        assert united_kingdom["match_status"] == "not_matching"
+        (reason,) = [r for r in united_kingdom["non_match_reasons"] if r["match_rule"]]
+        assert reason["gate_answer"]["match_result"] == "not_matching"
+        assert reason["gate_answer"]["pending_proposal"] is None

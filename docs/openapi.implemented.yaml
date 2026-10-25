@@ -1307,6 +1307,20 @@ components:
       - not_reached
       title: GapsBody
       type: object
+    GatePairBody:
+      additionalProperties: false
+      properties:
+        candidate:
+          title: Candidate
+          type: string
+        match_rule:
+          title: Match Rule
+          type: string
+      required:
+      - match_rule
+      - candidate
+      title: GatePairBody
+      type: object
     Goal:
       description: 'Which direction is better, or which band is.
 
@@ -1687,11 +1701,21 @@ components:
           - type: string
           - type: 'null'
           title: Override Reason
+        pending_proposal:
+          anyOf:
+          - $ref: '#/components/schemas/PendingProposalBody'
+          - type: 'null'
         reason:
           anyOf:
           - type: string
           - type: 'null'
           title: Reason
+        recorded_at:
+          anyOf:
+          - format: date-time
+            type: string
+          - type: 'null'
+          title: Recorded At
         reference_period:
           anyOf:
           - $ref: '#/components/schemas/ReferencePeriodBody'
@@ -1881,6 +1905,46 @@ components:
       - attribute
       - data_acquisition_run
       title: NotReachedGapBody
+      type: object
+    PendingProposalBody:
+      description: 'What a re-check found beside a person''s answer: a proposal, so
+        it rules nothing out.'
+      properties:
+        citations:
+          default: []
+          items:
+            type: string
+          title: Citations
+          type: array
+        data_source:
+          title: Data Source
+          type: string
+        match_result:
+          title: Match Result
+          type: string
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+        recorded_at:
+          format: date-time
+          title: Recorded At
+          type: string
+        reference_period:
+          anyOf:
+          - $ref: '#/components/schemas/ReferencePeriodBody'
+          - type: 'null'
+        retrieval_date:
+          format: date-time
+          title: Retrieval Date
+          type: string
+      required:
+      - match_result
+      - data_source
+      - retrieval_date
+      - recorded_at
+      title: PendingProposalBody
       type: object
     PillarBody:
       properties:
@@ -2231,6 +2295,14 @@ components:
             type: array
           - type: 'null'
           title: Match Rules
+        recheck:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/GatePairBody'
+            minItems: 1
+            type: array
+          - type: 'null'
+          title: Recheck
       required:
       - level
       title: ResearchRequestBody
@@ -4632,7 +4704,14 @@ paths:
         nothing to ask, which is a 501 rather than an empty success -- an empty success
         would read as
 
-        "no gate needed researching".'
+        "no gate needed researching".
+
+
+        **A re-check** (`recheck`, D53) asks again about answers a person recorded,
+        and only those;
+
+        what it finds is kept beside each answer as its pending proposal, never over
+        it.'
       operationId: researchMatchRules
       requestBody:
         content:

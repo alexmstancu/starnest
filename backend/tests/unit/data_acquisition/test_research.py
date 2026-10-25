@@ -17,6 +17,7 @@ from starnest.data_acquisition import (
     NOTHING,
     Estimate,
     GateResearcher,
+    NothingRecordedToRecheckError,
     Researched,
     SpendCapNotSetError,
     gates_to_ask,
@@ -86,10 +87,22 @@ class RecordingResults:
 
     def __init__(self) -> None:
         self.recorded: list[MatchRuleResult] = []
+        self.kept_beside: list[MatchRuleResult] = []
 
     async def record(self, result: MatchRuleResult) -> bool:
         self.recorded.append(result)
         return True
+
+    async def propose_beside(self, result: MatchRuleResult) -> bool:
+        self.kept_beside.append(result)
+        return True
+
+
+class AStoreThatLostThePersonsAnswer(RecordingResults):
+    """Finds no person's answer to keep a re-check beside, as the store answers then (D53)."""
+
+    async def propose_beside(self, result: MatchRuleResult) -> bool:
+        return False
 
 
 class AStoreAPersonGotToFirst(RecordingResults):
@@ -691,3 +704,109 @@ class TestPlanningAPassBeforePayingForIt:
             ("uk_skilled_worker", "country.portugal"),
             ("uk_skilled_worker", "country.spain"),
         ]
+
+
+def a_person_s_answer(candidate: Candidate) -> MatchRuleResult:
+    return MatchRuleResult(
+        match_rule="uk_skilled_worker",
+        candidate=str(candidate.id),
+        match_result=MatchResult.MATCHING,
+        data_source="manual",
+        retrieval_date=datetime.now(UTC),
+    )
+
+
+THE_PORTUGUESE_ANSWER = ("uk_skilled_worker", "country.portugal")
+
+
+class TestARecheckAsksOnlyWhatAPersonNamed:
+    """D53. A confirmed answer is asked again only when a person names it, and what comes back
+    is kept beside that answer, never over it -- the person's answer goes on applying."""
+
+    async def test_a_confirmed_pair_is_asked_only_when_named_for_a_recheck(self) -> None:
+        researcher = StubResearcher(a_finding())
+        store = RecordingResults()
+
+        outcome = await research_gates(
+            researcher=researcher,
+            rules=[THE_GATE],
+            candidates=[PORTUGAL, SPAIN],
+            citizenships=["country.romania"],
+            results=store,
+            already_answered=[a_person_s_answer(PORTUGAL), a_person_s_answer(SPAIN)],
+            spend_cap_eur=Decimal(5),
+            recheck=[THE_PORTUGUESE_ANSWER],
+        )
+
+        assert researcher.asked == [THE_PORTUGUESE_ANSWER]
+        assert store.recorded == []
+        (kept,) = store.kept_beside
+        assert (str(kept.candidate), kept.is_proposal) == ("country.portugal", True)
+        assert outcome.proposals == (kept,)
+
+    def test_the_estimate_counts_the_same_rechecked_pairs(self) -> None:
+        estimate = plan_research(
+            researcher=StubResearcher(),
+            rules=[THE_GATE],
+            candidates=[PORTUGAL, SPAIN],
+            already_answered=[a_person_s_answer(PORTUGAL), a_person_s_answer(SPAIN)],
+            recheck=[THE_PORTUGUESE_ANSWER],
+        )
+
+        assert (estimate.calls, estimate.cost_eur) == (1, Decimal("0.05"))
+
+    async def test_a_recheck_that_would_spend_is_refused_without_a_cap(self) -> None:
+        researcher = StubResearcher()
+
+        with pytest.raises(SpendCapNotSetError):
+            await research_gates(
+                researcher=researcher,
+                rules=[THE_GATE],
+                candidates=[PORTUGAL],
+                citizenships=["country.romania"],
+                results=RecordingResults(),
+                already_answered=[a_person_s_answer(PORTUGAL)],
+                recheck=[THE_PORTUGUESE_ANSWER],
+            )
+
+        assert researcher.asked == []
+
+    def test_a_pair_nobody_answered_is_refused_by_name_before_anything_is_asked(self) -> None:
+        proposal = a_person_s_answer(SPAIN).model_copy(
+            update={"data_source": "llm", "is_proposal": True}
+        )
+
+        with pytest.raises(NothingRecordedToRecheckError) as refused:
+            gates_to_ask(
+                [THE_GATE],
+                [PORTUGAL, SPAIN],
+                [proposal],
+                recheck=[THE_PORTUGUESE_ANSWER, ("uk_skilled_worker", "country.spain")],
+            )
+
+        assert "UK Skilled Worker route for Portugal; UK Skilled Worker route for Spain" in str(
+            refused.value
+        )
+        assert refused.value.details == {
+            "recheck": [
+                {"match_rule": "uk_skilled_worker", "candidate": "country.portugal"},
+                {"match_rule": "uk_skilled_worker", "candidate": "country.spain"},
+            ]
+        }
+
+    async def test_a_proposal_with_no_answer_to_stand_beside_is_reported(self) -> None:
+        outcome = await research_gates(
+            researcher=StubResearcher(a_finding()),
+            rules=[THE_GATE],
+            candidates=[PORTUGAL],
+            citizenships=["country.romania"],
+            results=AStoreThatLostThePersonsAnswer(),
+            already_answered=[a_person_s_answer(PORTUGAL)],
+            spend_cap_eur=Decimal(5),
+            recheck=[THE_PORTUGUESE_ANSWER],
+        )
+
+        assert outcome.proposals == ()
+        (refusal,) = outcome.refusals
+        assert refusal.startswith("UK Skilled Worker route for Portugal: no answer a person")
+        assert outcome.calls == 1

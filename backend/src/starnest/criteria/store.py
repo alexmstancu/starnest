@@ -307,3 +307,12 @@ class MatchRuleResultStore(ABC):
         the caller to report: the endpoint that takes an answer refuses it (NEW-36), and a
         research pass names it among its refusals rather than its proposals (NEW-63).
         """
+
+    @abstractmethod
+    async def propose_beside(self, result: MatchRuleResult) -> bool:
+        """Keep a re-check's proposal as a version beside a person's answer, never over it.
+
+        D53. The person's answer stays live and keeps applying; reads serve the proposal as its
+        `pending_proposal` until a person records again. Answers `False`, storing nothing, when
+        no person has answered the pair.
+        """
