@@ -1,7 +1,6 @@
 import type { MatchRuleResult } from "../../../api/endpoints";
 import { formatDate, formatMatchStatus, safeHttpUrl } from "../../../format/display";
-import { describePeriod } from "../proposals/proposalReading";
-import { describeAge, periodHasEnded } from "../gateAnswerReading";
+import { describeAge, describePeriod, periodHasEnded } from "../gateAnswerReading";
 import type { PendingProposal } from "./gateAnswerForm";
 
 /**

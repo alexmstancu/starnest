@@ -8,9 +8,19 @@
  */
 
 import type { MatchRuleResult } from "../../api/endpoints";
-import { DISPLAY_LOCALE } from "../../format/display";
+import { DISPLAY_LOCALE, formatDate } from "../../format/display";
 
 type Period = MatchRuleResult["reference_period"];
+
+/**
+ * The period a gate answer holds for -- recorded, proposed or re-checked (UI-13) -- or that
+ * nobody recorded one. **Shown so it is not lost unseen**: an answer that holds only until a date
+ * must not read the same as one that holds for ever.
+ */
+export function describePeriod(period: Period): string {
+  if (period == null) return "No period recorded";
+  return `${formatDate(period.start)} to ${formatDate(period.end)}`;
+}
 
 /**
  * The reader's calendar day, as the contract writes a date. A period's `end` is a bare day,

@@ -15,7 +15,7 @@ import { CheckboxField } from "../../../shell/CheckboxField";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { RefusalNotice } from "../../../shell/RefusalNotice";
 import { refocusIfLost } from "../../../shell/focusReturn";
-import { describePeriod } from "./proposalReading";
+import { describePeriod } from "../gateAnswerReading";
 import { leavesEstimateUnspent } from "./researchPass";
 import { proposalKey, useFocusAfterConfirm } from "./useFocusAfterConfirm";
 import { useFocusAfterPass } from "./useFocusAfterPass";

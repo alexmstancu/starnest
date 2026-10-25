@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { dayOf, describeAge, inReadingOrder, periodHasEnded } from "./gateAnswerReading";
+import {
+  dayOf,
+  describeAge,
+  describePeriod,
+  inReadingOrder,
+  periodHasEnded,
+} from "./gateAnswerReading";
+
+/**
+ * UI-13. **An answer can hold for a period**, and confirming a proposal used to drop it: the row
+ * never showed it, so nobody could see what was lost.
+ */
+describe("the period a gate answer holds for", () => {
+  it("reads as the two dates it runs between", () => {
+    expect(describePeriod({ start: "2026-01-01", end: "2026-12-31" })).toBe(
+      "1 Jan 2026 to 31 Dec 2026",
+    );
+  });
+
+  it("says nobody recorded one, rather than leaving a blank", () => {
+    expect(describePeriod(null)).toBe("No period recorded");
+    expect(describePeriod(undefined)).toBe("No period recorded");
+  });
+});
 
 describe("whether an answer's period has ended", () => {
   it("has not when it ends today: a period holds through its last day", () => {
