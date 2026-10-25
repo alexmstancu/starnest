@@ -1,10 +1,13 @@
 import { useCallback, useId, useRef, type ReactNode } from "react";
+import { Link } from "react-router-dom";
+import { isApiError } from "../../api/ApiError";
 import { fetchCandidates, type StoredValue } from "../../api/endpoints";
 import { useRead } from "../../api/useRead";
 import { useSourceNames } from "../../api/useSourceNames";
 import { ActRefusal } from "../../shell/ActRefusal";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { NumberField } from "../../shell/NumberField";
+import { remedyFor } from "../../shell/refusalRemedy";
 import { alwaysAsked } from "./alwaysAsked";
 import { candidateName, formatDateTime, sourceName } from "../../format/display";
 import { describeFigure } from "../../format/figure";
@@ -207,7 +210,9 @@ export function ManualEntryPanel({
         </div>
       )}
 
-      <ActRefusal act="Storing the figure" error={entry.failure} />
+      <ActRefusal act="Storing the figure" error={entry.failure}>
+        <Remedy error={entry.failure} />
+      </ActRefusal>
 
       {/* **Mounted before it speaks** (NEW-55-S2): a status region that arrives already holding
           its text is not announced, so the region is always here and only its words change. */}
@@ -239,6 +244,19 @@ export function ManualEntryPanel({
         )}
       </div>
     </section>
+  );
+}
+
+/**
+ * The way out of a refusal a setting lifts: Manual entry switched off after the form opened,
+ * which the server refuses (PL-089) and the card would have said had it known.
+ */
+function Remedy({ error }: { error: unknown }) {
+  const remedy = isApiError(error) ? remedyFor(error.code, error.details) : null;
+  return remedy === null ? null : (
+    <Link className="button" to={remedy.path}>
+      {remedy.label}
+    </Link>
   );
 }
 

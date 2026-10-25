@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
-import { fetchAttributes } from "../../api/endpoints";
+import { Link, useLocation } from "react-router-dom";
+import {
+  fetchAttributes,
+  fetchDataSources,
+  type DataSource,
+} from "../../api/endpoints";
 import { usePillarNames, type PillarNames } from "../../api/usePillarNames";
-import { map } from "../../api/read";
+import { combine, map } from "../../api/read";
 import { useRead } from "../../api/useRead";
 import { useSourceNames } from "../../api/useSourceNames";
-import { pillarName } from "../../format/display";
+import { ABSENT, pillarName, sourceName } from "../../format/display";
 import { handEntryAsked } from "../../navigation/highlight";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { alwaysAsked } from "./alwaysAsked";
@@ -41,10 +45,32 @@ export function OpenToHandEntry({ level }: { level: string }) {
       [level],
     ),
   );
-  const openTo = map(alwaysAsked(attributes.read), (read) =>
-    handEnterable(read.items, sourceNames),
+  // **Read fresh, not from the session's cached names** (PL-089): whether Manual entry is
+  // switched on is a setting that changes, and the names cache never re-reads.
+  const sources = useRead(
+    useCallback((signal: AbortSignal) => fetchDataSources({ signal }), []),
   );
-  const card = useArrivalAt(openTo.state === "ready" ? openTo.data : null, setOpen);
+  const ready = map(
+    combine(alwaysAsked(attributes.read), alwaysAsked(sources.read)),
+    ([read, catalog]) => ({
+      enterable: handEnterable(read.items, sourceNames),
+      switchedOff: catalog.items.some(
+        (source) => source.id === MANUAL && !source.is_enabled,
+      ),
+      manual: catalog.items.find((source) => source.id === MANUAL),
+    }),
+  );
+  const openTo = map(ready, ({ enterable }) => enterable);
+  // Nothing opens on arrival while hand entry is switched off: there is no form to open.
+  const card = useArrivalAt(
+    ready.state === "ready"
+      ? ready.data.switchedOff
+        ? []
+        : ready.data.enterable
+      : null,
+    setOpen,
+  );
+  const manualName = sourceName(sourceNames, MANUAL);
 
   return (
     <section ref={card} className="panel" aria-labelledby={headingId}>
@@ -61,57 +87,92 @@ export function OpenToHandEntry({ level }: { level: string }) {
         )}
       </div>
       <p className="panel__hint">
-        The catalog permits a typed figure for these. It is stored under the{" "}
-        <strong>manual</strong> source, which ranks last — a published figure
+        The catalog permits a typed figure for these. It is stored under{" "}
+        <strong>{manualName}</strong>, which ranks last — a published figure
         supersedes it the moment one arrives, and the typed one stays visible
         underneath.
       </p>
 
       <LoadedRegion
-        read={openTo}
+        read={ready}
         what="The attributes open to hand entry"
         skeleton="lines"
         prominence="region"
-        onRetry={attributes.reload}
+        onRetry={async () => {
+          await Promise.all([attributes.reload(), sources.reload()]);
+        }}
       >
         {/* **Kept, and saying so, when there are none**: Try again answered with none used to
             take the card away, and the focused button with it, so focus fell to the page. */}
-        {(enterable) =>
+        {({ enterable, switchedOff, manual }) =>
           enterable.length === 0 ? (
-            <p className="panel__hint">No attribute at this level may be entered by hand.</p>
+            <p className="panel__hint">
+              No attribute at this level may be entered by hand.
+            </p>
           ) : (
-            <div className="table-card">
-              <table className="table" aria-label="Attributes open to hand entry">
-                <thead>
-                  <tr>
-                    <th scope="col">Attribute</th>
-                    <th scope="col">Pillar</th>
-                    <th scope="col">What else would answer it</th>
-                    <th scope="col">&nbsp;</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {enterable.map((attribute) => (
-                    <Row
-                      key={attribute.id}
-                      attribute={attribute}
-                      pillars={pillars}
-                      level={level}
-                      open={open === attribute.id}
-                      onToggle={() =>
-                        setOpen((current) =>
-                          current === attribute.id ? null : attribute.id,
-                        )
-                      }
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {switchedOff && <SwitchedOff manual={manual} />}
+              <div className="table-card">
+                <table
+                  className="table"
+                  aria-label="Attributes open to hand entry"
+                >
+                  <thead>
+                    <tr>
+                      <th scope="col">Attribute</th>
+                      <th scope="col">Pillar</th>
+                      <th scope="col">What else would answer it</th>
+                      <th scope="col">&nbsp;</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {enterable.map((attribute) => (
+                      <Row
+                        key={attribute.id}
+                        attribute={attribute}
+                        pillars={pillars}
+                        level={level}
+                        switchedOff={switchedOff}
+                        open={open === attribute.id && !switchedOff}
+                        onToggle={() =>
+                          setOpen((current) =>
+                            current === attribute.id ? null : attribute.id,
+                          )
+                        }
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )
         }
       </LoadedRegion>
     </section>
+  );
+}
+
+/** The source a typed figure is stored under, as the catalog lists it. */
+const MANUAL = "manual";
+
+/**
+ * **Said before anything is typed** (PL-089, D23): while Manual entry is switched off, a figure
+ * stored would be left out of scoring and sit there uncounted, so the server refuses it -- and
+ * the card says why, and where to switch it on, rather than offer a form that will be refused.
+ */
+function SwitchedOff({ manual }: { manual: DataSource | undefined }) {
+  const name = manual?.name ?? "Manual entry";
+  return (
+    <div className="notice notice--warning">
+      <p>
+        {name} is switched off in Configure, so a figure typed here would not
+        count. Figures already typed stay stored and count again when it is
+        switched back on.
+      </p>
+      <Link className="button" to="/configure">
+        Switch it on in Configure
+      </Link>
+    </div>
   );
 }
 
@@ -130,9 +191,19 @@ function useArrivalAt(
   const card = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    if (asked === null || enterable === null || answered.current === location.key) return;
+    if (
+      asked === null ||
+      enterable === null ||
+      answered.current === location.key
+    )
+      return;
     answered.current = location.key;
-    if (!enterable.some((attribute) => attribute.id === asked && attribute.kind !== null)) return;
+    if (
+      !enterable.some(
+        (attribute) => attribute.id === asked && attribute.kind !== null,
+      )
+    )
+      return;
     open(asked);
     // Not in jsdom; the focus the form takes when it opens is what moves the reader.
     card.current?.scrollIntoView?.({ block: "start", behavior: "smooth" });
@@ -145,18 +216,22 @@ function Row({
   attribute,
   pillars,
   level,
+  switchedOff,
   open,
   onToggle,
 }: {
   attribute: HandEnterable;
   pillars: PillarNames;
   level: string;
+  switchedOff: boolean;
   open: boolean;
   onToggle: () => void;
 }) {
   const toggle = useRef<HTMLButtonElement>(null);
   // The open row and its form read as one, tinted as the design's open row is.
-  const tint = open ? "hand-entry__row hand-entry__row--open" : "hand-entry__row";
+  const tint = open
+    ? "hand-entry__row hand-entry__row--open"
+    : "hand-entry__row";
   return (
     <>
       <tr className={tint}>
@@ -170,6 +245,8 @@ function Row({
         <td>
           {attribute.kind === null ? (
             attribute.noForm
+          ) : switchedOff ? (
+            ABSENT
           ) : (
             <button
               ref={toggle}

@@ -12,20 +12,24 @@
  * figure, not this one, so that stays.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { enterValueManually, type StoredValue } from "../../api/endpoints";
 import {
   buildManualValue,
   NOTHING_TYPED,
   type ManualDraft,
   type ManualKind,
+  refusedFields,
   type Problem,
 } from "./manualEntry";
 
 export interface ManualEntryState {
   draft: ManualDraft;
   change: (field: keyof ManualDraft, value: string) => void;
-  /** Why there is nothing to send yet. Empty until a submit has been attempted. */
+  /**
+   * Why there is nothing to send yet, and what the server's last refusal said about a field.
+   * Empty until a submit has been attempted.
+   */
   problems: readonly Problem[];
   /**
    * The retrieval date the next figure will carry, shown before it is sent. **Stamped once,
@@ -97,5 +101,9 @@ export function useManualEntry(
       });
   }, [attribute, kind, draft, retrievedAt]);
 
-  return { draft, change, problems, retrievedAt, saving, saved, failure, submit };
+  // The server is the authority when the two disagree: a field it refused is marked as the
+  // form's own problems are, until the next keystroke clears the refusal.
+  const shown = useMemo(() => [...problems, ...refusedFields(failure)], [problems, failure]);
+
+  return { draft, change, problems: shown, retrievedAt, saving, saved, failure, submit };
 }

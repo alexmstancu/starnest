@@ -424,3 +424,106 @@ describe("the hand-entry form as designed", () => {
     expect(await screen.findByRole("combobox", { name: "Candidate" })).toHaveFocus();
   });
 });
+
+/**
+ * PL-086, PL-089. **The form refuses what the server refuses, and says the server's refusals in
+ * words**: a link that is not a full web address, and Manual entry switched off meanwhile.
+ */
+describe("what the form and the server refuse", () => {
+  function recordManualWrites(answer: () => Response): unknown[] {
+    const sent: unknown[] = [];
+    mockServer.use(
+      http.post("/v1/values/manual", async ({ request }) => {
+        sent.push(await request.json());
+        return answer();
+      }),
+    );
+    return sent;
+  }
+
+  it.each(["javascript:alert(1)", "/relative/page", "example.com"])(
+    "refuses %j on the Link field before sending",
+    async (link) => {
+      const user = userEvent.setup();
+      const sent = recordManualWrites(() => HttpResponse.json({}, { status: 201 }));
+      renderEntry();
+      await fillAFigure();
+      await user.type(field("Link"), link);
+
+      await user.click(screen.getByRole("button", { name: "Store this figure" }));
+
+      expect(field("Link")).toHaveAttribute("aria-invalid", "true");
+      expect(field("Link")).toHaveAccessibleDescription(
+        "The link must be a full web address, beginning with https://.",
+      );
+      expect(sent).toEqual([]);
+    },
+  );
+
+  it("shows a 422 the server still sends against the field it names", async () => {
+    const user = userEvent.setup();
+    recordManualWrites(() =>
+      HttpResponse.json(
+        {
+          code: "invalid_request",
+          message: "body.citations.1: String should match pattern",
+          details: {
+            errors: [
+              {
+                location: ["body", "citations", "1"],
+                problem: "String should match pattern",
+                kind: "string_pattern_mismatch",
+              },
+            ],
+          },
+        },
+        { status: 422 },
+      ),
+    );
+    renderEntry();
+    await fillAFigure();
+    await user.type(field("Link"), "https://example.com");
+
+    await user.click(screen.getByRole("button", { name: "Store this figure" }));
+
+    await waitFor(() => expect(field("Link")).toHaveAttribute("aria-invalid", "true"));
+    expect(field("Link")).toHaveAccessibleDescription(
+      "The link must be a full web address, beginning with https://.",
+    );
+    expect(screen.queryByText(/String should match pattern/)).toBeNull();
+    // A failed save offers Dismiss only (P1-14).
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+
+    await user.type(field("Link"), "/");
+    expect(field("Link")).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("words the refusal when the source was switched off meanwhile", async () => {
+    const user = userEvent.setup();
+    recordManualWrites(() =>
+      HttpResponse.json(
+        {
+          code: "manual_entry_switched_off",
+          message: "manual entry is switched off",
+        },
+        { status: 409 },
+      ),
+    );
+    renderEntry();
+    await fillAFigure();
+
+    await user.click(screen.getByRole("button", { name: "Store this figure" }));
+
+    const refusal = await screen.findByRole("alert");
+    expect(refusal).toHaveTextContent(
+      "Manual entry is switched off, so a figure typed now could not count.",
+    );
+    expect(refusal).not.toHaveTextContent(/manual_entry_switched_off|\bmanual entry is switched off\b/);
+    expect(
+      within(refusal).getByRole("link", { name: "Switch it on in Configure" }),
+    ).toHaveAttribute("href", "/configure");
+    expect(within(refusal).getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+    expect(within(refusal).queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(field("Values")).toHaveValue("Siemens");
+  });
+});

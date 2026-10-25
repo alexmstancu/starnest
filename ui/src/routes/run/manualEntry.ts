@@ -15,6 +15,8 @@
  */
 
 import type { ManualValueInput } from "../../api/endpoints";
+import { fieldProblemEntries } from "../../api/fieldProblems";
+import { isWebAddress } from "../../format/display";
 import { readNumber, type NumberRule } from "../../format/typedNumber";
 
 export type ManualKind = "LabelSet" | "AssignedScore";
@@ -70,6 +72,29 @@ export type Built =
   | { readonly body: ManualValueInput; readonly problems: readonly [] }
   | { readonly body: null; readonly problems: readonly Problem[] };
 
+export const LINK_RULE = "The link must be a full web address, beginning with https://.";
+
+/** The form's field each body field of the request comes from. */
+const FROM_BODY: Readonly<Record<string, readonly ManualField[]>> = {
+  candidate: ["candidate"],
+  reference_period: ["periodStart", "periodEnd"],
+  confidence_level: ["confidence"],
+  quote: ["quote"],
+  citations: ["citation"],
+};
+
+/**
+ * What a refusal says about the fields it names (422 `invalid_request`), so the server's word
+ * is shown against the field as the form's own is -- worded from the kind, never its sentence.
+ * The form sends one link, so a refusal naming any citation is about the Link field.
+ */
+export function refusedFields(error: unknown): Problem[] {
+  return fieldProblemEntries(error, { citations: LINK_RULE }).flatMap(({ field, sentence }) => {
+    const fields = FROM_BODY[field];
+    return fields === undefined ? [] : [{ fields, message: sentence }];
+  });
+}
+
 /** The first problem a field is named in, or null. */
 export function problemFor(problems: readonly Problem[], field: ManualField): string | null {
   return problems.find((problem) => problem.fields.includes(field))?.message ?? null;
@@ -104,6 +129,11 @@ export function buildManualValue(
     refuse("The period ends before it starts.", "periodStart", "periodEnd");
   }
 
+  // **A link is a full web address or nothing** (PL-086): anything else is a citation the
+  // screen will never link to, and the server refuses it.
+  const citation = draft.citation.trim();
+  if (citation !== "" && !isWebAddress(citation)) refuse(LINK_RULE, "citation");
+
   const payload =
     kind === "LabelSet"
       ? labelSetPayload(draft, refuse)
@@ -122,7 +152,7 @@ export function buildManualValue(
       retrieval_date: retrievalDate,
       confidence_level: draft.confidence,
       quote: draft.quote.trim() === "" ? null : draft.quote.trim(),
-      citations: draft.citation.trim() === "" ? [] : [draft.citation.trim()],
+      citations: citation === "" ? [] : [citation],
     },
     problems: [],
   };

@@ -22,12 +22,6 @@ export interface KnownOffender {
   readonly removedBy: string;
 }
 
-const MANUAL_SOURCE: KnownOffender = {
-  identifier: "manual",
-  where: 'the hand-entry card\'s lead and its open form: "stored under the manual source"',
-  removedBy: "unassigned",
-};
-
 export const IDENTIFIER_LEDGER = {
   "Configure, a pillar and a rule editor open": [],
   "Configure, a weight change refused": [],
@@ -35,17 +29,16 @@ export const IDENTIFIER_LEDGER = {
   "Configure, no criteria set": [],
   "Configure, the server unreachable": [],
 
-  "Acquire, a run card with its gaps open, a diff chosen and hand entry open": [MANUAL_SOURCE],
+  "Acquire, a run card with its gaps open, a diff chosen and hand entry open": [],
   "Acquire, a run stopped by hand": [
     {
       identifier: "halted_by_user",
       where: "the run card's status pill and its outcome sentence",
       removedBy: "PL-122 (C09)",
     },
-    MANUAL_SOURCE,
   ],
-  "Acquire, no spend cap set": [MANUAL_SOURCE],
-  "Acquire, nothing acquired yet": [MANUAL_SOURCE],
+  "Acquire, no spend cap set": [],
+  "Acquire, nothing acquired yet": [],
   "Acquire, the server unreachable": [],
 
   "Rank, a row open on a pillar, an attribute drilled into and a saved ranking open": [],

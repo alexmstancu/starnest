@@ -193,6 +193,19 @@ export function safeHttpUrl(value: string | null | undefined): string | null {
     : null;
 }
 
+/**
+ * The contract's rule for a link typed by hand (PL-086), character for character: `http` or
+ * `https`, a host, no whitespace. The server refuses anything else, and `safeHttpUrl` would
+ * never link to it, so a citation that breaks it is one nobody could follow.
+ */
+export const WEB_ADDRESS_PATTERN = "^[Hh][Tt][Tt][Pp][Ss]?://[^\\s/?#]+[^\\s]*$";
+const WEB_ADDRESS = new RegExp(WEB_ADDRESS_PATTERN);
+
+/** Whether a typed link is a full web address the server stores and the screen links to. */
+export function isWebAddress(text: string): boolean {
+  return WEB_ADDRESS.test(text) && safeHttpUrl(text) !== null;
+}
+
 export function formatMatchStatus(status: string): string {
   const spaced = status.replace(/_/g, " ");
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);

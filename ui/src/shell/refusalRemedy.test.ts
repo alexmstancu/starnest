@@ -25,6 +25,14 @@ describe("the way out of a refusal", () => {
     expect(remedyFor("invalid_comparison")).toBeNull();
   });
 
+  it("sends a switched-off Manual entry to Configure, and not a refused attribute (PL-089)", () => {
+    expect(remedyFor("manual_entry_switched_off")).toEqual({
+      label: "Switch it on in Configure",
+      path: "/configure",
+    });
+    expect(remedyFor("manual_entry_not_permitted")).toBeNull();
+  });
+
   it("sends a set that cannot be ranked to Configure (PL-006)", () => {
     expect(remedyFor("cannot_be_ranked")?.path).toBe("/configure");
   });

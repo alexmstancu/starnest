@@ -1,8 +1,14 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { ApiError } from "../../api/ApiError";
+import { WEB_ADDRESS_PATTERN } from "../../format/display";
 import {
   buildManualValue,
   NOTHING_TYPED,
+  LINK_RULE,
   problemFor,
+  refusedFields,
   splitLabels,
   type Built,
   type ManualDraft,
@@ -267,5 +273,70 @@ describe("what every hand-typed figure must carry", () => {
 
     expect(problemFor(built.problems, "periodEnd")).not.toBeNull();
     expect(problemFor(built.problems, "periodStart")).toBeNull();
+  });
+});
+
+/**
+ * PL-086 (UF-090). **A link is a full web address or nothing.** The drill-down links only to
+ * http and https, so anything else was a citation nobody could follow -- and the server now
+ * refuses it, so the form says so first, on the field.
+ */
+describe("the link a figure cites", () => {
+  const cite = (citation: string) =>
+    buildManualValue("a", "LabelSet", typed({ labels: "Spain", citation }), NOW);
+
+  it.each([
+    "example.com",
+    "not a url",
+    "javascript:alert(1)",
+    "ftp://x",
+    "/relative/page",
+    "https://example.com/a page",
+  ])("refuses %j on the Link field", (citation) => {
+    const built = cite(citation);
+
+    expect(built.body).toBeNull();
+    expect(problemFor(built.problems, "citation")).toBe(LINK_RULE);
+  });
+
+  it.each(["https://example.com", "http://example.gov/page?x=1", "HTTPS://Example.com/"])(
+    "sends %j exactly as typed",
+    (citation) => {
+      expect(cite(citation).body?.citations).toEqual([citation]);
+    },
+  );
+
+  /** G5. One rule on both sides of the wire: the form's pattern is the contract's. */
+  it("the link rule is the contract's", () => {
+    const contract = readFileSync(
+      join(__dirname, "..", "..", "..", "..", "docs", "openapi.yaml"),
+      "utf8",
+    );
+    const declared = /ManualValueInput:[\s\S]*?citations:[\s\S]*?pattern: ("(?:[^"\\]|\\.)*")/.exec(
+      contract,
+    );
+
+    expect(declared).not.toBeNull();
+    expect(JSON.parse(declared![1]!)).toBe(WEB_ADDRESS_PATTERN);
+  });
+
+  it("puts the server's refusal of a citation on the Link field, whichever it names", () => {
+    const refusal = new ApiError({
+      status: 422,
+      code: "invalid_request",
+      message: "",
+      details: {
+        errors: [
+          {
+            location: ["body", "citations", "1"],
+            problem: "String should match pattern",
+            kind: "string_pattern_mismatch",
+          },
+        ],
+      },
+    });
+
+    expect(problemFor(refusedFields(refusal), "citation")).toBe(LINK_RULE);
+    expect(refusedFields(new Error("offline"))).toEqual([]);
   });
 });

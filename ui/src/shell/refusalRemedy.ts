@@ -33,6 +33,8 @@ const REMEDIES: Record<string, Remedy> = {
   comparator_limit_exceeded: { label: "Change it in Configure", path: "/configure" },
   // A set that scores nothing is lifted where its criteria are weighed (PL-006).
   cannot_be_ranked: { label: "Change it in Configure", path: "/configure" },
+  // A switch the reader can flip, under Source priority (PL-089, D23).
+  manual_entry_switched_off: { label: "Switch it on in Configure", path: "/configure" },
 };
 
 /** An invalid rule is a setting to blame only when its anchor stands above the score range. */

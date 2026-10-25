@@ -11,6 +11,7 @@ import { HttpResponse, delay, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ATTRIBUTES,
+  DATA_SOURCES,
   HOLDINGS_GAPS,
   HOLDINGS_PAIRS_TOTAL,
   PAID_RUN_PLAN,
@@ -4275,6 +4276,75 @@ describe("a figure typed by hand", () => {
     expect(
       await form.findByText(/does not accept a manually entered value/i),
     ).toBeInTheDocument();
+  });
+
+  /** PL-089 (UF-062, D23). Said before anything is typed, with the way to switch it on. */
+  it("says manual entry is switched off, and where to switch it on", async () => {
+    mockServer.use(
+      http.get(`${BASE}/data-sources`, () =>
+        HttpResponse.json({
+          items: DATA_SOURCES.map((source) =>
+            source.id === "manual" ? { ...source, is_enabled: false } : source,
+          ),
+        }),
+      ),
+    );
+    renderShell("/acquire?show=hand-entry&attribute=country.residency_admin_ease");
+    const card = within(
+      await screen.findByRole("region", { name: /figures you can enter by hand/i }),
+    );
+
+    expect(
+      await card.findByText(
+        "Manual entry is switched off in Configure, so a figure typed here would not count. Figures already typed stay stored and count again when it is switched back on.",
+      ),
+    ).toBeInTheDocument();
+    expect(card.getByRole("link", { name: "Switch it on in Configure" })).toHaveAttribute(
+      "href",
+      "/configure",
+    );
+    await card.findByRole("row", { name: /residency admin ease/i });
+    expect(card.queryByRole("button", { name: /enter a value by hand/i })).toBeNull();
+    expect(screen.queryByRole("region", { name: /enter a value for/i })).toBeNull();
+  });
+
+  it("says nothing about the switch while it is on", async () => {
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /figures you can enter by hand/i }),
+    );
+
+    await card.findByRole("row", { name: /residency admin ease/i });
+    expect(card.queryByText(/is switched off/)).toBeNull();
+  });
+
+  /** P1-14. A failed read offers Try again, and the switch is part of what was read. */
+  it("says the card could not be loaded when the sources could not be read, and reads again", async () => {
+    let failing = true;
+    mockServer.use(
+      http.get(`${BASE}/data-sources`, () =>
+        failing
+          ? HttpResponse.json(
+              { code: "internal_error", message: "the catalog is down" },
+              { status: 500 },
+            )
+          : undefined,
+      ),
+    );
+    renderShell("/acquire");
+    const card = within(
+      await screen.findByRole("region", { name: /figures you can enter by hand/i }),
+    );
+
+    expect(await card.findByText(/could not be loaded/i)).toBeInTheDocument();
+    expect(card.queryByRole("button", { name: /enter a value by hand/i })).toBeNull();
+
+    failing = false;
+    await userEvent.click(card.getByRole("button", { name: "Try again" }));
+
+    expect(
+      await card.findAllByRole("button", { name: /enter a value by hand/i }),
+    ).not.toHaveLength(0);
   });
 
   it("opens one form at a time", async () => {
