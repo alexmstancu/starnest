@@ -14,7 +14,28 @@ export const UNSOURCED = "unsourced";
 /** The hand-entry card, with the attribute whose form to open (PL-088). */
 export const HAND_ENTRY = "hand-entry";
 
-const KNOWN = new Set([UNSOURCED, HAND_ENTRY]);
+/** Settings and sections a route offers to land on (PL-018). */
+export const HOUSEHOLD = "household";
+export const PILLAR_WEIGHTS = "pillar-weights";
+export const CRITERIA = "criteria";
+export const SOURCE_PRIORITY = "source-priority";
+export const SCORE_RANGE = "score-range";
+export const COMPARATOR_LIMIT = "comparator-limit";
+export const REFETCH_AGE = "refetch-age";
+export const ACQUISITION_HISTORY = "acquisition-history";
+
+const KNOWN = new Set([
+  UNSOURCED,
+  HAND_ENTRY,
+  HOUSEHOLD,
+  PILLAR_WEIGHTS,
+  CRITERIA,
+  SOURCE_PRIORITY,
+  SCORE_RANGE,
+  COMPARATOR_LIMIT,
+  REFETCH_AGE,
+  ACQUISITION_HISTORY,
+]);
 
 /** Which attribute's form a hand-entry link asks for. */
 export const ATTRIBUTE = "attribute";

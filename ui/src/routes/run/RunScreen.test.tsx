@@ -204,7 +204,7 @@ describe("an estimate with nothing to ask", () => {
     );
     expect(
       within(refusal).getByRole("link", { name: "Open Source priority in Configure" }),
-    ).toHaveAttribute("href", "/configure");
+    ).toHaveAttribute("href", "/configure?show=source-priority");
     expect(screen.queryByRole("button", { name: /yes, start it|start this acquisition/i })).toBeNull();
     expect(screen.queryByText("Items")).toBeNull();
   });
@@ -4666,7 +4666,7 @@ describe("a figure typed by hand", () => {
     ).toBeInTheDocument();
     expect(card.getByRole("link", { name: "Switch it on in Configure" })).toHaveAttribute(
       "href",
-      "/configure",
+      "/configure?show=source-priority",
     );
     await card.findByRole("row", { name: /residency admin ease/i });
     expect(card.queryByRole("button", { name: /enter a value by hand/i })).toBeNull();

@@ -1,3 +1,11 @@
+import {
+  COMPARATOR_LIMIT,
+  CRITERIA,
+  REFETCH_AGE,
+  SCORE_RANGE,
+  SOURCE_PRIORITY,
+  linkTo,
+} from "../navigation/highlight";
 import { type RoutePath, findRouteByPath } from "../navigation/routes";
 
 /**
@@ -10,6 +18,13 @@ export const SCORE_SCALE_NOT_SET = "score_scale_not_set";
 export interface Remedy {
   label: string;
   path: RoutePath;
+  /** The card on that screen the setting is in, landed on with `?show=` (PL-018). */
+  card: string;
+}
+
+/** Where a remedy's link points: the screen, and the card on it. */
+export function remedyLink(remedy: Remedy): string {
+  return linkTo(remedy.path, remedy.card);
 }
 
 /**
@@ -25,20 +40,36 @@ export interface Remedy {
  * anywhere, and offering a button that leads nowhere useful is worse than offering none.
  */
 const REMEDIES: Record<string, Remedy> = {
-  [SCORE_SCALE_NOT_SET]: { label: "Set it in Configure", path: "/configure" },
+  [SCORE_SCALE_NOT_SET]: { label: "Set it in Configure", path: "/configure", card: SCORE_RANGE },
   // Unseeded like the score scale, so a fresh installation compares nothing until it is set.
-  comparator_limit_not_set: { label: "Set it in Configure", path: "/configure" },
+  comparator_limit_not_set: {
+    label: "Set it in Configure",
+    path: "/configure",
+    card: COMPARATOR_LIMIT,
+  },
   // **Only the limit is a setting to blame** (PL-007): a candidate compared with itself or
   // missing from the ranking is not lifted by anything in Configure.
-  comparator_limit_exceeded: { label: "Change it in Configure", path: "/configure" },
+  comparator_limit_exceeded: {
+    label: "Change it in Configure",
+    path: "/configure",
+    card: COMPARATOR_LIMIT,
+  },
   // A set that scores nothing is lifted where its criteria are weighed (PL-006).
-  cannot_be_ranked: { label: "Change it in Configure", path: "/configure" },
+  cannot_be_ranked: { label: "Change it in Configure", path: "/configure", card: CRITERIA },
   // A switch the reader can flip, under Source priority (PL-089, D23).
-  manual_entry_switched_off: { label: "Switch it on in Configure", path: "/configure" },
+  manual_entry_switched_off: {
+    label: "Switch it on in Configure",
+    path: "/configure",
+    card: SOURCE_PRIORITY,
+  },
 };
 
 /** An invalid rule is a setting to blame only when its anchor stands above the score range. */
-const ANCHOR_ABOVE_THE_RANGE: Remedy = { label: "Set it in Configure", path: "/configure" };
+const ANCHOR_ABOVE_THE_RANGE: Remedy = {
+  label: "Set it in Configure",
+  path: "/configure",
+  card: SCORE_RANGE,
+};
 
 /**
  * An estimate with nothing to ask is lifted in Configure only for some of its reasons (PL-120):
@@ -46,9 +77,17 @@ const ANCHOR_ABOVE_THE_RANGE: Remedy = { label: "Set it in Configure", path: "/c
  * no source answers is not a setting to blame.
  */
 const NOTHING_TO_FETCH: Readonly<Record<string, Remedy>> = {
-  no_source_switched_on: { label: "Open Source priority in Configure", path: "/configure" },
-  sources_switched_off: { label: "Open Source priority in Configure", path: "/configure" },
-  still_fresh: { label: "Change it in Configure", path: "/configure" },
+  no_source_switched_on: {
+    label: "Open Source priority in Configure",
+    path: "/configure",
+    card: SOURCE_PRIORITY,
+  },
+  sources_switched_off: {
+    label: "Open Source priority in Configure",
+    path: "/configure",
+    card: SOURCE_PRIORITY,
+  },
+  still_fresh: { label: "Change it in Configure", path: "/configure", card: REFETCH_AGE },
 };
 
 export function remedyFor(

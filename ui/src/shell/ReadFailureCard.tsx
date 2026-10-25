@@ -4,7 +4,7 @@ import { isApiError } from "../api/ApiError";
 import { type Names, presentError } from "../api/errorPresentation";
 import { isUnreachable, useWaitingForServer } from "../api/reachability";
 import { useAppConfig } from "../config/AppConfigContext";
-import { remedyFor } from "./refusalRemedy";
+import { remedyFor, remedyLink } from "./refusalRemedy";
 
 /**
  * A read that never arrived (C01 M2).
@@ -96,7 +96,7 @@ export function ReadFailureCardInFull({
           Try again
         </button>
         {remedy && (
-          <Link className="button" to={remedy.path}>
+          <Link className="button" to={remedyLink(remedy)}>
             {remedy.label}
           </Link>
         )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SCORE_SCALE_NOT_SET, remedyFor } from "./refusalRemedy";
+import { SCORE_SCALE_NOT_SET, remedyFor, remedyLink } from "./refusalRemedy";
 
 describe("the way out of a refusal", () => {
   /**
@@ -11,6 +11,7 @@ describe("the way out of a refusal", () => {
     expect(remedyFor(SCORE_SCALE_NOT_SET)).toEqual({
       label: "Set it in Configure",
       path: "/configure",
+      card: "score-range",
     });
   });
 
@@ -18,16 +19,17 @@ describe("the way out of a refusal", () => {
     expect(remedyFor("comparator_limit_exceeded")).toEqual({
       label: "Change it in Configure",
       path: "/configure",
+      card: "comparator-limit",
     });
   });
 
   /** PL-120. A switched-off source is lifted at Source priority, a fresh scope at the refetch age. */
   it.each([
-    ["no_source_switched_on", "Open Source priority in Configure"],
-    ["sources_switched_off", "Open Source priority in Configure"],
-    ["still_fresh", "Change it in Configure"],
-  ])("sends nothing to fetch for %s to Configure", (reason, label) => {
-    expect(remedyFor("nothing_to_fetch", { reason })).toEqual({ label, path: "/configure" });
+    ["no_source_switched_on", "Open Source priority in Configure", "source-priority"],
+    ["sources_switched_off", "Open Source priority in Configure", "source-priority"],
+    ["still_fresh", "Change it in Configure", "refetch-age"],
+  ])("sends nothing to fetch for %s to Configure", (reason, label, card) => {
+    expect(remedyFor("nothing_to_fetch", { reason })).toEqual({ label, path: "/configure", card });
   });
 
   it.each(["empty_scope", "nothing_answerable", undefined])(
@@ -45,6 +47,7 @@ describe("the way out of a refusal", () => {
     expect(remedyFor("manual_entry_switched_off")).toEqual({
       label: "Switch it on in Configure",
       path: "/configure",
+      card: "source-priority",
     });
     expect(remedyFor("manual_entry_not_permitted")).toBeNull();
   });
@@ -57,6 +60,7 @@ describe("the way out of a refusal", () => {
     expect(remedyFor("invalid_criterion", { reason: "anchor_above_scale" })).toEqual({
       label: "Set it in Configure",
       path: "/configure",
+      card: "score-range",
     });
     expect(remedyFor("invalid_criterion")).toBeNull();
   });
@@ -70,6 +74,7 @@ describe("the way out of a refusal", () => {
     expect(remedyFor("comparator_limit_not_set")).toEqual({
       label: "Set it in Configure",
       path: "/configure",
+      card: "comparator-limit",
     });
   });
 
@@ -99,5 +104,16 @@ describe("the way out of a refusal", () => {
     ]) {
       expect(remedyFor(code)?.path).toBe("/configure");
     }
+  });
+
+  /** PL-018: a remedy lands on the card its setting is in, never the top of Configure. */
+  it.each([
+    [SCORE_SCALE_NOT_SET, "/configure?show=score-range"],
+    ["comparator_limit_not_set", "/configure?show=comparator-limit"],
+    ["comparator_limit_exceeded", "/configure?show=comparator-limit"],
+    ["cannot_be_ranked", "/configure?show=criteria"],
+    ["manual_entry_switched_off", "/configure?show=source-priority"],
+  ])("links %s to its card", (code, link) => {
+    expect(remedyLink(remedyFor(code)!)).toBe(link);
   });
 });

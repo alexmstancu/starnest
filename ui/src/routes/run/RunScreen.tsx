@@ -1,5 +1,4 @@
 import { type ReactNode, useEffect, useId, useRef } from "react";
-import { useLocation } from "react-router-dom";
 import {
   type Holdings,
   type Run,
@@ -22,7 +21,9 @@ import { RefusalNotice } from "../../shell/RefusalNotice";
 import { describeRunStatus } from "../../shell/runStatus";
 import { RunStatusChip } from "../../shell/RunStatusChip";
 import { useSelection } from "../../shell/SelectionContext";
+import { ACQUISITION_HISTORY } from "../../navigation/highlight";
 import { HISTORY_ANCHOR } from "../../navigation/routes";
+import { useLanding } from "../../shell/useLanding";
 import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
 import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
 import {
@@ -96,14 +97,10 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
     }
   };
   const gapsHeading = useRef<HTMLHeadingElement>(null);
-  // **The sidebar's "Acquisition history" leads to the table itself** (PL-127), not to the top.
-  const historyHeading = useRef<HTMLHeadingElement>(null);
-  const location = useLocation();
-  useEffect(() => {
-    if (location.hash !== `#${HISTORY_ANCHOR}`) return;
-    historyHeading.current?.focus();
-    historyHeading.current?.scrollIntoView?.({ block: "start" });
-  }, [location.hash, location.key]);
+  // **The sidebar's "Acquisition history" leads to the table itself** (PL-127, PL-018), not to
+  // the top, and marks it until the reader acts.
+  const { target: historySection, landed: historyLanded } =
+    useLanding<HTMLElement>(ACQUISITION_HISTORY);
   // The acquisition still going, if any: one runs at a time, so it holds every way to start.
   const stillRunning = acquisitionInFlight(
     run.current,
@@ -306,8 +303,13 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           drawn before the first answer, so nothing can be chosen from a list nobody has read. */}
       {run.history.state === "ready" && <AcquisitionDiffPanel runs={run.history.data} />}
 
-      <section aria-labelledby={HISTORY_ANCHOR}>
-        <h2 id={HISTORY_ANCHOR} ref={historyHeading} tabIndex={-1} className="panel__heading">
+      <section
+        ref={historySection}
+        tabIndex={-1}
+        className={historyLanded ? "is-landed" : undefined}
+        aria-labelledby={HISTORY_ANCHOR}
+      >
+        <h2 id={HISTORY_ANCHOR} className="panel__heading">
           Every acquisition so far
         </h2>
         <LoadedRegion

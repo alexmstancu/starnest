@@ -10,7 +10,7 @@ import { combine, map } from "../../api/read";
 import { useRead } from "../../api/useRead";
 import { useSourceNames } from "../../api/useSourceNames";
 import { ABSENT, pillarName, sourceName } from "../../format/display";
-import { handEntryAsked } from "../../navigation/highlight";
+import { handEntryAsked, linkTo, SOURCE_PRIORITY } from "../../navigation/highlight";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { alwaysAsked } from "./alwaysAsked";
 import { ManualEntryPanel } from "./ManualEntryPanel";
@@ -177,7 +177,7 @@ function SwitchedOff({ manual }: { manual: DataSource | undefined }) {
         count. Figures already typed stay stored and count again when it is
         switched back on.
       </p>
-      <Link className="button" to="/configure">
+      <Link className="button" to={linkTo("/configure", SOURCE_PRIORITY)}>
         Switch it on in Configure
       </Link>
     </div>

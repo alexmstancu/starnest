@@ -455,7 +455,7 @@ describe("when the ranking cannot be shown", () => {
     ).toBeInTheDocument();
     expect(
       unset.getByRole("link", { name: /set it in configure/i }),
-    ).toHaveAttribute("href", "/configure");
+    ).toHaveAttribute("href", "/configure?show=score-range");
     expect(unset.queryByRole("button", { name: /try again/i })).toBeNull();
 
     // **Not an alert, and no code.** An expected state announced urgently, with a machine
@@ -475,6 +475,7 @@ describe("when the ranking cannot be shown", () => {
       { code: "cannot_be_ranked", details: { reason: "scores_nothing" } },
       /scores nothing at this level/i,
       /change it in configure/i,
+      "/configure?show=criteria",
     ],
     [
       "an anchor above the score range",
@@ -484,8 +485,9 @@ describe("when the ranking cannot be shown", () => {
       },
       /a score of 120, above the top of the score range, 100/i,
       /set it in configure/i,
+      "/configure?show=score-range",
     ],
-  ])("explains %s calmly, with the way to Configure", async (_case, body, said, way) => {
+  ])("explains %s calmly, with the way to Configure", async (_case, body, said, way, link) => {
     mockServer.use(
       http.get("/v1/rankings", () =>
         HttpResponse.json({ ...body, message: "SENTINEL_MESSAGE" }, { status: 422 }),
@@ -495,7 +497,7 @@ describe("when the ranking cannot be shown", () => {
 
     const unset = within(await screen.findByRole("region", { name: "No ranking" }));
     expect(unset.getByText(said)).toBeInTheDocument();
-    expect(unset.getByRole("link", { name: way })).toHaveAttribute("href", "/configure");
+    expect(unset.getByRole("link", { name: way })).toHaveAttribute("href", link);
     const rank = within(screen.getByRole("region", { name: "Rank" }));
     expect(rank.queryByRole("alert")).toBeNull();
     expect(rank.queryByText(/SENTINEL_MESSAGE|homicide_rate|cannot_be_ranked/)).toBeNull();

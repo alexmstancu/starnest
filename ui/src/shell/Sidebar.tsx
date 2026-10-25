@@ -29,7 +29,8 @@ import {
   type SetNames,
 } from "../format/savedRanking";
 import { HOUSEHOLD_LABELS } from "../format/vocabulary";
-import { HISTORY_ANCHOR, ROUTES } from "../navigation/routes";
+import { ACQUISITION_HISTORY, HOUSEHOLD, linkTo } from "../navigation/highlight";
+import { ROUTES } from "../navigation/routes";
 import { LoadedRegion } from "./LoadedRegion";
 import { SavedRankingRow } from "./SavedRankingRow";
 import { useSelection } from "./SelectionContext";
@@ -262,7 +263,8 @@ function HouseholdCard({ freshness }: { freshness: number }) {
         <h2 id="household-summary-heading" className="panel__heading">
           Household summary
         </h2>
-        <Link className="panel__link" to={CONFIGURE.path}>
+        {/* To the household's own card, ~5,000 px down Configure, not its top (PL-018). */}
+        <Link className="panel__link" to={linkTo(CONFIGURE.path, HOUSEHOLD)}>
           Edit
         </Link>
       </div>
@@ -477,8 +479,8 @@ function LastAcquisitionCard({ summary }: { summary: ShellSummary }) {
       {/* Found by label rather than by position: `ROUTES[1]` meant "Acquire" only for as long
           as nobody reordered the list, and reordering it is a change nothing would have
           failed on. */}
-      {/* To the table itself, not the top of Acquire (PL-127). */}
-      <Link className="panel__link" to={{ pathname: ACQUIRE.path, hash: HISTORY_ANCHOR }}>
+      {/* To the table itself, not the top of Acquire (PL-127, PL-018). */}
+      <Link className="panel__link" to={linkTo(ACQUIRE.path, ACQUISITION_HISTORY)}>
         Acquisition history
       </Link>
     </section>

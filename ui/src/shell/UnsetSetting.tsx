@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ApiError, isApiError } from "../api/ApiError";
 import { presentError } from "../api/errorPresentation";
-import { SCORE_SCALE_NOT_SET, remedyFor } from "./refusalRemedy";
+import { SCORE_SCALE_NOT_SET, remedyFor, remedyLink } from "./refusalRemedy";
 
 /**
  * A screen with nothing on it because a setting has not been decided, rather than because
@@ -43,7 +43,7 @@ export function UnsetSetting({
         {presented.code === SCORE_SCALE_NOT_SET ? detail : presented.message}
       </p>
       {remedy && (
-        <Link className="button button--primary" to={remedy.path}>
+        <Link className="button button--primary" to={remedyLink(remedy)}>
           {remedy.label}
         </Link>
       )}

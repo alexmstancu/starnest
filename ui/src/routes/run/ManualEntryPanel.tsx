@@ -7,7 +7,7 @@ import { useSourceNames } from "../../api/useSourceNames";
 import { ActRefusal } from "../../shell/ActRefusal";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { NumberField } from "../../shell/NumberField";
-import { remedyFor } from "../../shell/refusalRemedy";
+import { remedyFor, remedyLink } from "../../shell/refusalRemedy";
 import { alwaysAsked } from "./alwaysAsked";
 import { candidateName, formatDateTime, sourceName } from "../../format/display";
 import { describeFigure } from "../../format/figure";
@@ -267,7 +267,7 @@ export function ManualEntryPanel({
 function Remedy({ error }: { error: unknown }) {
   const remedy = isApiError(error) ? remedyFor(error.code, error.details) : null;
   return remedy === null ? null : (
-    <Link className="button" to={remedy.path}>
+    <Link className="button" to={remedyLink(remedy)}>
       {remedy.label}
     </Link>
   );

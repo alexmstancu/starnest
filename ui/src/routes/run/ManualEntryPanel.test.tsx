@@ -557,7 +557,7 @@ describe("what the form and the server refuse", () => {
     expect(refusal).not.toHaveTextContent(/manual_entry_switched_off|\bmanual entry is switched off\b/);
     expect(
       within(refusal).getByRole("link", { name: "Switch it on in Configure" }),
-    ).toHaveAttribute("href", "/configure");
+    ).toHaveAttribute("href", "/configure?show=source-priority");
     expect(within(refusal).getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
     expect(within(refusal).queryByRole("button", { name: "Try again" })).toBeNull();
     expect(field("Values")).toHaveValue("Siemens");

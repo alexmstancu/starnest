@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useId, useRef } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useCallback, useId } from "react";
+import { Link } from "react-router-dom";
 import { fetchAttributes, fetchCriteriaSet } from "../../api/endpoints";
 import { combine, map, type Read } from "../../api/read";
 import { type PillarNames, usePillarNames } from "../../api/usePillarNames";
@@ -7,7 +7,8 @@ import { useRead } from "../../api/useRead";
 import { ABSENT, formatPercentage, pillarName } from "../../format/display";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { useSelection } from "../../shell/SelectionContext";
-import { highlighted, linkToHandEntry, UNSOURCED } from "../../navigation/highlight";
+import { linkToHandEntry, UNSOURCED } from "../../navigation/highlight";
+import { useLanding } from "../../shell/useLanding";
 import { alwaysAsked } from "./alwaysAsked";
 import {
   type UnsourcedAttribute,
@@ -70,23 +71,11 @@ export function UnsourcedAttributes({ level }: { level: string }) {
   // **Arrived at from Configure's "No source yet →".** The route carries which card was asked
   // for, so the reader lands on a long screen with the one they came for marked -- and the mark
   // is in the URL, so a reload and a copied link both keep it.
-  const asked = highlighted(useLocation().search) === UNSOURCED;
-  const card = useRef<HTMLElement>(null);
-
   /**
-   * **Following a link moves the reader, not just the scrollbar.** A jump that only tinted a
-   * card leaves anyone reading by keyboard or screen reader where they were, on a screen of
-   * six cards, with no way to tell which one was meant. Focusing the card is what actually
-   * says "here"; the tint is for the eye that is already on the page.
+   * **Following a link moves the reader, not just the scrollbar** (PL-018): focused, scrolled
+   * to, and marked until the reader acts -- also when the link is followed from this screen.
    */
-  useEffect(() => {
-    // The card is drawn from the first render, its rows following when they are read.
-    if (!asked || card.current === null) return;
-    card.current.focus();
-    // Not in jsdom, and not worth a shim: the scroll is a courtesy and the focus is the thing
-    // that actually moves the reader.
-    card.current.scrollIntoView?.({ block: "start", behavior: "smooth" });
-  }, [asked]);
+  const { target: card, asked, landed } = useLanding<HTMLElement>(UNSOURCED);
 
   return (
     <section
@@ -94,7 +83,7 @@ export function UnsourcedAttributes({ level }: { level: string }) {
       // Focusable only as the target of a jump: -1 keeps it out of the tab order, so nobody
       // tabbing through the screen has to pass a card that is not a control.
       tabIndex={asked ? -1 : undefined}
-      className={asked ? "panel panel--asked-for" : "panel"}
+      className={landed ? "panel is-landed" : "panel"}
       aria-labelledby={headingId}
     >
       <div className="panel__head">

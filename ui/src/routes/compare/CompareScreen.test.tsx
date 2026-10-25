@@ -1303,7 +1303,7 @@ describe("when a comparison cannot be drawn", () => {
     expect(unset.getByText(/most candidates a comparison may hold/i)).toBeInTheDocument();
     expect(unset.getByRole("link", { name: /set it in configure/i })).toHaveAttribute(
       "href",
-      "/configure",
+      "/configure?show=comparator-limit",
     );
     expect(screen.queryByRole("alert")).toBeNull();
     expect(document.body).not.toHaveTextContent(/comparator_limit/);
@@ -1319,7 +1319,7 @@ describe("when a comparison cannot be drawn", () => {
 
     expect(
       within(refusal).getByRole("link", { name: "Set it in Configure" }),
-    ).toHaveAttribute("href", "/configure");
+    ).toHaveAttribute("href", "/configure?show=comparator-limit");
   });
 
   it("opens Configure when that way out is followed", async () => {

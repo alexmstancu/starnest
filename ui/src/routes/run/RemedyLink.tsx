@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { isApiError } from "../../api/ApiError";
 import { presentError } from "../../api/errorPresentation";
-import { remedyFor } from "../../shell/refusalRemedy";
+import { remedyFor, remedyLink } from "../../shell/refusalRemedy";
 
 /**
  * Where to go to lift a refused act, drawn inside its refusal (PL-120): an estimate with every
@@ -15,7 +15,7 @@ export function RemedyLink({ error }: { error: unknown }) {
   );
   if (remedy === null) return null;
   return (
-    <Link className="button" to={remedy.path}>
+    <Link className="button" to={remedyLink(remedy)}>
       {remedy.label}
     </Link>
   );

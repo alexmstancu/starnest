@@ -2304,37 +2304,6 @@ select.field__control {
   flex-wrap: wrap;
 }
 
-/* ── The card a link sent you to ──────────────────────────────────────────────
-   Configure's "No source yet →" lands here, and the mark says which of six cards was meant.
-   Amber because the thing being pointed at is a gap, and the same amber the chip carried --
-   the reader should recognise where they arrived. It fades rather than staying for ever: it
-   answers "which one", and once answered it is noise. */
-.panel--asked-for {
-  border-color: var(--colour-warning-border);
-  box-shadow: 0 0 0 3px var(--colour-warning-surface);
-  animation: asked-for 4s ease-out forwards;
-}
-
-@keyframes asked-for {
-  0%,
-  60% {
-    border-color: var(--colour-warning-border);
-    box-shadow: 0 0 0 3px var(--colour-warning-surface);
-  }
-  100% {
-    border-color: var(--colour-border);
-    box-shadow: none;
-  }
-}
-
-/* **A reader who asks for no motion gets none.** The highlight is information, so it stays --
-   it simply arrives without the fade. */
-@media (prefers-reduced-motion: reduce) {
-  .panel--asked-for {
-    animation: none;
-  }
-}
-
 /* ── A figure typed by hand ───────────────────────────────────────────────────
    Opens inside the row that names the attribute, so the table stays on screen while it is
    filled. Sunken rather than raised: it is nested inside a card already, and a second shadow
@@ -5223,4 +5192,17 @@ select.field__control {
 .empty-card__action {
   display: flex;
   gap: 8px;
+}
+
+/* ── The card a link sent you to (PL-018) ─────────────────────────────────────────────
+   A `?show=` route lands here, and the mark says which of several cards was meant. Amber,
+   the colour of the gap that usually sent the reader. **It stays until the reader acts**:
+   a mark that faded on a timer was gone before a reader who looked away came back, and no
+   motion at all means nothing to switch off under reduced motion. An outline, so it marks a
+   bare section as well as a card. */
+
+.is-landed {
+  outline: 2px solid var(--colour-warning-border);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 3px var(--colour-warning-surface);
 }
