@@ -9,12 +9,14 @@ scope, the value rows and the failure rows. A fake store could only return whate
 told to; what is under test is the derivation itself.
 """
 
+import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+import psycopg
 import pytest
 from psycopg import errors
 from psycopg_pool import AsyncConnectionPool
@@ -291,6 +293,94 @@ class TestWhatNobodyAnswered:
 
         assert run.items_completed == 1
 
+    @pytest.mark.parametrize(
+        ("first_batch", "second_batch", "named"),
+        [
+            ("older", "newer", None),
+            ("older", None, None),
+            (None, "older", None),
+            ("older", "older", "older"),
+        ],
+        ids=["two-rows", "a-row-then-unknown", "unknown-then-a-row", "one-row-twice"],
+    )
+    async def test_a_pair_re_confirmed_in_two_batches_names_a_figure_only_if_both_did(
+        self,
+        pool: AsyncConnectionPool,
+        a_wider_run: int,
+        first_batch: str | None,
+        second_batch: str | None,
+        named: str | None,
+    ) -> None:
+        """PL-049. One batch restating two rows for a pair names neither, so splitting the same
+        input over two batches must too: keeping the first id would vouch for a figure the run
+        cannot tell apart from the other."""
+        values = PostgresValueStore(pool)
+        rows = await two_rows_for_portugals_overburden(values)
+        for batch in (first_batch, second_batch):
+            restated = rows[batch] if batch else None
+            await values.record_reuse(
+                a_wider_run, "eurostat", {("country.portugal", OVERBURDEN): restated}
+            )
+
+        run = await PostgresRunStore(pool).read_run(a_wider_run)
+
+        assert [item.value for item in run.reconfirmed] == [rows[named] if named else None]
+
+    async def test_two_batches_racing_with_two_rows_name_neither(
+        self, pool: AsyncConnectionPool, a_wider_run: int, database_url: str
+    ) -> None:
+        """The second batch's write waits on the first's uncommitted row and must still merge
+        with it once it commits, rather than keep whichever landed first."""
+        values = PostgresValueStore(pool)
+        rows = await two_rows_for_portugals_overburden(values)
+        async with await psycopg.AsyncConnection.connect(database_url) as first_batch:
+            await first_batch.execute(
+                "INSERT INTO data_acquisition_run_reuse "
+                "(data_acquisition_run, data_source, candidate, attribute, value) "
+                "VALUES (%s, 'eurostat', 'country.portugal', %s, %s)",
+                (a_wider_run, OVERBURDEN, rows["older"]),
+            )
+            second_batch = asyncio.create_task(
+                values.record_reuse(
+                    a_wider_run, "eurostat", {("country.portugal", OVERBURDEN): rows["newer"]}
+                )
+            )
+            waited = await a_write_waits_on_a_lock(database_url)
+            await first_batch.commit()
+            await asyncio.wait_for(second_batch, PATIENCE_SECONDS)
+
+        run = await PostgresRunStore(pool).read_run(a_wider_run)
+
+        assert waited, "the second batch never waited for the first, so this proves nothing"
+        assert [item.value for item in run.reconfirmed] == [None]
+
+
+PATIENCE_SECONDS = 10
+
+
+async def two_rows_for_portugals_overburden(values: PostgresValueStore) -> dict[str, int]:
+    """Two stored rows from one source for one pair: two transcriptions, a year apart."""
+    older = a_figure(None, "country.portugal", OVERBURDEN)
+    newer = older.model_copy(update={"retrieval_date": older.retrieval_date + timedelta(days=365)})
+    stored = await values.append([older, newer])
+    return {"older": int(stored[0].id), "newer": int(stored[1].id)}
+
+
+async def a_write_waits_on_a_lock(database_url: str) -> bool:
+    """Whether a statement on this database comes to wait for a lock it was not granted."""
+    async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as observer:
+        for _ in range(PATIENCE_SECONDS * 50):
+            row = await (
+                await observer.execute(
+                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity "
+                    "WHERE datname = current_database() AND wait_event_type = 'Lock')"
+                )
+            ).fetchone()
+            if row is not None and row[0]:
+                return True
+            await asyncio.sleep(0.02)
+    return False
+
 
 class TestARunScopedToExactPairs:
     """BE-11. A retry asks about specific (candidate, attribute) pairs, not the rectangle its two
@@ -337,6 +427,35 @@ class TestARunScopedToExactPairs:
         assert [(item.candidate, item.attribute) for item in run.reconfirmed] == [
             ("country.portugal", OVERBURDEN)
         ]
+
+    async def test_the_values_it_re_confirmed_are_exactly_the_ones_it_lists(
+        self, pool: AsyncConnectionPool, a_retry_of_two_pairs: int
+    ) -> None:
+        """PL-049. The diff reads the figures through `reconfirmed_by_run`, so a value named for
+        a pair the run never asked about must not reach it by that road either."""
+        values = PostgresValueStore(pool)
+        (asked, not_asked) = await values.append(
+            [
+                a_figure(None, "country.portugal", OVERBURDEN),
+                a_figure(None, "country.portugal", OVERCROWDING),
+            ]
+        )
+        await values.record_reuse(
+            a_retry_of_two_pairs,
+            "eurostat",
+            {
+                ("country.portugal", OVERBURDEN): asked.id,
+                ("country.portugal", OVERCROWDING): not_asked.id,
+            },
+        )
+
+        run = await PostgresRunStore(pool).read_run(a_retry_of_two_pairs)
+        listed = await values.read_values(reconfirmed_by_run=a_retry_of_two_pairs)
+        total = await values.count_values(reconfirmed_by_run=a_retry_of_two_pairs)
+
+        assert [item.value for item in run.reconfirmed] == [asked.id]
+        assert [listing.value.id for listing in listed] == [asked.id]
+        assert total == 1
 
     async def test_only_the_pairs_it_asked_are_counted_or_listed_unanswered(
         self, pool: AsyncConnectionPool, a_retry_of_two_pairs: int

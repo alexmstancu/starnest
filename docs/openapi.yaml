@@ -277,8 +277,9 @@ paths:
           in: query
           description: >
             Narrow to the stored values one acquisition re-confirmed: re-read as the same
-            observation, so no new row carries that run. Together with data_acquisition_run, it is
-            what the run produced. Values a run re-confirmed before it recorded which are not
+            observation, so no new row carries that run. Exactly the values the run's
+            `reconfirmed` names, for its own items only. Together with data_acquisition_run, it
+            is what the run produced. Values a run re-confirmed before it recorded which are not
             listed. Refused with 422 alongside data_acquisition_run.
           schema: { type: integer }
         - { name: candidate, in: query, schema: { type: string } }
@@ -2066,9 +2067,10 @@ components:
               description: >-
                 Pairs a source answered with a figure already on record for the same observation,
                 so no new row carries this run. `value` is the stored figure it restated; null where
-                that is not known -- a pair re-read under more than one breakdown option, or a
-                re-confirmation recorded before runs named the figure, with more than one row it
-                could have restated. A null is never evidence that a figure is unchanged.
+                that is not known -- a pair that restated more than one stored row, in one batch
+                or across several, or a re-confirmation recorded before runs named the figure,
+                with more than one row it could have restated. A null is never evidence that a
+                figure is unchanged.
               items:
                 type: object
                 required: [data_source, candidate, attribute, value]

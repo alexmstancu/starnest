@@ -135,10 +135,16 @@ WHERE  (:candidate::text IS NULL OR v.candidate = :candidate)
   AND  (:data_acquisition_run::integer IS NULL
         OR v.data_acquisition_run = :data_acquisition_run)
   -- What a run re-confirmed rather than stored: the rows its reuse records name (PL-049). With
-  -- the filter above, what the run produced.
+  -- the filter above, what the run produced. **Only for the run's own items**, as its
+  -- `reconfirmed` lists them (select_run): a reuse recorded for a pair it never asked about is
+  -- not something it produced, and the diff would be handed a pair the run cannot account for.
   AND  (:reconfirmed_by_run::integer IS NULL
         OR v.id IN (SELECT reuse.value
                     FROM   data_acquisition_run_reuse AS reuse
+                    JOIN   data_acquisition_run_item AS item
+                           ON  item.data_acquisition_run = reuse.data_acquisition_run
+                           AND item.candidate = reuse.candidate
+                           AND item.attribute = reuse.attribute
                     WHERE  reuse.data_acquisition_run = :reconfirmed_by_run))
   AND  (:include_superseded OR active.id IS NOT NULL)
   -- The rows a ranking cites by id: the figure each contribution used and the evidence each
@@ -160,6 +166,10 @@ WHERE  (:candidate::text IS NULL OR v.candidate = :candidate)
   AND  (:reconfirmed_by_run::integer IS NULL
         OR v.id IN (SELECT reuse.value
                     FROM   data_acquisition_run_reuse AS reuse
+                    JOIN   data_acquisition_run_item AS item
+                           ON  item.data_acquisition_run = reuse.data_acquisition_run
+                           AND item.candidate = reuse.candidate
+                           AND item.attribute = reuse.attribute
                     WHERE  reuse.data_acquisition_run = :reconfirmed_by_run))
   AND  (:include_superseded OR active.id IS NOT NULL);
 

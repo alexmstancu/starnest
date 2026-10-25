@@ -36,13 +36,17 @@ def _run(connection: psycopg.Connection, migration: Path) -> None:
 
 
 def _a_figure(
-    connection: psycopg.Connection, candidate: str, retrieved: datetime, period_year: int
+    connection: psycopg.Connection,
+    candidate: str,
+    retrieved: datetime,
+    period_year: int,
+    source: str = "eurostat",
 ) -> int:
     row = connection.execute(
         "INSERT INTO value (candidate, attribute, value_type, data_source, "
         "reference_period_start, reference_period_end, retrieval_date, confidence_level) "
-        "VALUES (%s, %s, 'Ratio', 'eurostat', %s, %s, %s, 'high') RETURNING id",
-        (candidate, OVERBURDEN, f"{period_year}-01-01", f"{period_year}-12-31", retrieved),
+        "VALUES (%s, %s, 'Ratio', %s, %s, %s, %s, 'high') RETURNING id",
+        (candidate, OVERBURDEN, source, f"{period_year}-01-01", f"{period_year}-12-31", retrieved),
     ).fetchone()
     assert row is not None
     return int(row[0])
@@ -93,6 +97,20 @@ def test_a_re_confirmation_with_one_row_it_could_have_restated_names_that_row(
     before_it: tuple[psycopg.Connection, int, int],
 ) -> None:
     connection, run, restated = before_it
+
+    _run(connection, THE_MIGRATION)
+
+    assert _named(connection, run, ONE_ROW) == restated
+
+
+def test_another_sources_row_for_the_pair_does_not_make_it_ambiguous(
+    before_it: tuple[psycopg.Connection, int, int],
+) -> None:
+    """The re-confirmation names its source, so only that source's rows could have been
+    restated: another source's figure for the pair is a different observation, not a second
+    candidate for the one re-read."""
+    connection, run, restated = before_it
+    _a_figure(connection, ONE_ROW, TRANSCRIBED, 2024, source="oecd")
 
     _run(connection, THE_MIGRATION)
 

@@ -114,11 +114,17 @@ WHERE  data_acquisition_run = :data_acquisition_run
 -- credits the source named here (NEW-54). Idempotent: a pair one source re-confirmed twice in
 -- one run is the one row the primary key allows. Each pair names the stored row it restated, or
 -- null where that is not one row (PL-049), so the diff can show the figure the run produced.
+-- **A later batch merges rather than being skipped**: a pair restated through two different rows,
+-- or once through an unknown one, names none -- the same verdict one batch reaches over the same
+-- input -- and the same row twice still names it. One statement, so a racing batch waits on the
+-- row and merges with what committed.
 INSERT INTO data_acquisition_run_reuse
        (data_acquisition_run, data_source, candidate, attribute, value)
 SELECT :data_acquisition_run, :data_source, pair.candidate, pair.attribute, pair.value
 FROM   jsonb_to_recordset(:pairs::jsonb) AS pair(candidate text, attribute text, value bigint)
-ON CONFLICT ON CONSTRAINT data_acquisition_run_reuse_pkey DO NOTHING;
+ON CONFLICT ON CONSTRAINT data_acquisition_run_reuse_pkey DO UPDATE
+SET    value = CASE WHEN data_acquisition_run_reuse.value = EXCLUDED.value
+                    THEN data_acquisition_run_reuse.value END;
 
 -- name: insert_research_spend(match_rule, candidate, data_source, llm_call_count, cost_eur)!
 -- What one gate-research call billed (BE-34). Research writes gate answers, not values, so it is
