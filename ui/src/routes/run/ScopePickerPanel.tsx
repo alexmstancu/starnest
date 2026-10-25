@@ -1,6 +1,6 @@
 import { useId } from "react";
 import { LoadedRegion } from "../../shell/LoadedRegion";
-import { HeldButton } from "./HeldButton";
+import { HeldButton } from "../../shell/HeldButton";
 import { type PickKind, pickedLabel } from "./scopePicker";
 import type { ScopePickerState } from "./useScopePicker";
 
