@@ -162,7 +162,8 @@ export function useRuleToggles(
       try {
         await settledWrite(
           () => write().then(() => true as const),
-          async () => (tookEffect(await fetchCriteriaSet(criteriaSet.id)) ? true : null),
+          async (signal) =>
+            tookEffect(await fetchCriteriaSet(criteriaSet.id, { signal })) ? true : null,
         );
         accepted();
         setAccepted((count) => count + 1);

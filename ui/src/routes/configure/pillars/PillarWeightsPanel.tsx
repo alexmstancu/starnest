@@ -11,7 +11,7 @@ import { formatPercentage, pillarName } from "../../../format/display";
 import type { ChangeHistory } from "../useChangeHistory";
 import { useNotePillarChange } from "./useNotePillarChange";
 import type { Answers } from "../useAnswers";
-import { settled } from "../unknownOutcome";
+import { settled, UnconfirmedWrite } from "../unknownOutcome";
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { useWeightDrag } from "../useWeightDrag";
 import {
@@ -120,13 +120,16 @@ export function PillarWeightsPanel({
         const sentFor = criteriaSet.id;
         const rebalanced = await settled(
           () => updatePillarWeight(sentFor, pillar, weight),
-          () => pillarsIf(sentFor, (row) => row.pillar === pillar && row.weight === weight),
+          (signal) =>
+            pillarsIf(sentFor, (row) => row.pillar === pillar && row.weight === weight, signal),
         );
         // To the panel showing the set now, which a set switch may have remounted (PL-033).
         showAnswer(sentFor, rebalanced.items);
         note.weight(pillar, weights, rebalanced.items, weight);
       } catch (error) {
-        setFailure(error);
+        // Lost and not yet read back, it may have taken effect: listed, unconfirmed (PL-033).
+        if (error instanceof UnconfirmedWrite) note.weight(pillar, weights, null, weight, error.check);
+        else setFailure(error);
       } finally {
         inFlight.current = false;
         setSaving(false);
@@ -156,12 +159,18 @@ export function PillarWeightsPanel({
         const sentFor = criteriaSet.id;
         const rebalanced = await settled(
           () => updatePillarLock(sentFor, pillar, locked),
-          () => pillarsIf(sentFor, (row) => row.pillar === pillar && row.weight_locked === locked),
+          (signal) =>
+            pillarsIf(
+              sentFor,
+              (row) => row.pillar === pillar && row.weight_locked === locked,
+              signal,
+            ),
         );
         showAnswer(sentFor, rebalanced.items);
         note.lock(pillar, locked);
       } catch (error) {
-        setFailure(error);
+        if (error instanceof UnconfirmedWrite) note.lock(pillar, locked, error.check);
+        else setFailure(error);
       } finally {
         inFlight.current = false;
         setSaving(false);
@@ -483,7 +492,8 @@ function PillarRow({
 async function pillarsIf(
   criteriaSetId: string,
   tookEffect: (row: PillarWeight) => boolean,
+  signal: AbortSignal,
 ): Promise<{ items: PillarWeight[] } | null> {
-  const items = (await fetchCriteriaSet(criteriaSetId)).pillar_weights ?? [];
+  const items = (await fetchCriteriaSet(criteriaSetId, { signal })).pillar_weights ?? [];
   return items.some(tookEffect) ? { items } : null;
 }

@@ -24,6 +24,18 @@ export function identifierFrom(name: string): string {
 }
 
 /**
+ * An identifier for a set this tab is about to make: the name's, and a mark only this request
+ * carries (PL-033).
+ *
+ * **What a tab claims it must be able to prove.** When a create's answer is lost, the set is
+ * read back under the identifier that was sent; derived from the name alone, it could be another
+ * tab's set of the same name, and the undo of "Created" would delete that tab's work.
+ */
+export function ownIdentifier(name: string): string {
+  return `${identifierFrom(name)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
  * What a copy is called, given what is already taken.
  *
  * **It never silently reuses a name.** "Local employment copy", then "copy 2", and so on --

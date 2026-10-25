@@ -33,8 +33,10 @@ export function useNotePillarChange(
       weight(
         pillar: string,
         was: PillarWeight[],
-        answer: PillarWeight[],
+        /** Null while the write is unconfirmed: whether undo is exact is then not known. */
+        answer: PillarWeight[] | null,
         weight: number,
+        unconfirmed?: () => Promise<boolean>,
       ) {
         const before = was.find((each) => each.pillar === pillar)?.weight;
         history?.note({
@@ -43,17 +45,19 @@ export function useNotePillarChange(
           label: `Pillar weight for ${named(pillar)}: ${formatPercentage(before)} to ${formatPercentage(weight)}, in ${inSet}`,
           before,
           after: weight,
-          caveat: undoCanRestore(asShares(was), asShares(answer), pillar)
-            ? undefined
-            : UNDO_CANNOT_RESTORE_THE_PILLARS,
+          caveat:
+            answer === null || undoCanRestore(asShares(was), asShares(answer), pillar)
+              ? undefined
+              : UNDO_CANNOT_RESTORE_THE_PILLARS,
           reverse: async (back) => {
             if (typeof back !== "number") return;
             showAnswer(sentFor, (await updatePillarWeight(sentFor, pillar, back)).items);
           },
           undoes: { criteriaSetId: sentFor, by: "write" },
+          ...(unconfirmed === undefined ? {} : { unconfirmed }),
         });
       },
-      lock(pillar: string, locked: boolean) {
+      lock(pillar: string, locked: boolean, unconfirmed?: () => Promise<boolean>) {
         history?.note({
           target: `pillar-lock:${sentFor}:${pillar}`,
           stage: "Pillar weights",
@@ -64,6 +68,7 @@ export function useNotePillarChange(
             showAnswer(sentFor, (await updatePillarLock(sentFor, pillar, back === true)).items);
           },
           undoes: { criteriaSetId: sentFor, by: "write" },
+          ...(unconfirmed === undefined ? {} : { unconfirmed }),
         });
       },
     };

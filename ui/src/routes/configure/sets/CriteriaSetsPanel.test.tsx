@@ -16,7 +16,7 @@ import {
   followChromiumFocusFixup,
 } from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
-import { LIST_PATIENCE_MS } from "./useCriteriaSets";
+import { READ_PATIENCE_MS } from "../unknownOutcome";
 
 /**
  * Making, using, renaming, copying and discarding a set of priorities.
@@ -125,7 +125,7 @@ describe("the criteria sets panel", () => {
 
     await create("Partner");
 
-    await waitFor(() => expect(sidebarSets()).toHaveValue("partner"));
+    await waitFor(() => expect(sidebarSets().value).toMatch(/^partner_/));
     // A copy of the default weighs its pillars, so it can be ranked at once (PL-034).
     expect(
       await screen.findByRole("region", { name: "Pillar weights" }),
@@ -133,17 +133,16 @@ describe("the criteria sets panel", () => {
     expect(screen.queryByText("This set weighs no pillar yet.")).toBeNull();
   });
 
-  it("refuses an identifier that is already taken, rather than overwriting the set", async () => {
+  // PL-033: the identifier is this tab's own, so one derived like the shipped set's never
+  // collides with it, and nothing is overwritten.
+  it("gives a new set an identifier of its own, never one another set holds", async () => {
     renderShell("/configure");
 
     // "Default!" is a name no set has, and derives `default`, which the shipped set holds.
     await create("Default!");
 
-    const sets = await panel();
-    expect(
-      await sets.findByText("A criteria set with that name already exists."),
-    ).toBeInTheDocument();
-    expect(sidebarSets()).toHaveValue("default");
+    await waitFor(() => expect(sidebarSets().value).toMatch(/^default_\w+$/));
+    expect(await fetchCriteriaSet("default")).toMatchObject({ id: "default", name: "Default" });
   });
 
   it("refuses a name another set has before sending anything", async () => {
@@ -290,7 +289,7 @@ describe("the criteria sets panel", () => {
       (await row("Default")).getByRole("button", { name: "Duplicate" }),
     );
 
-    await waitFor(() => expect(sidebarSets()).toHaveValue("default_copy"));
+    await waitFor(() => expect(sidebarSets().value).toMatch(/^default_copy_/));
   });
 
   it("asks for a name before it will create anything", async () => {
@@ -517,6 +516,7 @@ describe("renaming a set from the keyboard", () => {
     await create("Partner");
     const history = await historyPanel();
     await history.findByText("Created Partner");
+    const partnerId = sidebarSets().value;
     await user.click((await row("Partner")).getByRole("button", { name: "Rename" }));
     const field = screen.getByRole("textbox", { name: "New name for Partner" });
     expect(document.activeElement).toBe(field);
@@ -533,7 +533,7 @@ describe("renaming a set from the keyboard", () => {
       ),
     );
     // Closed for good: the set coming back does not reopen a field nobody is using.
-    await restoreCriteriaSet("partner");
+    await restoreCriteriaSet(partnerId);
     await user.click((await row("Default")).getByRole("button", { name: "Duplicate" }));
     await row("Partner");
     expect(screen.queryByRole("textbox", { name: "New name for Partner" })).toBeNull();
@@ -712,7 +712,7 @@ describe("Recent changes for a set", () => {
     await user.click(history.getByRole("button", { name: "Undo this" }));
 
     await waitFor(() => expect(screen.queryByRole("listitem", { name: "Partner" })).toBeNull());
-    expect(writes).toEqual(["DELETE /v1/criteria-sets/partner"]);
+    expect(writes).toEqual([expect.stringMatching(/^DELETE \/v1\/criteria-sets\/partner_\w+$/)]);
   });
 
   it("lists a run of renames as one, from the first name, and undoes it to that name", async () => {
@@ -745,7 +745,7 @@ describe("Recent changes for a set", () => {
     await waitFor(() =>
       expect(screen.queryByRole("listitem", { name: "Default copy" })).toBeNull(),
     );
-    expect(writes).toEqual(["DELETE /v1/criteria-sets/default_copy"]);
+    expect(writes).toEqual([expect.stringMatching(/^DELETE \/v1\/criteria-sets\/default_copy_\w+$/)]);
   });
 });
 
@@ -924,10 +924,10 @@ describe("an entry and the set it targets", () => {
     await create("Partner");
     const history = await historyPanel();
     await history.findByText("Created Partner");
-    await waitFor(() => expect(sidebarSets()).toHaveValue("partner"));
+    await waitFor(() => expect(sidebarSets().value).toMatch(/^partner_/));
     const answer = holdAnswers("put", "/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId");
     await user.click(await screen.findByRole("button", { name: "Lock Economy" }));
-    await waitFor(() => expect(answer.sent).toEqual([expect.stringContaining("/partner/")]));
+    await waitFor(() => expect(answer.sent).toEqual([expect.stringMatching(/\/partner_\w+\//)]));
     await user.click((await row("Remote only")).getByRole("button", { name: "Use" }));
     await waitFor(() => expect(sidebarSets()).toHaveValue("remote_only"));
     const undo = history.getByRole("button", { name: "Undo this" });
@@ -942,8 +942,8 @@ describe("an entry and the set it targets", () => {
     await user.click(history.getByRole("button", { name: "Undo this and the 1 after it" }));
     await waitFor(() => expect(screen.queryByRole("listitem", { name: "Partner" })).toBeNull());
     expect(writes).toEqual([
-      "PUT /v1/criteria-sets/partner/pillar-weights/economics",
-      "DELETE /v1/criteria-sets/partner",
+      expect.stringMatching(/^PUT \/v1\/criteria-sets\/partner_\w+\/pillar-weights\/economics$/),
+      expect.stringMatching(/^DELETE \/v1\/criteria-sets\/partner_\w+$/),
     ]);
     expect(history.getByText("No changes yet.")).toBeInTheDocument();
   });
@@ -966,7 +966,7 @@ describe("an entry and the set it targets", () => {
     list.release();
 
     await waitFor(() => expect(screen.queryByRole("listitem", { name: "Partner" })).toBeNull());
-    expect(writes).toEqual(["DELETE /v1/criteria-sets/partner"]);
+    expect(writes).toEqual([expect.stringMatching(/^DELETE \/v1\/criteria-sets\/partner_\w+$/)]);
   });
 
   it("keeps Delete held after the list fails to be read again, and offers Try again", async () => {
@@ -1395,7 +1395,7 @@ describe("the one write in flight, above the screen", () => {
       "The list of sets is being read again; undo waits for it.",
     );
     act(() => {
-      vi.advanceTimersByTime(LIST_PATIENCE_MS);
+      vi.advanceTimersByTime(READ_PATIENCE_MS);
     });
     const retry = await (await panel()).findByRole("button", { name: "Try again" });
     expectHeld(remove);
@@ -1450,6 +1450,183 @@ describe("the one write in flight, above the screen", () => {
 
     await (await historyPanel()).findByText("Locked Cost of living index, in Default");
     await waitFor(() => expect(shown).toHaveAttribute("aria-pressed", "true"));
+  });
+});
+
+/**
+ * PL-033, round 6. **An answer lost on the way is never guessed at.** What this tab cannot
+ * prove it wrote, it does not claim; what it cannot yet read back stays listed, unconfirmed,
+ * with Check again; and nothing waited for waits for ever.
+ */
+describe("a write whose answer was lost", () => {
+  let writes: string[] = [];
+  afterEach(() => {
+    mockServer.events.removeAllListeners("request:start");
+    writes = [];
+  });
+
+  /** The deletion commits, and its answer never reaches the screen. */
+  function loseTheDeletion(): void {
+    mockServer.use(
+      http.delete(
+        "/v1/criteria-sets/:criteriaSetId",
+        async ({ request }) => {
+          await getResponse(handlers, request);
+          return HttpResponse.error();
+        },
+        { once: true },
+      ),
+    );
+  }
+
+  it("lists it unconfirmed, with Check again, when the read-back fails, and confirms it later", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settledScreen();
+    loseTheDeletion();
+    mockServer.use(
+      http.get(
+        "/v1/criteria-sets/remote_only",
+        () => HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 }),
+        { once: true },
+      ),
+    );
+
+    await deleteSet(user, "Remote only");
+
+    const history = await historyPanel();
+    const entry = (await history.findByText("Deleted Remote only")).closest("li")!;
+    expect(within(entry).getByText(/not confirmed/i)).toBeInTheDocument();
+    expectHeld(within(entry).getByRole("button", { name: "Undo this" }));
+    await user.click(within(entry).getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(within(entry).queryByText(/not confirmed/i)).toBeNull());
+    writes = recordWrites();
+    await user.click(within(entry).getByRole("button", { name: "Undo this" }));
+    expect(await row("Remote only")).toBeTruthy();
+    expect(writes).toEqual(["POST /v1/criteria-sets/remote_only/restore"]);
+  });
+
+  it("gives up on a read-back that never answers, lists it unconfirmed, and frees the screen", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderShell("/configure");
+    await settledScreen();
+    loseTheDeletion();
+    const readBack = holdRequests("get", "/v1/criteria-sets/remote_only");
+
+    await deleteSet(user, "Remote only");
+    await waitFor(() => expect(readBack.sent).toHaveLength(1));
+    const lock = await screen.findByRole("button", { name: "Lock Economy" });
+    expectHeld(lock);
+    act(() => {
+      vi.advanceTimersByTime(READ_PATIENCE_MS);
+    });
+
+    const history = await historyPanel();
+    const entry = (await history.findByText("Deleted Remote only")).closest("li")!;
+    expect(within(entry).getByRole("button", { name: "Check again" })).toBeInTheDocument();
+    await waitFor(() => expectNotHeld(lock));
+    readBack.release();
+  });
+
+  it.each([
+    {
+      what: "a pillar's lock",
+      method: "put" as const,
+      path: "/v1/criteria-sets/:criteriaSetId/pillar-weights/:pillarId",
+      press: async (user: UserEvent) =>
+        user.click(await screen.findByRole("button", { name: "Lock Economy" })),
+      entry: "Locked the Economy pillar, in Default",
+    },
+    {
+      what: "a criterion's lock",
+      method: "patch" as const,
+      path: "/v1/criteria-sets/:criteriaSetId/criteria/:attributeId",
+      press: async (user: UserEvent) => user.click(await criterionLockOf(user)),
+      entry: "Locked Cost of living index, in Default",
+    },
+  ])("lists $what unconfirmed when its answer is lost and the read-back fails", async ({
+    method,
+    path,
+    press,
+    entry,
+  }) => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settledScreen();
+    mockServer.use(
+      http[method](
+        path,
+        async ({ request }) => {
+          await getResponse(handlers, request);
+          // Only the read-back that follows fails: the screen's own reads are done.
+          mockServer.use(
+            http.get(
+              "/v1/criteria-sets/default",
+              () =>
+                HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 }),
+              { once: true },
+            ),
+          );
+          return HttpResponse.error();
+        },
+        { once: true },
+      ),
+    );
+
+    await press(user);
+
+    const listed = (await (await historyPanel()).findByText(entry)).closest("li")!;
+    expect(within(listed).getByText(/not confirmed/i)).toBeInTheDocument();
+    expect(within(listed).getByRole("button", { name: "Check again" })).toBeInTheDocument();
+  });
+
+  it("never claims a set another tab made under the same name", async () => {
+    renderShell("/configure");
+    await settledScreen();
+    // Another tab makes Partner after this one read its list.
+    await createCriteriaSet("partner", "Partner");
+    // This tab's create never reaches the server.
+    mockServer.use(http.post("/v1/criteria-sets", () => HttpResponse.error(), { once: true }));
+
+    await create("Partner");
+
+    expect(await (await panel()).findByText(/did not go through/)).toBeInTheDocument();
+    expect((await historyPanel()).queryByText("Created Partner")).toBeNull();
+    expect(await fetchCriteriaSet("partner")).toMatchObject({ id: "partner", name: "Partner" });
+  });
+
+  it("arms its patience again for every Try again on a list that keeps not answering", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderShell("/configure");
+    await settledScreen();
+    const list = holdRequests("get", "/v1/criteria-sets");
+
+    await deleteSet(user, "Remote only");
+    await waitFor(() => expect(list.sent).toHaveLength(1));
+    act(() => {
+      vi.advanceTimersByTime(READ_PATIENCE_MS);
+    });
+    await user.click(await (await panel()).findByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(list.sent).toHaveLength(2));
+    act(() => {
+      vi.advanceTimersByTime(READ_PATIENCE_MS);
+    });
+
+    const retry = await (await panel()).findByRole("button", { name: "Try again" });
+    list.release();
+    await user.click(retry);
+    await waitFor(() =>
+      expect(screen.queryByRole("listitem", { name: "Remote only" })).toBeNull(),
+    );
+    expectNotHeld((await historyPanel()).getByRole("button", { name: "Undo this" }));
   });
 });
 
@@ -1508,7 +1685,7 @@ describe("when every set has been discarded", () => {
 
     await create("Partner");
 
-    await waitFor(() => expect(sidebarSets()).toHaveValue("partner"));
+    await waitFor(() => expect(sidebarSets().value).toMatch(/^partner_/));
     // The default is copied even once it has been deleted, as the server copies it.
     expect(
       await screen.findByRole("region", { name: "Pillar weights" }),

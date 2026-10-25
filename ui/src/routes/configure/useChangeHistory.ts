@@ -13,6 +13,12 @@ export type Reverse = (before: unknown) => Promise<void> | void;
 
 export interface RecordedChange extends Change {
   reverse: Reverse;
+  /**
+   * Present while it is unknown whether the change took effect (PL-033): its answer was lost and
+   * reading it back could not say. Reads back again -- true when it did, false when it did not.
+   * Nothing is undone through it until it is confirmed.
+   */
+  unconfirmed?: () => Promise<boolean>;
 }
 
 export interface ChangeHistory {
@@ -38,6 +44,11 @@ export interface ChangeHistory {
   busy: boolean;
   /** Undo this change and every change made after it. */
   undoThrough: (id: number) => void;
+  /**
+   * Read back an unconfirmed change, as Configure's one write in flight: confirmed, it stays
+   * listed as any other; found not to have taken effect, it leaves the list.
+   */
+  confirm: (id: number) => void;
   /** Undo everything this session did, oldest last. */
   reset: () => void;
   undoing: boolean;
@@ -77,8 +88,30 @@ export function useChangeHistory(): ChangeHistory {
     };
   }, []);
 
+  const check = useCallback(async (change: RecordedChange) => {
+    const readBack = change.unconfirmed;
+    if (inFlight.current || readBack === undefined) return;
+    inFlight.current = true;
+    setWriting(true);
+    setFailure(null);
+    try {
+      const tookEffect = await readBack();
+      setChanges((history) =>
+        tookEffect
+          ? history.map((each) => (each.id === change.id ? confirmed(each) : each))
+          : history.filter((each) => each.id !== change.id),
+      );
+    } catch (error) {
+      setFailure(error);
+    } finally {
+      inFlight.current = false;
+      setWriting(false);
+    }
+  }, []);
+
   const undo = useCallback(async (reach: RecordedChange[]) => {
-    if (inFlight.current) return;
+    // Nothing is undone through a change nobody knows took effect.
+    if (inFlight.current || reach.some((change) => change.unconfirmed)) return;
     inFlight.current = true;
     setUndoing(true);
     setFailure(null);
@@ -107,8 +140,19 @@ export function useChangeHistory(): ChangeHistory {
     writing,
     busy: writing || undoing,
     undoThrough: (id) => void undo(reachOf(changes, id) as RecordedChange[]),
+    confirm: (id) => {
+      const change = changes.find((each) => each.id === id);
+      if (change !== undefined) void check(change);
+    },
     reset: () => void undo([...changes]),
     undoing,
     failure,
   };
+}
+
+/** The change, no longer awaiting confirmation. */
+function confirmed(change: RecordedChange): RecordedChange {
+  const copy = { ...change };
+  delete copy.unconfirmed;
+  return copy;
 }

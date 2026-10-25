@@ -18,8 +18,8 @@ import {
 } from "./changeHistory";
 import { titleOf, type AttributeCatalog } from "./criteria/criterionReading";
 import type { Answers } from "./useAnswers";
-import type { ChangeHistory } from "./useChangeHistory";
-import { settled } from "./unknownOutcome";
+import type { ChangeHistory, RecordedChange } from "./useChangeHistory";
+import { settled, UnconfirmedWrite } from "./unknownOutcome";
 
 /**
  * One criteria set, and the one write the Configure screen makes.
@@ -158,6 +158,18 @@ export function useCriteriaEditor(
     if (shownSet.current === sentFor) setSaveError(error);
   }, []);
 
+  /**
+   * A write that failed is reported; one whose answer was lost and could not be read back is
+   * listed unconfirmed instead, with Check again (PL-033): it may well have taken effect.
+   */
+  const noteOrReport = useCallback(
+    (sentFor: string, error: unknown, entry: ChangeEntry) => {
+      if (error instanceof UnconfirmedWrite) history?.note({ ...entry, unconfirmed: error.check });
+      else reportFor(sentFor, error);
+    },
+    [history, reportFor],
+  );
+
   const setWeight = useCallback(
     (attribute: string, weight: number) => {
       if (criteriaSetId === null || inFlight.current || undoing) return;
@@ -177,42 +189,47 @@ export function useCriteriaEditor(
       const named = titleOf(attribute, catalog?.get(attribute));
       const inSet = setName ?? sentFor;
 
+      // Noted whichever set is on screen now: the change was made, in the set it names. Without
+      // an answer -- one lost and not yet confirmed -- whether undo is exact is not known.
+      const entry = (rebalanced?: RebalancedPillar): ChangeEntry => ({
+        // The set is part of the identity: the same attribute in two sets is two
+        // decisions, and folding them together undid one set's weight into the other.
+        target: `criterion:${sentFor}:${attribute}`,
+        // The stage it was made in, named: a criterion's weight is a share of its
+        // pillar's, so it is changed inside the pillar weights rather than anywhere of
+        // its own.
+        stage: "Pillar weights",
+        label: `Weight for ${named}: ${String(was)} to ${String(weight)}, in ${inSet}`,
+        before: was,
+        after: weight,
+        caveat:
+          rebalanced === undefined || undoCanRestore(criteria, rebalanced.criteria, attribute)
+            ? undefined
+            : UNDO_CANNOT_RESTORE_THE_PILLAR,
+        // The opposite request, not a local restore: an undo that only moved a number on
+        // screen would disagree with the server the moment anything else read it.
+        reverse: async (before) => {
+          if (typeof before !== "number") return;
+          const back = await updateCriterionWeight(
+            sentFor,
+            attribute,
+            before,
+          );
+          deliver(sentFor, back.criteria);
+        },
+        undoes: { criteriaSetId: sentFor, by: "write" },
+      });
+
       void settled(
         () => updateCriterionWeight(sentFor, attribute, weight),
-        () => criteriaIf(sentFor, attribute, (criterion) => criterion.weight === weight),
+        (signal) =>
+          criteriaIf(sentFor, attribute, (criterion) => criterion.weight === weight, signal),
       )
         .then((rebalanced) => {
           deliver(sentFor, rebalanced.criteria);
-          // Noted whichever set is on screen now: the change was made, in the set it names.
-          history?.note({
-            // The set is part of the identity: the same attribute in two sets is two
-            // decisions, and folding them together undid one set's weight into the other.
-            target: `criterion:${sentFor}:${attribute}`,
-            // The stage it was made in, named: a criterion's weight is a share of its
-            // pillar's, so it is changed inside the pillar weights rather than anywhere of
-            // its own.
-            stage: "Pillar weights",
-            label: `Weight for ${named}: ${String(was)} to ${String(weight)}, in ${inSet}`,
-            before: was,
-            after: weight,
-            caveat: undoCanRestore(criteria, rebalanced.criteria, attribute)
-              ? undefined
-              : UNDO_CANNOT_RESTORE_THE_PILLAR,
-            // The opposite request, not a local restore: an undo that only moved a number on
-            // screen would disagree with the server the moment anything else read it.
-            reverse: async (before) => {
-              if (typeof before !== "number") return;
-              const back = await updateCriterionWeight(
-                sentFor,
-                attribute,
-                before,
-              );
-              deliver(sentFor, back.criteria);
-            },
-            undoes: { criteriaSetId: sentFor, by: "write" },
-          });
+          history?.note(entry(rebalanced));
         })
-        .catch((error: unknown) => reportFor(sentFor, error))
+        .catch((error: unknown) => noteOrReport(sentFor, error, entry()))
         .finally(() => {
           inFlight.current = false;
           setSavingAttribute(null);
@@ -220,6 +237,7 @@ export function useCriteriaEditor(
         });
     },
     [
+      noteOrReport,
       criteriaSetId,
       criteria,
       history,
@@ -227,7 +245,6 @@ export function useCriteriaEditor(
       catalog,
       setName,
       deliver,
-      reportFor,
     ],
   );
 
@@ -245,38 +262,45 @@ export function useCriteriaEditor(
       const named = titleOf(attribute, catalog?.get(attribute));
       const inSet = setName ?? sentFor;
 
+      const entry = (): ChangeEntry => ({
+        target: `lock:${sentFor}:${attribute}`,
+        stage: "Pillar weights",
+        label: `${weightLocked ? "Locked" : "Unlocked"} ${named}, in ${inSet}`,
+        before: !weightLocked,
+        after: weightLocked,
+        reverse: async (before) => {
+          const back = await updateCriterionLock(
+            sentFor,
+            attribute,
+            before === true,
+          );
+          deliver(sentFor, back.criteria);
+        },
+        undoes: { criteriaSetId: sentFor, by: "write" },
+      });
+
       void settled(
         () => updateCriterionLock(sentFor, attribute, weightLocked),
-        () =>
-          criteriaIf(sentFor, attribute, (criterion) => criterion.weight_locked === weightLocked),
+        (signal) =>
+          criteriaIf(
+            sentFor,
+            attribute,
+            (criterion) => criterion.weight_locked === weightLocked,
+            signal,
+          ),
       )
         .then((rebalanced) => {
           deliver(sentFor, rebalanced.criteria);
-          history?.note({
-            target: `lock:${sentFor}:${attribute}`,
-            stage: "Pillar weights",
-            label: `${weightLocked ? "Locked" : "Unlocked"} ${named}, in ${inSet}`,
-            before: !weightLocked,
-            after: weightLocked,
-            reverse: async (before) => {
-              const back = await updateCriterionLock(
-                sentFor,
-                attribute,
-                before === true,
-              );
-              deliver(sentFor, back.criteria);
-            },
-            undoes: { criteriaSetId: sentFor, by: "write" },
-          });
+          history?.note(entry());
         })
-        .catch((error: unknown) => reportFor(sentFor, error))
+        .catch((error: unknown) => noteOrReport(sentFor, error, entry()))
         .finally(() => {
           inFlight.current = false;
           setSavingAttribute(null);
           done?.();
         });
     },
-    [criteriaSetId, history, undoing, catalog, setName, deliver, reportFor],
+    [criteriaSetId, history, undoing, catalog, setName, deliver, noteOrReport],
   );
 
   const setRule = useCallback(
@@ -357,8 +381,9 @@ async function criteriaIf(
   criteriaSetId: string,
   attribute: string,
   tookEffect: (criterion: Criterion) => boolean,
+  signal: AbortSignal,
 ): Promise<RebalancedPillar | null> {
-  const criteria = (await fetchCriteriaSet(criteriaSetId)).criteria ?? [];
+  const criteria = (await fetchCriteriaSet(criteriaSetId, { signal })).criteria ?? [];
   const written = criteria.find((each) => each.attribute === attribute);
   if (written === undefined || !tookEffect(written)) return null;
   return {
@@ -366,3 +391,6 @@ async function criteriaIf(
     criteria: criteria.filter((each) => each.pillar === written.pillar),
   };
 }
+
+/** A change as the history is given it, before it stamps the id and the time. */
+type ChangeEntry = Omit<RecordedChange, "id" | "at">;

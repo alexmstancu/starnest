@@ -183,16 +183,19 @@ async function chooseSet(id: string): Promise<void> {
  * The duplicate selects its copy from its own answer rather than from an event, so the screen
  * is then moved away and back through the sidebar: what that leaves on screen is known.
  */
-async function duplicateDefault(): Promise<void> {
+async function duplicateDefault(): Promise<string> {
   await userEvent.click(
     within(await screen.findByRole("listitem", { name: "Default" })).getByRole(
       "button",
       { name: "Duplicate" },
     ),
   );
-  await waitFor(() => expect(activeSet()).toHaveValue("default_copy"));
+  // The copy's identifier is the one this tab chose for it (PL-033), read off the sidebar.
+  await waitFor(() => expect(activeSet().value).toMatch(/^default_copy_\w+$/));
+  const copy = activeSet().value;
   await chooseSet("default");
-  await chooseSet("default_copy");
+  await chooseSet(copy);
+  return copy;
 }
 
 /**
@@ -1081,13 +1084,13 @@ describe("while a change is being saved", () => {
   it("never lands a weight saved in one set in another set chosen meanwhile", async () => {
     renderShell("/configure");
     await settled();
-    await duplicateDefault();
+    const copy = await duplicateDefault();
     const writes = holdCriterionWrites();
 
     await saveWeight(COST_OF_LIVING, "40");
     await waitFor(() =>
       expect(writes.sent).toEqual([
-        "default_copy/country.cost_of_living_index",
+        `${copy}/country.cost_of_living_index`,
       ]),
     );
     await chooseSet("default");
@@ -1112,21 +1115,21 @@ describe("while a change is being saved", () => {
   it("reads a set again when a save to it was answered while it was being read", async () => {
     renderShell("/configure");
     await settled();
-    await duplicateDefault();
+    const copy = await duplicateDefault();
     const writes = holdCriterionWrites();
     await saveWeight(COST_OF_LIVING, "40");
     await waitFor(() =>
-      expect(writes.sent).toEqual(["default_copy/country.cost_of_living_index"]),
+      expect(writes.sent).toEqual([`${copy}/country.cost_of_living_index`]),
     );
     // The copy as a read taken before the save committed would see it.
-    const beforeTheSave = await fetchCriteriaSet("default_copy");
+    const beforeTheSave = await fetchCriteriaSet(copy);
     let release = (): void => undefined;
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
     let reads = 0;
     mockServer.use(
-      http.get("/v1/criteria-sets/default_copy", async () => {
+      http.get(`/v1/criteria-sets/${copy}`, async () => {
         reads += 1;
         if (reads > 1) return;
         await held;
@@ -1137,7 +1140,7 @@ describe("while a change is being saved", () => {
     await weightSlider(COST_OF_LIVING);
 
     // Not `chooseSet`, which waits for the read this test is holding.
-    await userEvent.selectOptions(activeSet(), "default_copy");
+    await userEvent.selectOptions(activeSet(), copy);
     await waitFor(() => expect(reads).toBe(1));
     writes.release();
     // The copy is listed too (D-C03-9), so the save makes two.
@@ -1211,19 +1214,19 @@ describe("while a change is being saved", () => {
   }) => {
     renderShell("/configure");
     await settled();
-    await duplicateDefault();
+    const copy = await duplicateDefault();
     const writes = holdSetWrites("put", path);
     await write();
-    await waitFor(() => expect(writes.sent).toEqual(["default_copy"]));
+    await waitFor(() => expect(writes.sent).toEqual([copy]));
     // The copy as a read taken before the write committed would see it.
-    const beforeTheWrite = await fetchCriteriaSet("default_copy");
+    const beforeTheWrite = await fetchCriteriaSet(copy);
     let release = (): void => undefined;
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
     let reads = 0;
     mockServer.use(
-      http.get("/v1/criteria-sets/default_copy", async () => {
+      http.get(`/v1/criteria-sets/${copy}`, async () => {
         reads += 1;
         if (reads > 1) return;
         await held;
@@ -1233,10 +1236,10 @@ describe("while a change is being saved", () => {
     await chooseSet("default");
 
     // Not `chooseSet`, which waits for the read this test is holding.
-    await userEvent.selectOptions(activeSet(), "default_copy");
+    await userEvent.selectOptions(activeSet(), copy);
     await waitFor(() => expect(reads).toBe(1));
     writes.release();
-    await waitFor(() => expect(answeredWrites("default_copy")).toBe(1));
+    await waitFor(() => expect(answeredWrites(copy)).toBe(1));
     release();
 
     await waitFor(() => expect(reads).toBe(2));
@@ -1733,7 +1736,7 @@ describe("changes made in more than one set", () => {
   it("keeps the same change to two sets as two entries, each undone in its own set", async () => {
     renderShell("/configure");
     await settled();
-    await duplicateDefault();
+    const copy = await duplicateDefault();
     await saveWeight(COST_OF_LIVING, "40");
     const panel = await historyPanel();
     // The copy is listed below the weights (D-C03-9).
@@ -1768,7 +1771,7 @@ describe("changes made in more than one set", () => {
     await waitFor(() =>
       expect(undone).toEqual([
         { set: "default", body: { weight: 50 } },
-        { set: "default_copy", body: { weight: 50 } },
+        { set: copy, body: { weight: 50 } },
       ]),
     );
   });

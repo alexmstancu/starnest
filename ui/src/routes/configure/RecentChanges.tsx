@@ -1,7 +1,8 @@
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ActRefusal } from "../../shell/ActRefusal";
-import { type Change, describeReach, describeWhen, reachOf, stranded } from "./changeHistory";
-import type { ChangeHistory } from "./useChangeHistory";
+import { refocusIfLost } from "../../shell/focusReturn";
+import { describeReach, describeWhen, reachOf, stranded } from "./changeHistory";
+import type { ChangeHistory, RecordedChange } from "./useChangeHistory";
 import { useFocusAfterUndo } from "./useFocusAfterUndo";
 
 /**
@@ -50,17 +51,31 @@ export function RecentChanges({
   );
   const strandedIds = stranded(history.changes, deleted);
   const reasonIdOf = (id: number) => `${headingId}-stranded-${String(id)}`;
-  const blocked = (reach: readonly { id: number }[]) =>
-    reach.some((each) => strandedIds.has(each.id));
-  const heldFor = (reach: readonly Change[]) => held || blocked(reach);
+  const unconfirmedIdOf = (id: number) => `${headingId}-unconfirmed-${String(id)}`;
+  // Nor is anything undone through a change nobody knows took effect (PL-033).
+  const blocked = (reach: readonly RecordedChange[]) =>
+    reach.some((each) => strandedIds.has(each.id) || each.unconfirmed !== undefined);
+  const heldFor = (reach: readonly RecordedChange[]) => held || blocked(reach);
   const heading = useRef<HTMLButtonElement>(null);
   const focus = useFocusAfterUndo(history, heading);
   const undoThrough = (id: number) => {
-    if (heldFor(reachOf(history.changes, id))) return;
+    if (heldFor((reachOf(history.changes, id) as RecordedChange[]))) return;
     focus.pressed();
     history.undoThrough(id);
   };
   const resetHeld = heldFor(history.changes);
+  // **Check again takes its own button away** once the change is confirmed, so focus goes to the
+  // change's own undo -- or, if it turned out not to have happened, to the heading.
+  const undoIdOf = (id: number) => `${headingId}-undo-${String(id)}`;
+  const checked = useRef<number | null>(null);
+  useEffect(() => {
+    const id = checked.current;
+    if (id === null || history.writing) return;
+    checked.current = null;
+    refocusIfLost(document.getElementById(undoIdOf(id)), heading.current);
+    // `undoIdOf` is derived from `headingId`, which never changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history.changes, history.writing]);
   const reset = () => {
     if (resetHeld) return;
     focus.pressed();
@@ -142,7 +157,7 @@ export function RecentChanges({
         ) : (
           <ul className="history">
             {history.changes.map((change) => {
-              const reaching = reachOf(history.changes, change.id);
+              const reaching = reachOf(history.changes, change.id) as RecordedChange[];
               // An undo takes every change after it too, so it is described by each of their
               // caveats as well as its own.
               const caveats = [
@@ -150,6 +165,9 @@ export function RecentChanges({
                   .filter((each) => each.caveat !== undefined)
                   .map((each) => caveatIdOf(each.id)),
                 ...reaching.filter((each) => strandedIds.has(each.id)).map((each) => reasonIdOf(each.id)),
+                ...reaching
+                  .filter((each) => each.unconfirmed !== undefined)
+                  .map((each) => unconfirmedIdOf(each.id)),
               ].join(" ");
               return (
                 <li key={change.id} className="history__entry">
@@ -178,7 +196,28 @@ export function RecentChanges({
                       Its set was deleted: restore it to undo this.
                     </span>
                   )}
+                  {change.unconfirmed !== undefined && (
+                    <>
+                      <span id={unconfirmedIdOf(change.id)} className="panel__hint" role="note">
+                        Not confirmed: the server did not answer, so whether this took effect
+                        is not known yet.
+                      </span>
+                      <button
+                        type="button"
+                        className="action"
+                        aria-disabled={held || undefined}
+                        onClick={() => {
+                          if (held) return;
+                          checked.current = change.id;
+                          history.confirm(change.id);
+                        }}
+                      >
+                        Check again
+                      </button>
+                    </>
+                  )}
                   <button
+                    id={undoIdOf(change.id)}
                     type="button"
                     className="action"
                     aria-disabled={heldFor(reaching) || undefined}

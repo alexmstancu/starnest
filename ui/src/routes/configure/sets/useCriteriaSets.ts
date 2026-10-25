@@ -29,9 +29,12 @@ import {
   type CriteriaSet,
 } from "../../../api/endpoints";
 import type { Selection } from "../../../shell/SelectionContext";
-import { settled } from "../unknownOutcome";
-import type { ChangeHistory } from "../useChangeHistory";
-import { copyName, identifierFrom } from "./setIdentifier";
+import { READ_PATIENCE_MS, type ReadBack, settled, UnconfirmedWrite } from "../unknownOutcome";
+import type { ChangeHistory, RecordedChange } from "../useChangeHistory";
+import { copyName, identifierFrom, ownIdentifier } from "./setIdentifier";
+
+/** A set verb's entry in Recent changes, before the history stamps it. */
+type SetEntry = Omit<RecordedChange, "id" | "at">;
 
 /** Where Recent changes says a set verb was made. */
 const STAGE = "Criteria set";
@@ -88,18 +91,27 @@ export function useCriteriaSets(options: {
   const listSettled = lists.state === "ready" && lists.refresh === "idle";
   // **A read that never comes back is a failure too** (PL-033), once it has been waited for as
   // long as a reader would: otherwise the wait holds every set action and undo for ever, with
-  // nothing to press. Keyed on the data being read again, so a later refresh starts afresh.
+  // nothing to press. Keyed on the data being read again and on each Try again, so a refresh
+  // that is retried and hangs again is waited for afresh rather than for ever.
   const runningSince = lists.state === "ready" && lists.refresh === "running" ? lists.readAt : null;
-  const [overdueFor, setOverdueFor] = useState<Date | null>(null);
+  const [listAttempt, setListAttempt] = useState(0);
+  const [overdueFor, setOverdueFor] = useState<{ since: Date; attempt: number } | null>(null);
   useEffect(() => {
     if (runningSince === null) return undefined;
-    const timer = setTimeout(() => setOverdueFor(runningSince), LIST_PATIENCE_MS);
+    const timer = setTimeout(
+      () => setOverdueFor({ since: runningSince, attempt: listAttempt }),
+      READ_PATIENCE_MS,
+    );
     return () => clearTimeout(timer);
-  }, [runningSince]);
+  }, [runningSince, listAttempt]);
+  const overdue =
+    runningSince !== null &&
+    overdueFor?.since === runningSince &&
+    overdueFor.attempt === listAttempt;
   const listFailure =
     lists.state === "ready" && typeof lists.refresh === "object"
       ? lists.refresh.failed
-      : runningSince !== null && overdueFor === runningSince
+      : overdue
         ? LIST_NEVER_CAME_BACK
         : null;
 
@@ -107,7 +119,7 @@ export function useCriteriaSets(options: {
   const deleteAndReread = async (criteriaSetId: string) => {
     await settled(
       () => deleteCriteriaSet(criteriaSetId).then(() => true as const),
-      async () => ((await setNow(criteriaSetId)) === null ? true : null),
+      async (signal) => ((await setNow(criteriaSetId, signal)) === null ? true : null),
     );
     selection.reload();
   };
@@ -127,21 +139,34 @@ export function useCriteriaSets(options: {
   const held = history.busy || !listSettled;
 
   /**
-   * Whether the action was sent and answered without a refusal, resolving once the list shows
-   * it. **It is Configure's one write in flight** (PL-037, PL-033) until it has answered, so no
-   * other write, undo or set action is sent beside it; the list read after it holds only the set
-   * actions and the undo, and a read that fails or never answers offers Try again.
+   * Sends a set verb and notes `entry`: true once the list shows it, false when it was refused or
+   * not sent. **It is Configure's one write in flight** (PL-037, PL-033) until it has answered, so
+   * no other write, undo or set action is sent beside it; the list read after it holds only the
+   * set actions and the undo, and a read that fails or never answers offers Try again.
+   *
+   * **An answer lost on the way is read back** (`settled`): what took effect is noted as any
+   * other change, and what nobody can yet say is noted unconfirmed, with Check again -- never
+   * dropped, so a deletion that did happen always keeps its restore.
    */
-  async function act(action: () => Promise<void>): Promise<boolean> {
+  async function act<Answer>(
+    send: () => Promise<Answer>,
+    readBack: ReadBack<Answer>,
+    entry: SetEntry,
+    landed: (answer: Answer) => void = () => undefined,
+  ): Promise<boolean> {
     if (!listSettled) return false;
     const done = history.begin();
     if (done === null) return false;
     setFailure(null);
     try {
-      await action();
+      landed(await settled(send, readBack));
+      history.note(entry);
     } catch (error) {
-      setFailure(error);
-      return false;
+      if (!(error instanceof UnconfirmedWrite)) {
+        setFailure(error);
+        return false;
+      }
+      history.note({ ...entry, unconfirmed: error.check });
     } finally {
       done();
     }
@@ -181,32 +206,29 @@ export function useCriteriaSets(options: {
       const latest = history.changes[0];
       const first =
         latest?.target === targetKey ? (latest.before as { name: string }).name : was;
-      await act(async () => {
-        await settled(
-          () => renameCriteriaSet(target, name),
-          async () => ((await setNow(target))?.name === name ? { name } : null),
-        );
+      const renamedTo = (wanted: string) => async (signal: AbortSignal) =>
+        (await setNow(target, signal))?.name === wanted ? { name: wanted } : null;
+      const sent = await act(
+        () => renameCriteriaSet(target, name),
+        renamedTo(name),
+        {
+          target: targetKey,
+          stage: STAGE,
+          label: `Renamed ${first} to ${name}`,
+          before: { name: was },
+          after: { name },
+          reverse: async (before) => {
+            const back = (before as { name: string }).name;
+            await settled(() => renameCriteriaSet(target, back), renamedTo(back));
+            selection.reload();
+          },
+          undoes: { criteriaSetId: target, by: "write" },
+        },
+      );
+      if (sent) {
         setRenaming(null);
         setRenameDraft("");
-        history.note(
-          {
-            target: targetKey,
-            stage: STAGE,
-            label: `Renamed ${first} to ${name}`,
-            before: { name: was },
-            after: { name },
-            reverse: async (before) => {
-              const back = (before as { name: string }).name;
-              await settled(
-                () => renameCriteriaSet(target, back),
-                async () => ((await setNow(target))?.name === back ? { name: back } : null),
-              );
-              selection.reload();
-            },
-            undoes: { criteriaSetId: target, by: "write" },
-          },
-        );
-      });
+      }
     },
     // **Refused here as well as held on screen** (UIC-G1): Enter in the field submits whatever
     // the button looks like, now that it is held rather than disabled.
@@ -216,47 +238,46 @@ export function useCriteriaSets(options: {
         return;
       }
       const name = newName.trim();
-      await act(async () => {
-        const id = identifierFrom(name);
-        const created = await settled(() => createCriteriaSet(id, name), () => setNow(id));
-        setNewName("");
-        selection.selectCriteriaSet(created.id);
-        history.note(
-          {
-            target: `criteria-set:${created.id}:created`,
-            stage: STAGE,
-            label: `Created ${name}`,
-            before: { exists: false },
-            after: { exists: true },
-            reverse: () => deleteAndReread(created.id),
-            undoes: { criteriaSetId: created.id, by: "delete" },
-          },
-        );
-      });
+      // **An identifier this tab chose** (PL-033), so a set read back under it is provably this
+      // tab's: another tab making a set of the same name gets one of its own.
+      const id = ownIdentifier(name);
+      await act(
+        () => createCriteriaSet(id, name),
+        (signal) => setNow(id, signal),
+        {
+          target: `criteria-set:${id}:created`,
+          stage: STAGE,
+          label: `Created ${name}`,
+          before: { exists: false },
+          after: { exists: true },
+          reverse: () => deleteAndReread(id),
+          undoes: { criteriaSetId: id, by: "delete" },
+        },
+        () => {
+          setNewName("");
+          selection.selectCriteriaSet(id);
+        },
+      );
     },
     // The copy is selected, because duplicating is how an experiment starts and the next
     // edit belongs to the copy rather than to what it was copied from.
     duplicate: async (criteriaSetId, currentName) => {
       const name = copyName(currentName, names);
-      await act(async () => {
-        const id = identifierFrom(name);
-        const copy = await settled(
-          () => duplicateCriteriaSet(criteriaSetId, id, name),
-          () => setNow(id),
-        );
-        selection.selectCriteriaSet(copy.id);
-        history.note(
-          {
-            target: `criteria-set:${copy.id}:duplicated`,
-            stage: STAGE,
-            label: `Duplicated ${currentName} as ${name}`,
-            before: { exists: false },
-            after: { exists: true },
-            reverse: () => deleteAndReread(copy.id),
-            undoes: { criteriaSetId: copy.id, by: "delete" },
-          },
-        );
-      });
+      const id = ownIdentifier(name);
+      await act(
+        () => duplicateCriteriaSet(criteriaSetId, id, name),
+        (signal) => setNow(id, signal),
+        {
+          target: `criteria-set:${id}:duplicated`,
+          stage: STAGE,
+          label: `Duplicated ${currentName} as ${name}`,
+          before: { exists: false },
+          after: { exists: true },
+          reverse: () => deleteAndReread(id),
+          undoes: { criteriaSetId: id, by: "delete" },
+        },
+        () => selection.selectCriteriaSet(id),
+      );
     },
     // **The set in use falls back to the first other set**, which `SelectionContext` adopts
     // once the refreshed list lacks it (P44); it is worked out here too, so the undo knows where
@@ -268,39 +289,36 @@ export function useCriteriaSets(options: {
       const fallback = wasInUse
         ? (selection.criteriaSets.find((set) => set.id !== criteriaSetId)?.id ?? null)
         : null;
-      return act(async () => {
-        // **A deletion whose answer was lost is read back** (PL-033): one that took effect is
-        // listed with its restore, rather than leaving a set gone with no way back.
-        await settled(
-          () => deleteCriteriaSet(criteriaSetId).then(() => true as const),
-          async () => ((await setNow(criteriaSetId)) === null ? true : null),
-        );
-        history.note(
-          {
-            target: `criteria-set:${criteriaSetId}:deleted`,
-            stage: STAGE,
-            label: `Deleted ${name}`,
-            before: { deleted: false, wasInUse },
-            after: { deleted: true },
-            reverse: async () => {
-              await settled(
-                () => restoreCriteriaSet(criteriaSetId),
-                () => setNow(criteriaSetId),
-              );
-              // Back in use only if the selection is still where the deletion left it, asked
-              // of the selection itself: the restore may answer after Configure has gone.
-              if (wasInUse) selection.selectCriteriaSetIf(fallback, criteriaSetId);
-              selection.reload();
-            },
-            undoes: { criteriaSetId, by: "restore" },
+      // **A deletion whose answer was lost is read back** (PL-033): one that took effect is
+      // listed with its restore, and one nobody can yet confirm is listed unconfirmed -- the
+      // server keeps the deleted set (0508), so the restore is always there to be had.
+      return act(
+        () => deleteCriteriaSet(criteriaSetId).then(() => true as const),
+        async (signal) => ((await setNow(criteriaSetId, signal)) === null ? true : null),
+        {
+          target: `criteria-set:${criteriaSetId}:deleted`,
+          stage: STAGE,
+          label: `Deleted ${name}`,
+          before: { deleted: false, wasInUse },
+          after: { deleted: true },
+          reverse: async () => {
+            await settled(
+              () => restoreCriteriaSet(criteriaSetId),
+              (signal) => setNow(criteriaSetId, signal),
+            );
+            // Back in use only if the selection is still where the deletion left it, asked of
+            // the selection itself: the restore may answer after Configure has gone.
+            if (wasInUse) selection.selectCriteriaSetIf(fallback, criteriaSetId);
+            selection.reload();
           },
-        );
-      });
+          undoes: { criteriaSetId, by: "restore" },
+        },
+      );
     },
     listPending: !listSettled,
     listFailure,
     retryList: () => {
-      setOverdueFor(null);
+      setListAttempt((attempt) => attempt + 1);
       selection.reload();
     },
     isDeleted: (criteriaSetId) =>
@@ -308,18 +326,15 @@ export function useCriteriaSets(options: {
   };
 }
 
-/** How long a list read again after a set action is waited for before it counts as failed. */
-export const LIST_PATIENCE_MS = 10_000;
-
 const LIST_NEVER_CAME_BACK = new ApiError({
   code: CLIENT_ERROR_CODES.unreachable,
   message: "The list of criteria sets was asked for again and did not come back.",
 });
 
 /** A set as the server holds it now, or null when it holds no live set by that id. */
-async function setNow(criteriaSetId: string): Promise<CriteriaSet | null> {
+async function setNow(criteriaSetId: string, signal: AbortSignal): Promise<CriteriaSet | null> {
   try {
-    return await fetchCriteriaSet(criteriaSetId);
+    return await fetchCriteriaSet(criteriaSetId, { signal });
   } catch (error) {
     if (isApiError(error) && error.status === 404) return null;
     throw error;
