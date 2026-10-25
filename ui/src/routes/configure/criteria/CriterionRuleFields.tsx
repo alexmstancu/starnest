@@ -231,6 +231,12 @@ export function CriterionRuleFields({
         )}
       </fieldset>
 
+      {form.staleBase && (
+        <p className="field__note field__note--warning">
+          The stored rule changed since you began. Discard changes to see it.
+        </p>
+      )}
+
       {form.problems.length > 0 && (
         <ul className="rule-form__problems" id={problemsId} role="alert">
           {form.problems.map((problem) => (
@@ -284,6 +290,12 @@ export function CriterionRuleFields({
         >
           Discard changes
         </button>
+        {/* "Not saved yet" is not a live region, or it would speak on every first keystroke;
+            "Saved." is, mounted empty so its word is announced (NEW-42, UF-054). */}
+        {form.changed && !form.saving && <span className="unsaved-mark">Not saved yet</span>}
+        <p className="panel__hint" role="status">
+          {form.saved ? "Saved." : null}
+        </p>
       </div>
     </form>
   );

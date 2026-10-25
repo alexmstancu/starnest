@@ -78,6 +78,21 @@ export function writeSlices(slices: StoredSlices): void {
 }
 
 /**
+ * A form's draft lives in a slice under this prefix (PL-025, D8): null once nothing typed
+ * differs from what is stored, and marked `unsaved` while what it says differs -- text such as
+ * `72000.0` can differ from the stored 72000 and still say the same.
+ */
+export const DRAFT_PREFIX = "draft:";
+
+/** Whether any form holds something not yet saved: what a reload or a closed tab would lose. */
+export function hasUnsavedDraft(slices: StoredSlices): boolean {
+  return Object.entries(slices).some(
+    ([key, slice]) =>
+      key.startsWith(DRAFT_PREFIX) && isRecord(slice.value) && slice.value["unsaved"] === true,
+  );
+}
+
+/**
  * A criteria set as remembered: its name as well as its id, so a set that has gone can still be
  * named when the selection falls back from it.
  */

@@ -10,6 +10,7 @@ import {
 } from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
 import { HOUSEHOLD as STORED } from "../../../mocks/fixtures";
+import { replaceHousehold } from "../../../api/endpoints";
 
 /**
  * The household panel.
@@ -806,5 +807,188 @@ describe("the household panel when the list of places is not there", () => {
     release();
 
     await waitFor(() => expect(region.querySelector('[aria-busy="true"]')).toBeNull());
+  });
+});
+
+/**
+ * PL-025 (UF-033, NEW-55-S1, D8). **What is on screen says whether it is stored**, and a draft
+ * outlives the screen it was typed on.
+ */
+describe("the household panel's draft", () => {
+  /** Whether a reload or a closed tab would be asked about first. */
+  function reloadAsksFirst(): boolean {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+
+  async function leaveForRankAndComeBack(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+    await screen.findByRole("heading", { level: 1, name: "Rank" });
+    await user.click(screen.getByRole("link", { name: "Configure" }));
+    return panel();
+  }
+
+  // T25-3. By what the field reads, not its text: 7400.0 is the stored 7400.
+  it("says Not saved yet while the draft differs from what is stored, and only then", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const household = await panel();
+    expect(household.queryByText("Not saved yet")).toBeNull();
+
+    await user.type(field("Net income"), "1");
+    expect(household.getByText("Not saved yet")).toBeInTheDocument();
+
+    await user.clear(field("Net income"));
+    await user.type(field("Net income"), "7400.0");
+    expect(household.queryByText("Not saved yet")).toBeNull();
+
+    await user.type(field("Rent ceiling"), "5");
+    await user.click(household.getByRole("button", { name: "Save household" }));
+    await waitFor(() => expect(household.getByRole("status")).toHaveTextContent("Saved."));
+    expect(household.queryByText("Not saved yet")).toBeNull();
+  });
+
+  // T25-4 (NEW-55-S1).
+  it("drops the nothing-recorded note once the first household is saved", async () => {
+    mockServer.use(
+      http.get("/v1/household", () =>
+        HttpResponse.json(
+          { code: "household_not_configured", message: "nothing has been recorded" },
+          { status: 404 },
+        ),
+      ),
+      http.put("/v1/household", async ({ request }) =>
+        HttpResponse.json(await request.json()),
+      ),
+    );
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const household = await panel();
+    await household.findByText(/Nothing has been recorded/);
+    await user.type(field("Net income"), "7000");
+    await user.click(
+      within(screen.getByRole("group", { name: "Adults" })).getByRole("button", { name: "1" }),
+    );
+    await user.click(
+      within(screen.getByRole("group", { name: "Children" })).getByRole("button", { name: "None" }),
+    );
+    await user.type(screen.getByRole("combobox", { name: "Moving from" }), "Romania");
+    await user.click(
+      within(screen.getByRole("listbox", { name: "Moving from" })).getByRole("option", {
+        name: "Romania",
+      }),
+    );
+    await user.type(screen.getByRole("combobox", { name: "Passports held" }), "Romania");
+    await user.click(
+      within(screen.getByRole("listbox", { name: "Passports held" })).getByRole("option", {
+        name: "Romania",
+      }),
+    );
+
+    await user.click(household.getByRole("button", { name: "Save household" }));
+
+    await waitFor(() => expect(household.getByRole("status")).toHaveTextContent("Saved."));
+    expect(household.queryByText(/Nothing has been recorded/)).toBeNull();
+  });
+
+  // T25-6 (D8, R1).
+  it("keeps an unsaved edit through a visit to Rank", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+    await user.clear(field("Comfortable monthly spend"));
+    await user.type(field("Comfortable monthly spend"), "3100");
+
+    const household = await leaveForRankAndComeBack(user);
+
+    expect(field("Comfortable monthly spend")).toHaveValue("3100");
+    expect(household.getByText("Not saved yet")).toBeInTheDocument();
+  });
+
+  it("puts the stored record back on Discard", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const household = await panel();
+    await user.type(field("Net income"), "1");
+
+    await user.click(household.getByRole("button", { name: "Discard changes" }));
+
+    expect(field("Net income")).toHaveValue("7400");
+    expect(household.queryByText("Not saved yet")).toBeNull();
+  });
+
+  // T25-7.
+  it("asks before a reload only while something is unsaved", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+    expect(reloadAsksFirst()).toBe(false);
+
+    await user.type(field("Net income"), "1");
+    expect(reloadAsksFirst()).toBe(true);
+
+    await user.type(field("Net income"), "{Backspace}");
+    expect(reloadAsksFirst()).toBe(false);
+  });
+
+  // T25-8 (C02-S3).
+  it("keeps a draft the stored record changed under, and says so", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+    await user.clear(field("Comfortable monthly spend"));
+    await user.type(field("Comfortable monthly spend"), "3100");
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+    await replaceHousehold({ ...STORED, net_income: 8000 });
+
+    await user.click(screen.getByRole("link", { name: "Configure" }));
+    const household = await panel();
+
+    expect(field("Comfortable monthly spend")).toHaveValue("3100");
+    expect(field("Net income")).toHaveValue("7400");
+    expect(household.getByText(/The stored household changed since you began/)).toBeInTheDocument();
+    await user.click(household.getByRole("button", { name: "Discard changes" }));
+    expect(field("Net income")).toHaveValue("8000");
+  });
+
+  it("follows a stored record that changed while nothing was typed", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+    await replaceHousehold({ ...STORED, net_income: 8000 });
+
+    await user.click(screen.getByRole("link", { name: "Configure" }));
+    const household = await panel();
+
+    expect(field("Net income")).toHaveValue("8000");
+    expect(household.queryByText(/The stored household changed/)).toBeNull();
+  });
+
+  // T25-10.
+  it("leaves nothing unsaved when a save lands after the form has gone", async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockServer.use(
+      http.put("/v1/household", async ({ request }) => {
+        const body = await request.clone().json();
+        await held;
+        return HttpResponse.json(body);
+      }),
+    );
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const household = await panel();
+    await user.type(field("Rent ceiling"), "5");
+    await user.click(household.getByRole("button", { name: "Save household" }));
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+    await screen.findByRole("heading", { level: 1, name: "Rank" });
+
+    release();
+
+    await waitFor(() => expect(reloadAsksFirst()).toBe(false));
   });
 });

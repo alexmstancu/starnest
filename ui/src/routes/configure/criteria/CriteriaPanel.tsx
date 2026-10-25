@@ -473,6 +473,8 @@ function CriterionRow({
       >
         {editingRule ? "Close" : "Edit"} the rule for {title}
       </button>
+      {/* A draft kept while its editor is closed is marked here, and nowhere else (D8). */}
+      {rule.changed && !editingRule && <span className="unsaved-mark">Not saved yet</span>}
       {editingRule && (
         <CriterionRuleFields
           form={rule}

@@ -180,6 +180,25 @@ export const SETTING_RANGES: Readonly<Record<string, string>> = Object.fromEntri
   SETTING_FIELDS.map((field) => [field.name, describeRule(field.rule)]),
 );
 
+/** How each setting reads what is typed, by name. */
+export const SETTING_RULES: Readonly<Record<SettingName, NumberRule>> = Object.fromEntries(
+  SETTING_FIELDS.map((field) => [field.name, field.rule]),
+) as Record<SettingName, NumberRule>;
+
+/**
+ * What is true while a field is blank, said of the draft (PL-025, UF-033). **Blank and stored
+ * blank, it is in force now; blank only in the draft, it is what saving would do**, because the
+ * banners above the form describe the stored settings and a draft has not changed them yet.
+ */
+export function blankConsequence(consequence: string, storedBlank: boolean): string {
+  if (storedBlank) return consequence;
+  // A screen's name keeps its capital mid-sentence.
+  const opening = consequence.startsWith("Compare ")
+    ? consequence
+    : consequence.charAt(0).toLowerCase() + consequence.slice(1);
+  return `If you save this, ${opening}`;
+}
+
 /**
  * Whether anything blank stops the product working, rather than merely leaving a rule off.
  *

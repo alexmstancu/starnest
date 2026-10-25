@@ -386,3 +386,24 @@ function between(what: string, low: string, high: string): string | null {
   if (to !== "") return `${what} of at most ${to}`;
   return null;
 }
+
+/** An unsaved rule, and the stored rule it was typed against (PL-025, D8). */
+export interface RuleDraftSlot {
+  draft: RuleDraft;
+  base: RuleDraft;
+  /** Always true: a rule draft is kept only while it differs from the stored rule. */
+  unsaved: boolean;
+}
+
+/** A rule draft as the session store held it; anything else reads as no draft. */
+export function parseRuleDraftSlot(stored: unknown): RuleDraftSlot | undefined {
+  if (typeof stored !== "object" || stored === null) return undefined;
+  const { draft, base } = stored as Partial<Record<"draft" | "base", unknown>>;
+  return isRuleDraft(draft) && isRuleDraft(base) ? { draft, base, unsaved: true } : undefined;
+}
+
+function isRuleDraft(value: unknown): value is RuleDraft {
+  if (typeof value !== "object" || value === null) return false;
+  const draft = value as Partial<Record<keyof RuleDraft, unknown>>;
+  return typeof draft.goal === "string" && Array.isArray(draft.anchors);
+}

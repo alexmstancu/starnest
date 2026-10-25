@@ -7,8 +7,15 @@ import { COMPARATOR_LIMIT, REFETCH_AGE, SCORE_RANGE } from "../../../navigation/
 import { useLanding } from "../../../shell/useLanding";
 import { Stage } from "../Stage";
 import { NumberField } from "../../../shell/NumberField";
-import { SETTING_FIELDS, describeUnset, isBlocked, unsetFields } from "./settingsForm";
-import { useSettingsForm } from "./useSettingsForm";
+import {
+  SETTING_FIELDS,
+  blankConsequence,
+  describeUnset,
+  draftOf,
+  isBlocked,
+  unsetFields,
+} from "./settingsForm";
+import { useSettingsForm, type SettingsForm } from "./useSettingsForm";
 
 /**
  * The five tuning values (`reqs.md` 3.10).
@@ -54,10 +61,11 @@ export function SettingsPanel() {
 
 function SettingsFields({ settings }: { settings: Settings }) {
   const form = useSettingsForm(settings);
-  // Read off the draft rather than off what was loaded, so clearing a field says what that
-  // costs immediately instead of after a save.
-  const unset = unsetFields(form.draft);
-  const blocked = isBlocked(form.draft);
+  // **The banners describe what is stored, not the draft** (PL-025, UF-033): a cleared field
+  // that has not been saved stops nothing yet, and says on the field what saving it would do.
+  const stored = draftOf(form.stored);
+  const unset = unsetFields(stored);
+  const blocked = isBlocked(stored);
 
   return (
     <>
@@ -68,8 +76,15 @@ function SettingsFields({ settings }: { settings: Settings }) {
           announces a change to a region it already knows, so one that appeared already saying
           "Saved." was never read out. */}
       <p className="panel__hint" role="status">
-        {form.saved ? "Saved." : null}
+        {form.status === "saved" ? "Saved." : null}
       </p>
+      {form.staleBase && (
+        <div className="notice notice--warning">
+          <p className="notice__message">
+            The stored settings changed since you began. Discard changes to see them.
+          </p>
+        </div>
+      )}
 
       {/* The one blank that stops the product working, said once and loudly. The design's own
           prototype stated this rule and then ranked anyway (R3), which is worse than saying
@@ -124,7 +139,10 @@ function SettingsFields({ settings }: { settings: Settings }) {
                     {/* What is true *while it is blank*: the question somebody looking at an
                         empty field is actually asking. */}
                     {form.draft[name].trim() === "" && (
-                      <span className="field__consequence"> {consequence}</span>
+                      <span className="field__consequence">
+                        {" "}
+                        {blankConsequence(consequence, stored[name].trim() === "")}
+                      </span>
                     )}
                   </>
                 }
@@ -143,6 +161,7 @@ function SettingsFields({ settings }: { settings: Settings }) {
         >
           {form.saving ? "Saving…" : "Save settings"}
         </button>
+        <UnsavedDraft form={form} />
       </form>
     </>
   );
@@ -164,5 +183,23 @@ function LandingField({ name, children }: { name: string; children: ReactNode })
     <div ref={target} className={landed ? "is-landed" : undefined}>
       {children}
     </div>
+  );
+}
+
+/** "Not saved yet", and the way back to what is stored (PL-025, D8). Not a live region. */
+function UnsavedDraft({ form }: { form: SettingsForm }) {
+  if (!form.dirty) return null;
+  return (
+    <>
+      {form.status === "unsaved" && <span className="unsaved-mark">Not saved yet</span>}
+      <button
+        type="button"
+        className="button"
+        aria-disabled={form.saving || undefined}
+        onClick={form.discard}
+      >
+        Discard changes
+      </button>
+    </>
   );
 }

@@ -9,7 +9,15 @@ import {
   type ReactNode,
 } from "react";
 import { useSelection } from "./SelectionContext";
-import { readSlices, writeSlices, type StoredSlice, type StoredSlices } from "./sessionState";
+import {
+  DRAFT_PREFIX,
+  hasUnsavedDraft,
+  readSlices,
+  writeSlices,
+  type StoredSlice,
+  type StoredSlices,
+} from "./sessionState";
+import { useWarnBeforeLeaving } from "./useWarnBeforeLeaving";
 
 /**
  * The screens' view state, kept above the routes (PL-016, `map-C01` M4).
@@ -65,6 +73,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const markUnpersisted = useCallback((key: string) => {
     unpersisted.current.add(key);
   }, []);
+
+  useWarnBeforeLeaving(hasUnsavedDraft(slices));
 
   const store = useMemo(
     () => ({ slices, levelId, update, markUnpersisted }),
@@ -135,4 +145,20 @@ function valueOf<T>(
 ): T {
   if (slice?.level !== owner) return initial;
   return parse(slice.value) ?? initial;
+}
+
+/**
+ * A form's unsaved draft, kept above the routes so a tab change, a closed pillar or a set switch
+ * loses nothing (PL-025, D8). **Null while nothing typed differs from what is stored, and
+ * `unsaved` while what it says does**, which is what lets a reload ask first only then. Held
+ * across levels, and in memory only: a reload asks rather than keeping it.
+ */
+export function useDraftSlot<T extends { unsaved: boolean }>(
+  key: string,
+  parse: (stored: unknown) => T | undefined,
+): readonly [T | null, (next: T | null | ((current: T | null) => T | null)) => void] {
+  return useSessionState<T | null>(`${DRAFT_PREFIX}${key}`, null, parse, {
+    scope: "session",
+    persist: false,
+  });
 }

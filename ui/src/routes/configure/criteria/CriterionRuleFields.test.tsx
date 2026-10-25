@@ -925,3 +925,62 @@ describe("a rule while it is being saved", () => {
     });
   });
 });
+
+/** PL-025 (UF-054, D8, C02-S3). The rule form says whether what it shows is stored. */
+describe("a rule's save state", () => {
+  // T25-9. Mounted empty before the save, so its word is announced (NEW-42).
+  it("says Saved. in a status region that was there before the save, and an edit takes it back", async () => {
+    const user = userEvent.setup();
+    await openTheRuleFor(PLAIN);
+    const form = within(ruleForm(PLAIN));
+    const status = form.getByRole("status");
+    expect(status).toBeEmptyDOMElement();
+
+    await user.selectOptions(goalSelect(), "maximise");
+    expect(form.getByText("Not saved yet")).toBeInTheDocument();
+    await user.click(form.getByRole("button", { name: "Save rule" }));
+
+    await waitFor(() => expect(status).toHaveTextContent("Saved."));
+    expect(form.queryByText("Not saved yet")).toBeNull();
+
+    await user.selectOptions(goalSelect(), "minimise");
+    expect(status).toBeEmptyDOMElement();
+    expect(form.getByText("Not saved yet")).toBeInTheDocument();
+  });
+
+  // T25-6 (D8, R1).
+  it("keeps an unsaved goal through closing the pillar, and marks it on the closed editor", async () => {
+    const user = userEvent.setup();
+    await openTheRuleFor(ANCHORED);
+    await user.selectOptions(goalSelect(), "maximise");
+
+    await user.click(screen.getByRole("button", { name: `Close the rule for ${ANCHORED}` }));
+    const row = within(screen.getByRole("group", { name: ANCHORED }));
+    expect(row.getByText("Not saved yet")).toBeInTheDocument();
+    await openThePillarOf(ANCHORED);
+    await openThePillarOf(ANCHORED);
+    await user.click(
+      await screen.findByRole("button", { name: `Edit the rule for ${ANCHORED}` }),
+    );
+
+    expect(goalSelect()).toHaveValue("maximise");
+  });
+
+  it("keeps an unsaved goal through switching to another set and back", async () => {
+    const user = userEvent.setup();
+    await openTheRuleFor(ANCHORED);
+    await user.selectOptions(goalSelect(), "maximise");
+    const sets = screen.getByRole<HTMLSelectElement>("combobox", { name: /active criteria set/i });
+
+    await user.selectOptions(sets, "remote_only");
+    await waitFor(() => expect(screen.queryByRole("combobox", { name: "Goal" })).toBeNull());
+    await user.selectOptions(sets, "default");
+    await settled();
+    await openThePillarOf(ANCHORED);
+    await user.click(
+      await screen.findByRole("button", { name: `Edit the rule for ${ANCHORED}` }),
+    );
+
+    expect(goalSelect()).toHaveValue("maximise");
+  });
+});

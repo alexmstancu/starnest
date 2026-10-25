@@ -290,8 +290,11 @@ describe("a setting that is not set", () => {
     expect(settings.queryByText(/is not set/i)).toBeNull();
   });
 
-  /** Read off the draft, so clearing a field says what that costs before any save. */
-  it("warns as soon as a field is cleared, not only after saving", async () => {
+  /**
+   * T25-5 (PL-025, UF-033). **The banners describe what is stored**: a cleared score range that
+   * has not been saved stops nothing yet, so the field says what saving it would do instead.
+   */
+  it("says on the field what saving a cleared field would do, and raises no banner for it", async () => {
     const user = userEvent.setup();
     mockServer.use(
       http.get("/v1/settings", () =>
@@ -311,9 +314,11 @@ describe("a setting that is not set", () => {
       await settings.findByRole("textbox", { name: "Top of the score range" }),
     );
 
-    expect(await settings.findByRole("alert")).toHaveTextContent(
-      /nothing can be ranked or compared/i,
+    expect(field("Top of the score range")).toHaveAccessibleDescription(
+      /If you save this, nothing can be ranked or compared until this is set\./,
     );
+    expect(settings.queryByRole("alert")).toBeNull();
+    expect(settings.queryByText(/is not set/i)).toBeNull();
   });
 });
 
@@ -512,8 +517,14 @@ describe("an unset comparator limit", () => {
     expect(
       field("Candidates you can compare at once"),
     ).toHaveAccessibleDescription(
-      /Compare refuses every comparison until this is set\./,
+      /If you save this, Compare refuses every comparison until this is set\./,
     );
+    // Saved, the blank is what is stored, and the summary above the form says so (PL-025).
+    await user.click(settings.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(settings.getByRole("status")).toHaveTextContent("Saved."));
+    expect(
+      field("Candidates you can compare at once"),
+    ).toHaveAccessibleDescription(/ Compare refuses every comparison until this is set\./);
     expect(settings.queryByText(/as many comparators as you pick/)).toBeNull();
     // T30-3 (PL-030). The summary names what the blank stops, not a rule "not in force". The
     // fixture leaves the refetch age unset too, so it is the other.
@@ -712,5 +723,24 @@ describe("the settings panel's confirmation", () => {
 
     expect(await settings.findByRole("alert")).toHaveTextContent(/Not saved/);
     expect(settings.getByRole("status")).toBeEmptyDOMElement();
+  });
+});
+
+/** PL-025 (NEW-55). "Saved." is about what is on screen, so an edit takes it back. */
+describe("the settings panel's confirmation", () => {
+  // T25-1.
+  it("empties the status line once something is typed after a save", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const settings = await panel();
+    const status = settings.getByRole("status");
+    await user.click(settings.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(status).toHaveTextContent("Saved."));
+
+    await user.type(field("Refetch data older than"), "3");
+
+    expect(settings.getByRole("status")).toBe(status);
+    expect(status).toBeEmptyDOMElement();
+    expect(settings.getByText("Not saved yet")).toBeInTheDocument();
   });
 });

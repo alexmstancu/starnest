@@ -103,7 +103,11 @@ function HouseholdFields({
 
   return (
     <>
-      {note !== undefined && <p className="screen__note">{note}</p>}
+      {/* **Until something is stored, not until the page is read again** (NEW-55-S1): the note
+          and "Saved." used to show together. */}
+      {note !== undefined && form.stored === NOTHING_RECORDED && (
+        <p className="screen__note">{note}</p>
+      )}
 
       {/* **Why the pickers below are empty** (UI-27). Two of them are required, and a list
           offering nothing reads as a database with no places in it. */}
@@ -136,9 +140,10 @@ function HouseholdFields({
           announces a change to a region it already knows, so one that appeared already saying
           "Saved." was never read out. */}
       <p className="panel__hint" role="status">
-        {form.saved ? "Saved." : null}
+        {form.status === "saved" ? "Saved." : null}
       </p>
       <RefusedFields problems={form.problems} />
+      {form.staleBase && <StaleDraft />}
 
       <form onSubmit={form.save}>
         {/* **Fields across, not down.** Eight of them in one column is a page of scrolling
@@ -205,6 +210,7 @@ function HouseholdFields({
         >
           {form.saving ? "Saving…" : "Save household"}
         </button>
+        <UnsavedDraft form={form} />
         {form.incomplete && (
           <p className="panel__hint">
             Income, adults, children, the home country and one citizenship are
@@ -273,6 +279,38 @@ function RefusedFields({ problems }: { problems: HouseholdForm["problems"] }) {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+/**
+ * "Not saved yet", and the way back to what is stored (PL-025, D8). **Not a live region**: it
+ * would speak on every first keystroke. "Saved." is the one that is announced.
+ */
+function UnsavedDraft({ form }: { form: HouseholdForm }) {
+  if (!form.dirty) return null;
+  return (
+    <>
+      {form.status === "unsaved" && <span className="unsaved-mark">Not saved yet</span>}
+      <button
+        type="button"
+        className="button"
+        aria-disabled={form.saving || undefined}
+        onClick={form.discard}
+      >
+        Discard changes
+      </button>
+    </>
+  );
+}
+
+/** The stored record changed under an unsaved draft: an undo, or another tab's save. */
+function StaleDraft() {
+  return (
+    <div className="notice notice--warning">
+      <p className="notice__message">
+        The stored household changed since you began. Discard changes to see it.
+      </p>
     </div>
   );
 }

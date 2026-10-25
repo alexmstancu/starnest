@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { CriterionRule, Criterion } from "../../../api/endpoints";
+import { useSelection } from "../../../shell/SelectionContext";
+import { useDraftSlot } from "../../../shell/SessionProvider";
 import {
   anEmptyAnchor,
   describeAsked,
   draftFrom,
   numberKindFor,
   numberRulesFor,
+  parseRuleDraftSlot,
   ruleFrom,
   type AnchorDraft,
   type RuleDraft,
@@ -51,6 +54,10 @@ export interface RuleForm {
   putBack: () => void;
   /** Whether anything has been typed that is not already stored. */
   changed: boolean;
+  /** The last save landed and nothing has been typed since (PL-025, UF-054). */
+  saved: boolean;
+  /** The stored rule changed under an unsaved draft: another save, an undo (C02-S3). */
+  staleBase: boolean;
   /**
    * This rule is being saved, so the draft takes no edit until the answer is in (UI-06): it
    * follows the stored rule then, and anything typed meanwhile would be thrown away unsaid.
@@ -97,15 +104,31 @@ export function useCriterionRule(
   const asJson = JSON.stringify(stored);
   const kind = numberKindFor(valueType);
 
-  const [draft, setDraft] = useState<RuleDraft>(stored);
+  // **The draft lives in the session store, keyed by set and attribute** (PL-025, D8), so
+  // closing the pillar or switching sets and back loses nothing. No draft means the stored
+  // rule, so the form follows the stored rule while nothing is typed -- and an unsaved draft
+  // is kept, and said to be stale, when the stored rule changes under it (C02-S3).
+  const { criteriaSetId } = useSelection();
+  const [slot, setSlot] = useDraftSlot(
+    `rule:${criteriaSetId ?? ""}:${criterion.attribute}`,
+    parseRuleDraftSlot,
+  );
+  const draft = slot?.draft ?? stored;
+  const setDraft = (change: (current: RuleDraft) => RuleDraft) =>
+    setSlot((current) => {
+      const next = change(current?.draft ?? stored);
+      return JSON.stringify(next) === asJson
+        ? null
+        : { draft: next, base: current?.base ?? stored, unsaved: true };
+    });
   const [problems, setProblems] = useState<string[]>([]);
   // Not cleared by P55's restore below: the refusal can land after it, and it is what the
   // restore leaves the reader to act on.
   const [refused, setRefused] = useState<RuleRefusal | null>(null);
-
-  // The stored rule can change without this row having been edited -- another panel's save,
-  // a reload, a different criteria set -- so the draft follows it.
-  useEffect(() => setDraft(JSON.parse(asJson) as RuleDraft), [asJson]);
+  const [saved, setSaved] = useState(false);
+  // Whether the save asked for was taken: a rule's save is not sent while another write holds
+  // the set, and then it answers as a stored one does.
+  const sent = useRef(false);
 
   // **A refused change leaves the stored rule where it was, so the fields go back to it once
   // the attempt is over** (P55) -- which this file's header promised and only half did: it
@@ -115,24 +138,30 @@ export function useCriterionRule(
   // beside this one already makes (`CriteriaPanel.tsx`).
   const wasSaving = useRef(false);
   useEffect(() => {
+    if (saving) sent.current = true;
     if (wasSaving.current && !saving) {
       setProblems([]);
-      setDraft(JSON.parse(asJson) as RuleDraft);
+      setSlot(null);
     }
     wasSaving.current = saving;
-  }, [saving, asJson]);
+  }, [saving, setSlot]);
 
   const held = saving || busy;
   /** An edit to the draft, unless the rule is being saved. It answers the marks it names. */
   const edit = (change: (current: RuleDraft) => RuleDraft, answers: readonly RuleMark[]) => {
     if (saving) return;
     setDraft(change);
+    setSaved(false);
     setRefused((current) =>
       current === null ? null : { ...current, marks: withoutMarks(current.marks, answers) },
     );
   };
 
   const changed = JSON.stringify(draft) !== asJson;
+  // Typed back to what is stored, a draft is nothing to keep.
+  useEffect(() => {
+    if (slot !== null && !changed) setSlot(null);
+  }, [slot, changed, setSlot]);
 
   return {
     draft,
@@ -151,9 +180,11 @@ export function useCriterionRule(
           },
     putBack: () => {
       if (saving || refused === null) return;
-      setDraft(refused.draft);
+      setDraft(() => refused.draft);
     },
     changed,
+    saved,
+    staleBase: !saving && slot !== null && changed && JSON.stringify(slot.base) !== asJson,
     saving,
     held,
     set: (field, value) =>
@@ -191,17 +222,21 @@ export function useCriterionRule(
       const parsed = ruleFrom(draft, kind);
       setProblems(parsed.problems);
       if (parsed.rule === null) return;
-      const sent = draft;
+      const asked = draft;
       setRefused(null);
+      setSaved(false);
+      sent.current = false;
       void onSave(criterion.attribute, parsed.rule).then((error) => {
         if (error !== null && error !== undefined) {
-          setRefused(refusalOf(error, sent, { attribute: criterion.attribute, title }));
+          setRefused(refusalOf(error, asked, { attribute: criterion.attribute, title }));
+        } else if (sent.current) {
+          setSaved(true);
         }
       });
     },
     revert: () => {
       if (held || !changed) return;
-      setDraft(JSON.parse(asJson) as RuleDraft);
+      setSlot(null);
       setProblems([]);
     },
   };
