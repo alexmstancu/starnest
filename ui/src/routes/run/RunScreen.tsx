@@ -27,8 +27,10 @@ import { UnsourcedAttributes } from "./UnsourcedAttributes";
 import { type Progress, progressBar } from "./runProgress";
 import { scopeFor } from "./runScope";
 import {
+  acquisitionInFlight,
   inFlight,
   outcomeSentence,
+  planNote,
   runState,
   type SourceReach,
   sourceBars,
@@ -175,6 +177,10 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
                 <GapRemedies
                   gaps={gaps}
                   levelId={levelId}
+                  stillRunning={acquisitionInFlight(
+                    run.current,
+                    run.history.state === "ready" ? run.history.data : [],
+                  )}
                   run={run}
                   propose={propose}
                   onCancel={cancel}
@@ -260,12 +266,18 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
 function GapRemedies({
   gaps,
   levelId,
+  stillRunning,
   run,
   propose,
   onCancel,
 }: {
   gaps: Holdings["gaps"];
   levelId: string;
+  /**
+   * The acquisition still going, if any (PL-050). An item it has not answered yet may still be
+   * answered, so "retrying changes nothing" is not yet true and Retry is held until it ends.
+   */
+  stillRunning: number | null;
   run: RunScreenState;
   propose: RunScreenState["propose"];
   onCancel: () => void;
@@ -326,9 +338,11 @@ function GapRemedies({
         count={formatCount(gaps.unanswered.length)}
         what="unanswered"
         lead={
-          gaps.unanswered.length > 0
-            ? "Every source answered, and none had a row. Retrying the same sources changes nothing."
-            : "No value is missing because every source lacked a row."
+          gaps.unanswered.length === 0
+            ? "No value is missing because every source lacked a row."
+            : stillRunning !== null
+              ? `Acquisition ${stillRunning} is still running, so these may yet be answered. Retry once it ends.`
+              : "Every source answered, and none had a row. Retrying the same sources changes nothing."
         }
       >
         {gaps.unanswered.length > 0 && (
@@ -340,7 +354,7 @@ function GapRemedies({
             level={levelId}
             detailKind="unanswered"
             act="Retry"
-            busy={run.busy === "planning"}
+            busy={run.busy === "planning" || stillRunning !== null}
             onSelectionChange={run.disarm}
             onPropose={(scope, describedAs) => propose(scope, describedAs, "unanswered")}
           />
@@ -351,7 +365,7 @@ function GapRemedies({
           count={gaps.unanswered.length}
           label={`Retry ${formatCount(gaps.unanswered.length)} unanswered`}
           empty="Nothing went unanswered"
-          held={run.busy !== null}
+          held={run.busy !== null || stillRunning !== null}
           onClick={() =>
             propose(
               scopeFor(levelId, gaps.unanswered),
@@ -744,13 +758,17 @@ function RunReport({
 
       <RunProgress progress={run.progress} />
 
-      <SourceBySource reaches={run.by_source} />
+      <SourceBySource
+        reaches={run.by_source}
+        state={state}
+        planRecorded={run.plan_recorded}
+      />
 
       {outcome !== "" && <p className="acquisition__outcome">{outcome}</p>}
 
       <footer className="acquisition__foot">
         <span className="acquisition__spend">
-          {describeSpend(run.llm_call_count, run.cost_eur)}
+          {describeSpend(run)}
         </span>
         <div className="acquisition__acts">
           {/* **Refresh, not a poll.** A run that finished is not going to change, and a screen
@@ -933,22 +951,28 @@ function statusTone(status: string): string {
 /**
  * Which source got the run where it got to.
  *
- * **Each bar is its own success rate**, not a share of one track -- see `sourceReach.ts` for
- * why. Drawn as SVG because eslint refuses a `style` attribute under `routes/`, and a width
+ * **Each bar is the source's progress through its own plan**, not a share of one track --
+ * see `sourceReach.ts` for why. Drawn as SVG because eslint refuses a `style` attribute under `routes/`, and a width
  * that comes from data belongs to the drawing rather than to the styling.
  */
 function SourceBySource({
   reaches,
+  state,
+  planRecorded,
 }: {
   reaches?: readonly SourceReach[] | null;
+  state: string;
+  planRecorded?: boolean | null;
 }) {
   const names = useSourceNames();
-  const bars = sourceBars(reaches, names);
+  const bars = sourceBars(reaches, names, state);
   if (bars.length === 0) return null;
+  const note = planNote(planRecorded);
 
   return (
     <div className="reach">
       <h3 className="reach__heading">Source by source</h3>
+      {note !== "" && <p className="panel__hint">{note}</p>}
       <ul className="reach__list">
         {bars.map((bar) => (
           <li key={bar.source} className="reach__row">

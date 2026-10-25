@@ -81,22 +81,64 @@ describe("what a run commits you to", () => {
 });
 
 describe("what a run cost", () => {
-  it("says so plainly when nothing was charged", () => {
+  /** Recorded when the run started (PL-056): what it could spend and what held it. */
+  const PAID = {
+    plan_recorded: true,
+    llm_call_count: 3,
+    cost_eur: 0.11,
+    estimate_ceiling_eur: 0.42,
+    spend_cap_eur: 5,
+  };
+
+  it("says so plainly when nothing could be or was charged", () => {
     // Every source shipped today is free. A spend line that appeared only when money moved
     // would leave a reader unable to tell "free" from "not reported".
-    expect(describeSpend(0, 0)).toBe("No paid call, nothing charged");
-    expect(describeSpend(null, null)).toBe("No paid call, nothing charged");
+    expect(
+      describeSpend({ plan_recorded: true, estimate_ceiling_eur: 0, cost_eur: 0 }),
+    ).toBe("No paid call, nothing charged");
   });
 
-  it("names the calls and the money once either is non-zero", () => {
-    expect(describeSpend(4, 0.32)).toBe("4 paid calls, €0.32");
+  it("names the ceiling and the cap while the run is going, as the design does", () => {
+    expect(describeSpend({ ...PAID, run_status: "running" })).toBe(
+      "Spent €0.11 of the €0.42 ceiling. It halts at the €5.00 cap and keeps whatever completed.",
+    );
   });
 
-  it("agrees with itself about one call", () => {
-    expect(describeSpend(1, 0.08)).toBe("1 paid call, €0.08");
+  it("names what was charged against the ceiling and the cap once it has ended", () => {
+    expect(describeSpend({ ...PAID, run_status: "halted_on_spend_cap" })).toBe(
+      "Charged €0.11 of the €0.42 ceiling, held to the €5.00 cap.",
+    );
   });
 
-  it("reports a cost that arrived with no call count", () => {
-    expect(describeSpend(0, 1.5)).toBe("0 paid calls, €1.50");
+  /** A cap of null on a run that could spend: the request accepted going uncapped. */
+  it("says there was no cap rather than inventing one", () => {
+    expect(
+      describeSpend({ ...PAID, spend_cap_eur: null, run_status: "running" }),
+    ).toBe("Spent €0.11 of the €0.42 ceiling. No cap is set: going uncapped was accepted.");
+    expect(
+      describeSpend({ ...PAID, spend_cap_eur: null, run_status: "completed" }),
+    ).toBe("Charged €0.11 of the €0.42 ceiling, with no cap.");
+  });
+
+  /** The settings' cap now is not the one the run was held to, so it is never borrowed. */
+  it("says a run from before plans were recorded has no ceiling or cap, never zero", () => {
+    expect(
+      describeSpend({
+        plan_recorded: false,
+        llm_call_count: 4,
+        cost_eur: 0.32,
+        estimate_ceiling_eur: null,
+        spend_cap_eur: null,
+      }),
+    ).toBe("4 paid calls, €0.32. Its ceiling and cap were not recorded.");
+    expect(describeSpend({ plan_recorded: false })).toBe(
+      "No paid call, nothing charged. Its ceiling and cap were not recorded.",
+    );
+  });
+
+  it("agrees with itself about one call on an older run", () => {
+    expect(describeSpend({ llm_call_count: 1, cost_eur: 0.08 })).toBe(
+      "1 paid call, €0.08. Its ceiling and cap were not recorded.",
+    );
   });
 });

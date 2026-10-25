@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { inFlight, outcomeSentence, runState, sourceBars } from "./sourceReach";
+import {
+  acquisitionInFlight,
+  inFlight,
+  outcomeSentence,
+  planNote,
+  runState,
+  sourceBars,
+} from "./sourceReach";
 
 describe("source by source", () => {
   /** What the catalog calls the sources these runs report: "OECD", which `oecd` cannot become. */
@@ -8,7 +15,73 @@ describe("source by source", () => {
     ["oecd", "OECD"],
   ]);
 
-  it("fills each source's bar by its own success rate, not by its share of the run", () => {
+  /** PL-055. Progress through its own plan, the design's "Eurostat 634 / 634". */
+  it("fills each source's bar by what it was asked out of what was planned", () => {
+    const bars = sourceBars(
+      [
+        { data_source: "eurostat", items_stored: 600, items_failed: 4, items_planned: 634, items_asked: 634 },
+        { data_source: "oecd", items_stored: 1, items_failed: 1, items_planned: 8, items_asked: 2 },
+      ],
+      NAMES,
+      "running",
+    );
+
+    expect(bars.map((bar) => [bar.width, bar.reading, bar.sentence])).toEqual([
+      ["100%", "634 of 634", "Eurostat: asked about 634 of 634, 600 stored, 4 failed"],
+      ["25%", "2 of 8", "OECD: asked about 2 of 8, 1 stored, 1 failed"],
+    ]);
+  });
+
+  /** The source a stopped run never got to is listed, not dropped (AQ-10). */
+  it("lists a source planned but never asked as not reached once the run stopped early", () => {
+    for (const state of ["stopping", "halted_by_user", "halted_on_spend_cap", "failed"]) {
+      const bars = sourceBars(
+        [
+          { data_source: "oecd", items_stored: 0, items_failed: 0, items_planned: 32, items_asked: 0 },
+          { data_source: "eurostat", items_stored: 9, items_failed: 0, items_planned: 9, items_asked: 9 },
+        ],
+        NAMES,
+        state,
+      );
+
+      expect(bars.map((bar) => bar.source)).toEqual(["eurostat", "oecd"]);
+      expect(bars[1]).toMatchObject({
+        width: "0%",
+        reading: "not reached",
+        sentence: "OECD: not reached, 32 planned",
+        notReached: true,
+        barren: false,
+      });
+    }
+  });
+
+  it("reads a source not yet asked as nothing done while the run is still going", () => {
+    const [bar] = sourceBars(
+      [{ data_source: "oecd", items_stored: 0, items_failed: 0, items_planned: 32, items_asked: 0 }],
+      NAMES,
+      "running",
+    );
+
+    expect(bar).toMatchObject({ reading: "0 of 32", notReached: false });
+  });
+
+  it("never reads more asked than planned", () => {
+    const [bar] = sourceBars(
+      [{ data_source: "oecd", items_stored: 3, items_failed: 0, items_planned: 2, items_asked: 5 }],
+      NAMES,
+      "completed",
+    );
+
+    expect(bar).toMatchObject({ width: "100%", reading: "2 of 2" });
+  });
+
+  it("says when the plan was not recorded, and only then", () => {
+    expect(planNote(false)).toMatch(/^Plan not recorded/);
+    expect(planNote(true)).toBe("");
+    expect(planNote(undefined)).toBe("");
+  });
+
+  it("fills a run without a plan by its own success rate, not by its share of the run", () => {
     // Eurostat answered 100 of 100 and OECD 1 of 2. On a shared track Eurostat would dwarf
     // OECD and the reader would conclude OECD did well; on its own track OECD reads as half.
     const bars = sourceBars(
@@ -37,6 +110,7 @@ describe("source by source", () => {
         reading: "0 of 12",
         sentence: "OECD: 0 stored, 12 failed",
         barren: true,
+        notReached: false,
       },
     ]);
   });
@@ -187,6 +261,20 @@ describe("what the run came to", () => {
     );
   });
 
+  /** PL-050. Nobody was asked about these, so they are never "nobody answered". */
+  it("names what a stopped run never reached apart from what nobody answered", () => {
+    expect(
+      outcomeSentence("halted_by_user", {
+        items_completed: 30,
+        items_failed: 0,
+        items_unanswered: 2,
+        items_not_reached: 68,
+      }),
+    ).toBe(
+      "Stopped when you asked, keeping everything it had written. 30 figures stored, 2 nobody answered, 68 not reached.",
+    );
+  });
+
   it("agrees with itself about one figure", () => {
     expect(outcomeSentence("completed", { items_completed: 1 })).toBe(
       "Finished. 1 figure stored.",
@@ -254,5 +342,34 @@ describe("whether a run is still going", () => {
     expect(inFlight(null)).toBe(false);
     expect(inFlight(undefined)).toBe(false);
     expect(inFlight("")).toBe(false);
+  });
+});
+
+
+describe("which acquisition is still going", () => {
+  it("is the run on the card when that one is in flight", () => {
+    expect(acquisitionInFlight({ id: 9, run_status: "running" }, [])).toBe(9);
+  });
+
+  it("is the newest running one in the history when the card shows another", () => {
+    expect(
+      acquisitionInFlight({ id: 5, run_status: "completed" }, [
+        { id: 7, run_status: "running" },
+        { id: 5, run_status: "completed" },
+      ]),
+    ).toBe(7);
+    expect(acquisitionInFlight(null, [{ id: 7, run_status: "running" }])).toBe(7);
+  });
+
+  /** The card is re-read on its own, so a stale history row does not hold the remedies. */
+  it("believes the card over a stale history row for the same run", () => {
+    expect(
+      acquisitionInFlight({ id: 7, run_status: "completed" }, [{ id: 7, run_status: "running" }]),
+    ).toBeNull();
+  });
+
+  it("is none when nothing is going", () => {
+    expect(acquisitionInFlight(null, [])).toBeNull();
+    expect(acquisitionInFlight(null, [{ id: 7, run_status: "halted_by_user" }])).toBeNull();
   });
 });

@@ -53,6 +53,41 @@ describe("how far a run has got", () => {
     ).toBe("37 of 160 answered, 123 failed, 0 unanswered");
   });
 
+  /**
+   * PL-050. A halted run's items no source was asked about are neither answered nor absent, so
+   * they are the empty part of the track and are named in the reading -- never drawn as
+   * unanswered.
+   */
+  it("leaves what a halted run never reached undrawn, and names it", () => {
+    const bar = progressBar({
+      items_total: 100,
+      items_completed: 30,
+      items_failed: 5,
+      items_unanswered: 5,
+      items_not_reached: 60,
+    });
+    expect(bar.segments.map((segment) => segment.kind)).toEqual([
+      "completed",
+      "failed",
+      "unanswered",
+    ]);
+    expect(bar.segments[2]).toMatchObject({ x: "35%", width: "5%" });
+    expect(bar.settled).toBe(40);
+    expect(bar.reading).toBe(
+      "30 of 100 answered, 5 failed, 5 unanswered, 60 not reached",
+    );
+  });
+
+  it("says nothing about not reached when everything was reached", () => {
+    expect(
+      progressBar({
+        items_total: 2,
+        items_completed: 2,
+        items_not_reached: 0,
+      }).reading,
+    ).toBe("2 of 2 answered, 0 failed, 0 unanswered");
+  });
+
   it("says there is nothing to do rather than dividing by zero", () => {
     expect(progressBar({ items_total: 0 })).toEqual({
       segments: [],

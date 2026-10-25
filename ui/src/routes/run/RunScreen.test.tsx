@@ -20,7 +20,7 @@ import {
   STARTED_RUN_DETAIL,
   STORED_VALUES,
 } from "../../mocks/fixtures";
-import type { Holdings, Run } from "../../api/endpoints";
+import type { Holdings, Run, RunDetail } from "../../api/endpoints";
 import { formatMoney } from "../../format/display";
 import { mockServer } from "../../mocks/server";
 import {
@@ -2288,16 +2288,20 @@ describe("the acquisition card", () => {
 
   it("breaks the run down by source, including the one that answered nothing", async () => {
     // OECD's front door is Cloudflare-challenged, so a run where it answers nothing is the
-    // shipped case -- and the source a reader came to this panel to find.
+    // shipped case -- and the source a reader came to this panel to find. Each bar is what the
+    // source was asked out of what was planned for it (PL-055), never a success rate.
     serveSourceNames({ oecd: "OECD" });
     const card = await theCard();
 
     expect(
-      await card.findByRole("img", { name: "OECD: 0 stored, 1 failed" }),
+      await card.findByRole("img", {
+        name: "OECD: asked about 1 of 1, 0 stored, 1 failed",
+      }),
     ).toBeInTheDocument();
     expect(
-      card.getByRole("img", { name: "Eurostat: 93 stored" }),
+      card.getByRole("img", { name: "Eurostat: asked about 95 of 95, 93 stored" }),
     ).toBeInTheDocument();
+    expect(card.getByText("95 of 95")).toBeInTheDocument();
   });
 
   /**
@@ -2316,9 +2320,12 @@ describe("the acquisition card", () => {
       within(breakdown)
         .getAllByRole("img")
         .map((bar) => bar.getAttribute("aria-label")),
-    ).toEqual(["Eurostat: 93 stored", "OECD: 0 stored, 1 failed"]);
+    ).toEqual([
+      "Eurostat: asked about 95 of 95, 93 stored",
+      "OECD: asked about 1 of 1, 0 stored, 1 failed",
+    ]);
     // The tooltip is an SVG `<title>`, so it is text: the hover reads the same sentence.
-    expect(breakdown).toHaveTextContent("OECD: 0 stored, 1 failed");
+    expect(breakdown).toHaveTextContent("OECD: asked about 1 of 1, 0 stored, 1 failed");
     expect(breakdown).not.toHaveTextContent(/\b(oecd|eurostat)\b/);
   });
 
@@ -2344,6 +2351,220 @@ describe("the acquisition card", () => {
       screen.getByRole("heading", { name: /every acquisition so far/i }),
     ).toBeInTheDocument();
     expect(screen.getByRole("rowheader", { name: "7" })).toBeInTheDocument();
+  });
+});
+
+/**
+ * PL-050, PL-055, PL-056. **A run that stopped before it asked about everything** says so: the
+ * items no source was asked about are "not reached", on the bar, in the outcome and per source,
+ * and never "unanswered"; its spend line names the ceiling and the cap it started with.
+ */
+describe("a run that did not reach everything", () => {
+  /**
+   * Run 7, stopped by its owner after Eurostat and before the LLM fallback was asked: two
+   * figures stored, one item not reached, nothing charged of a €0.42 ceiling, no cap set (so
+   * the start accepted going uncapped). The history agrees with the detail, as the server's would.
+   */
+  const HALTED: RunDetail = {
+    ...STARTED_RUN_DETAIL,
+    id: 7,
+    run_status: "halted_by_user",
+    stop_requested_at: "2026-09-12T09:00:05Z",
+    finished_at: "2026-09-12T09:00:12Z",
+    llm_call_count: 0,
+    cost_eur: 0,
+    scope_candidates: 1,
+    scope_attributes: 3,
+    items_total: 3,
+    items_completed: 2,
+    items_failed: 0,
+    scope: {
+      level: "country",
+      candidates: ["country.portugal"],
+      attributes: [
+        "country.housing_cost_overburden_rate",
+        "country.overcrowding_rate",
+        "country.total_tax_rate_effective",
+      ],
+    },
+    progress: {
+      items_total: 3,
+      items_completed: 2,
+      items_failed: 0,
+      items_unanswered: 0,
+      items_not_reached: 1,
+    },
+    unanswered: [],
+    not_reached: [
+      { candidate: "country.portugal", attribute: "country.total_tax_rate_effective" },
+    ],
+    failures: [],
+    reconfirmed: [],
+    plan_recorded: true,
+    estimate_ceiling_eur: 0.42,
+    spend_cap_eur: null,
+    accepted_uncapped: true,
+    by_source: [
+      { data_source: "eurostat", items_stored: 2, items_failed: 0, items_planned: 2, items_asked: 2 },
+      { data_source: "llm", items_stored: 0, items_failed: 0, items_planned: 1, items_asked: 0 },
+    ],
+  };
+
+  function serveRun(detail: RunDetail) {
+    // The history row says what the detail says about the same run.
+    const row: Partial<Run> = {
+      run_status: detail.run_status,
+      stop_requested_at: detail.stop_requested_at,
+      finished_at: detail.finished_at,
+      items_total: detail.items_total,
+      items_completed: detail.items_completed,
+      items_failed: detail.items_failed,
+      scope_candidates: detail.scope_candidates,
+      scope_attributes: detail.scope_attributes,
+      llm_call_count: detail.llm_call_count,
+      cost_eur: detail.cost_eur,
+    };
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs`, () =>
+        HttpResponse.json({
+          items: RUNS.map((run) => (run.id === detail.id ? { ...run, ...row } : run)),
+          total: RUNS.length,
+        }),
+      ),
+      http.get(`${BASE}/data-acquisition-runs/${String(detail.id)}`, () =>
+        HttpResponse.json(detail),
+      ),
+    );
+  }
+
+  async function theCard(detail: RunDetail) {
+    serveRun(detail);
+    serveSourceNames({ llm: "Language model" });
+    renderShell("/acquire");
+    return within(await screen.findByRole("region", { name: /acquisition 7/i }));
+  }
+
+  it("leaves what it never reached as the empty part of the bar, and names it", async () => {
+    const card = await theCard(HALTED);
+
+    expect(
+      card.getByRole("img", { name: "2 of 3 answered, 0 failed, 0 unanswered, 1 not reached" }),
+    ).toBeInTheDocument();
+    expect(
+      card.getByText(
+        "Stopped when you asked, keeping everything it had written. 2 figures stored, 1 not reached.",
+      ),
+    ).toBeInTheDocument();
+    expect(card.queryByText(/nobody answered/)).toBeNull();
+  });
+
+  it("lists the source it was planned to ask and never asked as not reached", async () => {
+    const card = await theCard(HALTED);
+
+    expect(
+      await card.findByRole("img", { name: "Language model: not reached, 1 planned" }),
+    ).toBeInTheDocument();
+    expect(card.getByText("not reached")).toBeInTheDocument();
+    expect(card.getByText("2 of 2")).toBeInTheDocument();
+  });
+
+  it("states the ceiling it started with and that no cap held it", async () => {
+    const card = await theCard(HALTED);
+
+    expect(card.getByText("Charged €0.00 of the €0.42 ceiling, with no cap.")).toBeInTheDocument();
+  });
+
+  it("names the cap it was held to, as recorded when it started", async () => {
+    const card = await theCard({ ...HALTED, spend_cap_eur: 5, accepted_uncapped: false });
+
+    expect(
+      card.getByText("Charged €0.00 of the €0.42 ceiling, held to the €5.00 cap."),
+    ).toBeInTheDocument();
+  });
+
+  /** Before plans were recorded the breakdown has nothing to measure against: it says so. */
+  it("says a run started before plans were recorded has no plan, ceiling or cap", async () => {
+    const card = await theCard({
+      ...HALTED,
+      run_status: "completed",
+      stop_requested_at: null,
+      progress: { ...HALTED.progress, items_unanswered: 1, items_not_reached: 0 },
+      unanswered: HALTED.not_reached,
+      not_reached: [],
+      plan_recorded: false,
+      estimate_ceiling_eur: null,
+      spend_cap_eur: null,
+      accepted_uncapped: null,
+      by_source: [
+        { data_source: "eurostat", items_stored: 2, items_failed: 0, items_planned: null, items_asked: null },
+      ],
+    });
+
+    expect(card.getByText(/^Plan not recorded for this acquisition/)).toBeInTheDocument();
+    expect(card.getByRole("img", { name: "Eurostat: 2 stored" })).toBeInTheDocument();
+    expect(
+      card.getByText("No paid call, nothing charged. Its ceiling and cap were not recorded."),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * PL-050. While a run is going, an item it has not answered yet may still be answered, so the
+   * verdict "retrying changes nothing" is not yet true and its Retry waits for the run to end.
+   */
+  it("holds the unanswered verdict and its retry while an acquisition is running", async () => {
+    serveRun({
+      ...HALTED,
+      run_status: "running",
+      stop_requested_at: null,
+      finished_at: null,
+      progress: { ...HALTED.progress, items_completed: 1, items_not_reached: 2 },
+    });
+    renderShell("/acquire");
+    const gaps = within(
+      (await screen.findByRole("heading", { name: /^\d+\s*unanswered$/ })).closest("section")!,
+    );
+
+    expect(
+      await gaps.findByText(/^Acquisition 7 is still running, so these may yet be answered/),
+    ).toBeInTheDocument();
+    expect(gaps.queryByText(/changes nothing/)).toBeNull();
+    expectHeld(gaps.getByRole("button", { name: "Retry 2 unanswered" }));
+  });
+
+  /** A failed read of the card is not the end of the run: the history still says it is going. */
+  it("keeps the retry held by the history when the run's own read fails", async () => {
+    serveRun({ ...HALTED, run_status: "running", stop_requested_at: null, finished_at: null });
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/7`, () =>
+        HttpResponse.json(
+          { code: "internal_error", message: "run 7 could not be read" },
+          { status: 500 },
+        ),
+      ),
+    );
+    renderShell("/acquire");
+
+    expect(
+      await screen.findByText(/the last acquisition could not be loaded/i),
+    ).toBeInTheDocument();
+    const gaps = within(
+      (await screen.findByRole("heading", { name: /^\d+\s*unanswered$/ })).closest("section")!,
+    );
+    expect(
+      await gaps.findByText(/^Acquisition 7 is still running/),
+    ).toBeInTheDocument();
+    expectHeld(gaps.getByRole("button", { name: "Retry 2 unanswered" }));
+  });
+
+  it("gives the verdict and a live retry once nothing is running", async () => {
+    serveRun(HALTED);
+    renderShell("/acquire");
+    const gaps = within(
+      (await screen.findByRole("heading", { name: /^\d+\s*unanswered$/ })).closest("section")!,
+    );
+
+    expect(await gaps.findByText(/changes nothing/)).toBeInTheDocument();
+    expectNotHeld(gaps.getByRole("button", { name: "Retry 2 unanswered" }));
   });
 });
 

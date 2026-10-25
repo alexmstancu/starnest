@@ -75,18 +75,50 @@ export function describeCommitment(facts: CommitmentFacts): Commitment {
 }
 
 /**
- * What a run actually cost, once it has run.
+ * What a run actually cost, against what it was allowed to (PL-056).
  *
  * **Spelled out even when it is nothing.** Every source shipped today is free, so the honest
  * line is almost always "nothing was charged" -- and a spend line that appears only when money
  * moved would leave a reader unable to tell "free" from "not reported".
+ *
+ * **The ceiling and the cap are the ones the run started with**, recorded on the run, never the
+ * settings as they stand now: a cap edited mid-run did not change that run's meter. A cap of
+ * null on a run that could spend means the request accepted going uncapped.
  */
-export function describeSpend(
-  llmCallCount: number | null | undefined,
-  costEur: number | null | undefined,
-): string {
-  const calls = llmCallCount ?? 0;
-  const cost = costEur ?? 0;
+export interface RunSpend {
+  run_status?: string | null;
+  llm_call_count?: number | null;
+  cost_eur?: number | null;
+  plan_recorded?: boolean | null;
+  estimate_ceiling_eur?: number | null;
+  spend_cap_eur?: number | null;
+}
+
+export function describeSpend(run: RunSpend): string {
+  const calls = run.llm_call_count ?? 0;
+  const cost = run.cost_eur ?? 0;
+  const ceiling = run.estimate_ceiling_eur ?? 0;
+  if (run.plan_recorded !== true) {
+    // A run from before the ceiling and the cap were recorded: never read as zero.
+    return `${charged(calls, cost)}. Its ceiling and cap were not recorded.`;
+  }
+  if (ceiling <= 0 && cost <= 0) return "No paid call, nothing charged";
+
+  const money = formatMoney(cost, "EUR");
+  const ofCeiling = `of the ${formatMoney(ceiling, "EUR")} ceiling`;
+  const cap = run.spend_cap_eur;
+  const capped = cap !== null && cap !== undefined;
+  if (run.run_status === "running") {
+    return capped
+      ? `Spent ${money} ${ofCeiling}. It halts at the ${formatMoney(cap, "EUR")} cap and keeps whatever completed.`
+      : `Spent ${money} ${ofCeiling}. No cap is set: going uncapped was accepted.`;
+  }
+  return capped
+    ? `Charged ${money} ${ofCeiling}, held to the ${formatMoney(cap, "EUR")} cap.`
+    : `Charged ${money} ${ofCeiling}, with no cap.`;
+}
+
+function charged(calls: number, cost: number): string {
   if (calls <= 0 && cost <= 0) return "No paid call, nothing charged";
   return `${formatCount(calls)} paid ${calls === 1 ? "call" : "calls"}, ${formatMoney(cost, "EUR")}`;
 }
