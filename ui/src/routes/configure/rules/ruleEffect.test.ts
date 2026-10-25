@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { CandidateResult, Ranking } from "../../../api/endpoints";
+import type { Idle, Read } from "../../../api/read";
 import {
   type RuleResult,
   describeCompoundEffect,
@@ -12,25 +14,27 @@ const answer = (
   match_result: string,
 ): RuleResult => ({ match_rule: rule, candidate, match_result });
 
-const enforced = { enforced: true };
+const enforced = { enforced: true, level: "country" };
+
+const sentenceOf = (effect: { sentence: string }) => effect.sentence;
 
 describe("what a rule costs", () => {
   /** "No answers recorded" and "answered, and rules nobody out" are different facts. */
   it("says a rule nobody has answered never fires", () => {
-    expect(describeEffect("uk", [], enforced)).toBe(
+    expect(sentenceOf(describeEffect("uk", [], enforced))).toBe(
       "No answer has been recorded for this rule, so it never fires.",
     );
   });
 
   it("says when a rule is answered and rules nobody out", () => {
     expect(
-      describeEffect("uk", [answer("uk", "country.spain", "matching")], enforced),
-    ).toBe("Answered for one candidate, and rules nobody out.");
+      sentenceOf(describeEffect("uk", [answer("uk", "country.spain", "matching")], enforced),
+    )).toBe("Answered for one candidate, and rules nobody out.");
   });
 
   it("counts the candidates it was answered for", () => {
     expect(
-      describeEffect(
+      sentenceOf(describeEffect(
         "uk",
         [
           answer("uk", "country.spain", "matching"),
@@ -38,22 +42,22 @@ describe("what a rule costs", () => {
         ],
         enforced,
       ),
-    ).toBe("Answered for 2 candidates, and rules nobody out.");
+    )).toBe("Answered for 2 candidates, and rules nobody out.");
   });
 
   it("names the one candidate it removes", () => {
     expect(
-      describeEffect(
+      sentenceOf(describeEffect(
         "uk",
         [answer("uk", "country.united_kingdom", "not_matching")],
         enforced,
       ),
-    ).toBe("Removes country.united_kingdom.");
+    )).toBe("Removes country.united_kingdom.");
   });
 
   it("names two or three candidates in a sentence", () => {
     expect(
-      describeEffect(
+      sentenceOf(describeEffect(
         "quota",
         [
           answer("quota", "b", "not_matching"),
@@ -61,51 +65,51 @@ describe("what a rule costs", () => {
         ],
         enforced,
       ),
-    ).toBe("Removes a and b.");
+    )).toBe("Removes 2 countries: a and b.");
   });
 
   /** A list of ids running off the row is not a sentence. */
   it("counts them once there are more than three", () => {
     expect(
-      describeEffect(
+      sentenceOf(describeEffect(
         "quota",
         ["a", "b", "c", "d", "e"].map((each) =>
           answer("quota", each, "not_matching"),
         ),
         enforced,
       ),
-    ).toBe("Removes 5 candidates: a, b, c and 2 more.");
+    )).toBe("Removes 5 countries: a, b, c and 2 more.");
   });
 
   it("uses the candidate's name where one is given", () => {
     expect(
-      describeEffect(
+      sentenceOf(describeEffect(
         "uk",
         [answer("uk", "country.united_kingdom", "not_matching")],
-        { enforced: true, nameOf: () => "United Kingdom" },
+        { ...enforced, nameOf: () => "United Kingdom" },
       ),
-    ).toBe("Removes United Kingdom.");
+    )).toBe("Removes United Kingdom.");
   });
 
   /** An unenforced rule states what it would do, then that it is not doing it. */
   it("says a switched-off rule is not doing what it would do", () => {
     expect(
-      describeEffect(
+      sentenceOf(describeEffect(
         "uk",
         [answer("uk", "country.united_kingdom", "not_matching")],
-        { enforced: false },
+        { enforced: false, level: "country" },
       ),
-    ).toBe("Removes country.united_kingdom. Not while this is off.");
+    )).toBe("Removes country.united_kingdom — not while this is off.");
   });
 
   it("ignores answers belonging to another rule", () => {
     expect(
-      describeEffect(
+      sentenceOf(describeEffect(
         "uk",
         [answer("quota", "country.switzerland", "not_matching")],
         enforced,
       ),
-    ).toBe("No answer has been recorded for this rule, so it never fires.");
+    )).toBe("No answer has been recorded for this rule, so it never fires.");
   });
 });
 
@@ -122,17 +126,17 @@ describe("what a rule costs while answers are only proposed", () => {
 
   it("does not count a proposal as removing anyone", () => {
     expect(
-      describeEffect(
+      sentenceOf(describeEffect(
         "uk",
         [proposed("uk", "country.portugal", "not_matching")],
         enforced,
       ),
-    ).toBe("1 proposed answer awaits confirmation, so this rules nobody out yet.");
+    )).toBe("1 proposed answer awaits confirmation, so this rules nobody out yet.");
   });
 
   it("says how many proposals wait, in the plural too", () => {
     expect(
-      describeEffect(
+      sentenceOf(describeEffect(
         "uk",
         [
           proposed("uk", "country.portugal", "not_matching"),
@@ -140,12 +144,12 @@ describe("what a rule costs while answers are only proposed", () => {
         ],
         enforced,
       ),
-    ).toBe("2 proposed answers await confirmation, so this rules nobody out yet.");
+    )).toBe("2 proposed answers await confirmation, so this rules nobody out yet.");
   });
 
   it("removes only the confirmed, and mentions the proposals apart", () => {
     expect(
-      describeEffect(
+      sentenceOf(describeEffect(
         "uk",
         [
           answer("uk", "country.malta", "not_matching"),
@@ -153,14 +157,14 @@ describe("what a rule costs while answers are only proposed", () => {
         ],
         enforced,
       ),
-    ).toBe(
+    )).toBe(
       "Removes country.malta. 1 proposed answer awaits confirmation and rules nobody out until then.",
     );
   });
 
   it("counts only the confirmed answers as answered", () => {
     expect(
-      describeEffect(
+      sentenceOf(describeEffect(
         "uk",
         [
           answer("uk", "country.spain", "matching"),
@@ -169,20 +173,20 @@ describe("what a rule costs while answers are only proposed", () => {
         ],
         enforced,
       ),
-    ).toBe(
+    )).toBe(
       "Answered for one candidate, and rules nobody out. 2 proposed answers await confirmation and rule nobody out until then.",
     );
   });
 
   it("still says when a switched-off rule would do nothing either way", () => {
     expect(
-      describeEffect(
+      sentenceOf(describeEffect(
         "uk",
         [proposed("uk", "country.portugal", "not_matching")],
-        { enforced: false },
+        { enforced: false, level: "country" },
       ),
-    ).toBe(
-      "1 proposed answer awaits confirmation, so this rules nobody out yet. Not while this is off.",
+    )).toBe(
+      "1 proposed answer awaits confirmation, so this rules nobody out yet — not while this is off.",
     );
   });
 });
@@ -190,28 +194,135 @@ describe("what a rule costs while answers are only proposed", () => {
 /** UI-12. While the answers are not in, what a gate does is unknown -- never "nothing". */
 describe("what a rule costs before its answers have been read", () => {
   it("says the answers are being read, rather than that the rule never fires", () => {
-    expect(describeUnreadAnswers("loading")).toBe("Reading the answers…");
+    expect(describeUnreadAnswers("loading").sentence).toBe("Reading the answers…");
   });
 
   it("says what it cannot know when the answers could not be read", () => {
-    expect(describeUnreadAnswers("error")).toBe(
+    expect(describeUnreadAnswers("error").sentence).toBe(
       "The answers could not be read, so what this rule does is not known.",
     );
   });
 });
 
-/**
- * UI-12. **Who a compound rule flags is a ranking's to say**, and the rules screen reads no
- * ranking -- so it says where to look rather than inventing "nobody".
- */
-describe("what a compound rule does", () => {
-  it("points to Rank for who an applied rule flags", () => {
-    expect(describeCompoundEffect(true)).toBe(
-      "Applied. Who it flags right now is shown on Rank.",
-    );
+/** PL-156. A gate held as a warning flags whom it would remove, and is coloured by it. */
+describe("the colour and verb of a gate's sentence", () => {
+  const removing = [answer("uk", "country.united_kingdom", "not_matching")];
+
+  it("is red only when the gate removes someone", () => {
+    expect(describeEffect("uk", removing, enforced).tone).toBe("removes");
+    expect(
+      describeEffect("uk", [answer("uk", "country.spain", "matching")], enforced).tone,
+    ).toBe("nothing");
+    expect(describeEffect("uk", [], enforced).tone).toBe("nothing");
   });
 
-  it("says a rule that is not applied flags nobody", () => {
-    expect(describeCompoundEffect(false)).toBe("Not applied, so it flags nobody.");
+  it("flags rather than removes when the set holds it as a warning", () => {
+    expect(describeEffect("uk", removing, { ...enforced, outcome: "warning" })).toEqual({
+      sentence: "Flags country.united_kingdom.",
+      tone: "flags",
+    });
+  });
+
+  it("is not known while its answers are unread", () => {
+    expect(describeUnreadAnswers("loading").tone).toBe("unknown");
+  });
+});
+
+/**
+ * PL-156. **Whom a compound rule flags is the live ranking's to say**: the candidates whose
+ * warnings or reasons name it. A rule that is off is not evaluated, so it guesses nobody.
+ */
+describe("what a compound rule does", () => {
+  const RULE = "country.rent_within_budget";
+  const ruleWarning = { compound_rule: RULE, match_rule: null, detail: "Rent is high." };
+  const result = (name: string, extra: Partial<CandidateResult> = {}): CandidateResult => ({
+    candidate: `country.${name.toLowerCase()}`,
+    name,
+    rank: 1,
+    score: 70,
+    coverage: 90,
+    match_status: "matching",
+    parent_not_matching: false,
+    ...extra,
+  });
+  const ready = (candidates: CandidateResult[]): Read<Ranking> => ({
+    state: "ready",
+    data: {
+      criteria_set: "default",
+      level: "country",
+      computed_at: "2026-10-25T09:00:00Z",
+      score_scale_max: 100,
+      candidates,
+    },
+    readAt: new Date(),
+    refresh: "idle",
+  });
+  const applied = (ranking: Read<Ranking> | Idle) => ({
+    applied: true,
+    outcome: "warning" as const,
+    ranking,
+    level: "country",
+  });
+
+  it("names the countries the ranking says it flags", () => {
+    const ranking = ready([
+      result("Spain", { warnings: [ruleWarning] }),
+      result("Malta", { warnings: [ruleWarning] }),
+      result("Portugal", { warnings: [ruleWarning] }),
+      result("Ireland"),
+    ]);
+    expect(describeCompoundEffect(RULE, applied(ranking))).toEqual({
+      sentence: "Flags 3 countries: Malta, Portugal and Spain.",
+      tone: "flags",
+    });
+  });
+
+  it("names whom it removes, in red", () => {
+    const ranking = ready([
+      result("Spain", {
+        match_status: "not_matching",
+        rank: null,
+        non_match_reasons: [{ compound_rule: RULE, reason_detail: "Too hot." }],
+      }),
+    ]);
+    expect(describeCompoundEffect(RULE, applied(ranking))).toEqual({
+      sentence: "Removes Spain.",
+      tone: "removes",
+    });
+  });
+
+  it("ignores what another rule flags", () => {
+    const other = { ...ruleWarning, compound_rule: "country.mild_and_connected" };
+    expect(
+      describeCompoundEffect(RULE, applied(ready([result("Spain", { warnings: [other] })]))),
+    ).toEqual({ sentence: "Applies to no country right now.", tone: "nothing" });
+  });
+
+  it("applies to nobody in an empty ranking", () => {
+    expect(describeCompoundEffect(RULE, applied(ready([])))).toEqual({
+      sentence: "Applies to no country right now.",
+      tone: "nothing",
+    });
+  });
+
+  it("says it is reading the ranking, and what it cannot know when that failed", () => {
+    expect(describeCompoundEffect(RULE, applied({ state: "pending" }))).toEqual({
+      sentence: "Reading the ranking…",
+      tone: "unknown",
+    });
+    expect(
+      describeCompoundEffect(RULE, applied({ state: "failed", error: new Error("no") })),
+    ).toEqual({
+      sentence: "The ranking could not be read, so whom this rule acts on is not known.",
+      tone: "unknown",
+    });
+  });
+
+  it("says a rule that is not applied acts on nobody, in its own verb", () => {
+    const off = { ...applied({ state: "idle" }), applied: false };
+    expect(describeCompoundEffect(RULE, off).sentence).toBe("Not applied, so it flags nobody.");
+    expect(describeCompoundEffect(RULE, { ...off, outcome: "not_matching" }).sentence).toBe(
+      "Not applied, so it removes nobody.",
+    );
   });
 });

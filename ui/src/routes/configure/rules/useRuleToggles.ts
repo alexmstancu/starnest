@@ -13,12 +13,14 @@ import {
   fetchCompoundRules,
   fetchMatchRuleResults,
   fetchMatchRules,
+  fetchRanking,
   setCompoundRuleApplication,
   setMatchRuleEnforcement,
   type CompoundRule,
   type CriteriaSet,
   type MatchRule,
   type MatchRuleResult,
+  type Ranking,
   type RuleOutcome,
 } from "../../../api/endpoints";
 import type { Idle, Read } from "../../../api/read";
@@ -34,6 +36,12 @@ export interface RuleToggles {
    */
   matchRuleResultsStatus: "loading" | "ready" | "error";
   compoundRules: Read<{ items: CompoundRule[] }>;
+  /**
+   * The live ranking, which is what says whom an applied compound rule flags (PL-156). Read
+   * only while one is applied, and again after every change this panel makes.
+   */
+  ranking: Read<Ranking> | Idle;
+  reloadRanking: () => Promise<void>;
   reloadMatchRules: () => Promise<void>;
   reloadCompoundRules: () => Promise<void>;
   failure: unknown;
@@ -99,6 +107,16 @@ export function useRuleToggles(
     criteriaSet.compound_rule_outcomes ?? {},
   );
   const [failure, setFailure] = useState<unknown>(null);
+  const [accepted, setAccepted] = useState(0);
+
+  const ranking = useRead(
+    useCallback(
+      (signal: AbortSignal) => fetchRanking(criteriaSet.id, levelId, { signal }),
+      [criteriaSet.id, levelId],
+    ),
+    // Both only ever grow, so their sum changes whenever either does.
+    { enabled: applied.length > 0, freshness: answersFreshness + accepted },
+  );
 
   /**
    * **The screen changes only once the server has accepted the change.** A switch that ticked
@@ -112,6 +130,7 @@ export function useRuleToggles(
       try {
         await write();
         accepted();
+        setAccepted((count) => count + 1);
       } catch (error) {
         setFailure(error);
       }
@@ -143,6 +162,8 @@ export function useRuleToggles(
     matchRuleResults: results.read.state === "ready" ? results.read.data.items : [],
     matchRuleResultsStatus: statusOf(results.read),
     compoundRules: settled(compoundRules.read),
+    ranking: ranking.read,
+    reloadRanking: ranking.reload,
     reloadMatchRules: matchRules.reload,
     reloadCompoundRules: compoundRules.reload,
     failure,

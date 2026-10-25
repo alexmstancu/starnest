@@ -9,11 +9,13 @@ import { useCandidateNames } from "../../../api/useCandidateNames";
 import type { Read } from "../../../api/read";
 import { candidateName } from "../../../format/display";
 import { ActRefusal } from "../../../shell/ActRefusal";
+import { ReadFailureCard } from "../../../shell/ReadFailureCard";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import {
   describeCompoundEffect,
   describeEffect,
   describeUnreadAnswers,
+  type RuleEffect,
 } from "./ruleEffect";
 import { useRuleToggles } from "./useRuleToggles";
 
@@ -83,10 +85,11 @@ export function RulesPanel({
               answers === "ready"
                 ? describeEffect(rule.id, rules.matchRuleResults, {
                     enforced: rules.isEnforced(rule.id),
+                    outcome: rules.outcomeOfGate(rule.id),
+                    level: levelId,
                     nameOf: (candidate) => candidateName(names, candidate),
                   })
                 : describeUnreadAnswers(answers),
-            idle: answers !== "ready",
             on: rules.isEnforced(rule.id),
             toggleLabel: `Enforce ${rule.name}`,
             onToggle: (wanted: boolean) => rules.enforce(rule.id, wanted),
@@ -97,6 +100,14 @@ export function RulesPanel({
       />
 
       <h3 className="panel__heading">Compound rules</h3>
+      {rules.ranking.state === "failed" && (
+        <ReadFailureCard
+          what="Whom the compound rules flag"
+          error={rules.ranking.error}
+          onRetry={rules.reloadRanking}
+          prominence="region"
+        />
+      )}
       <RuleList
         read={rules.compoundRules}
         what="The compound rules"
@@ -110,8 +121,12 @@ export function RulesPanel({
             // Written by the server from the rule's conditions, naming attributes and bands
             // (PL-155): the shape and outcome as vocabulary tokens told a reader nothing.
             detail: rule.description,
-            effect: describeCompoundEffect(rules.isApplied(rule.id)),
-            idle: true,
+            effect: describeCompoundEffect(rule.id, {
+              applied: rules.isApplied(rule.id),
+              outcome: rules.outcomeOfCompoundRule(rule),
+              ranking: rules.ranking,
+              level: levelId,
+            }),
             on: rules.isApplied(rule.id),
             toggleLabel: `Apply ${rule.name}`,
             onToggle: (wanted: boolean) => rules.apply(rule.id, wanted),
@@ -130,10 +145,8 @@ interface RuleRow {
   id: string;
   name: string;
   detail: string;
-  /** What it is doing right now, or where to find out. */
-  effect: string;
-  /** Said quietly: a pointer, or a state still unknown, rather than a cost. */
-  idle: boolean;
+  /** What it is doing right now, and so its colour. */
+  effect: RuleEffect;
   on: boolean;
   toggleLabel: string;
   onToggle: (wanted: boolean) => void;
@@ -221,14 +234,12 @@ function RuleRows({
             <span className="rule-row__detail">{row.detail}</span>
             {/* What it is doing *right now*, which is the question a switch raises and a
                 description cannot answer. */}
+            {/* Coloured by what it does, never red for a rule that costs nothing; a rule that is
+                off is drawn as off whatever it would do (PL-156). */}
             <span
-              className={
-                row.idle
-                  ? "rule-row__effect rule-row__effect--idle"
-                  : "rule-row__effect"
-              }
+              className={`rule-row__effect rule-row__effect--${row.on ? row.effect.tone : "off"}`}
             >
-              {row.effect}
+              {row.effect.sentence}
             </span>
           </span>
           {/* **Held, not disabled, while the rule is off** (D56): the server keeps an outcome

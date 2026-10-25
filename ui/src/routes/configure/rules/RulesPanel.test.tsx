@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
-import { makeCriteriaSetDetails } from "../../../mocks/fixtures";
+import { makeCriteriaSetDetails, rankingFor } from "../../../mocks/fixtures";
 import { mockServer } from "../../../mocks/server";
 import { renderShell } from "../../../testing/renderShell";
 
@@ -270,26 +270,6 @@ describe("what each rule says it is doing", () => {
     expect(gate).not.toHaveTextContent("country.");
   });
 
-  it("never says a compound rule applies to nobody", async () => {
-    const user = userEvent.setup();
-    renderShell("/configure");
-    const rules = await panel();
-
-    const rent = await rowOf("Rent fits the target spend");
-    expect(rent).toHaveTextContent("Not applied, so it flags nobody.");
-
-    await user.click(
-      screen.getByRole("switch", { name: "Apply Rent fits the target spend" }),
-    );
-
-    await waitFor(() =>
-      expect(rent).toHaveTextContent(
-        "Applied. Who it flags right now is shown on Rank.",
-      ),
-    );
-    expect(rules.queryByText(/applies to no candidate/i)).toBeNull();
-  });
-
   it("says it is still reading the answers, rather than that a gate never fires", async () => {
     let release = (): void => undefined;
     const held = new Promise<void>((resolve) => {
@@ -311,7 +291,7 @@ describe("what each rule says it is doing", () => {
 
     await waitFor(() =>
       expect(freeMovement).toHaveTextContent(
-        "Answered for one candidate, and rules nobody out.",
+        "Answered for one candidate, and rules nobody out — not while this is off.",
       ),
     );
   });
@@ -453,5 +433,187 @@ describe("a rule as a gate or a warning", () => {
     await waitFor(() => expect(toggle).toBeChecked());
 
     expect(select).toHaveValue("not_matching");
+  });
+});
+
+/**
+ * PL-156. **A rule's cost line names whom it removes or flags, coloured by that effect**: red
+ * only for a removal, never for a rule that costs nothing or is switched off. A compound rule's
+ * is read from the live ranking's warnings and reasons for not matching.
+ */
+describe("what a rule costs, and its colour", () => {
+  const RENT = "country.rent_within_budget";
+
+  /** The live ranking, with the rent rule flagging the named countries. */
+  function rankingFlagging(...names: string[]) {
+    return http.get("/v1/rankings", () => {
+      const ranking = rankingFor("default", "country");
+      return HttpResponse.json({
+        ...ranking,
+        candidates: ranking.candidates.map((each) =>
+          names.includes(each.name)
+            ? {
+                ...each,
+                warnings: [{ compound_rule: RENT, match_rule: null, detail: "Rent is high." }],
+              }
+            : each,
+        ),
+      });
+    });
+  }
+
+  async function effectOf(name: string, sentence: string): Promise<HTMLElement> {
+    const row = await screen.findByRole("listitem", { name });
+    return within(row).findByText(sentence);
+  }
+
+  async function applyRent(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(
+      await screen.findByRole("switch", { name: "Apply Rent fits the target spend" }),
+    );
+  }
+
+  it("names whom an applied compound rule flags, in amber", async () => {
+    mockServer.use(rankingFlagging("Spain", "Portugal"));
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+
+    await applyRent(user);
+
+    const effect = await effectOf(
+      "Rent fits the target spend",
+      "Flags 2 countries: Portugal and Spain.",
+    );
+    expect(effect).toHaveClass("rule-row__effect--flags");
+  });
+
+  it("says an applied rule that flags nobody applies to no country, and not in red", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+
+    await applyRent(user);
+
+    const effect = await effectOf("Rent fits the target spend", "Applies to no country right now.");
+    expect(effect).not.toHaveClass("rule-row__effect--removes");
+  });
+
+  it("applies to no country in an empty ranking", async () => {
+    mockServer.use(
+      http.get("/v1/rankings", () =>
+        HttpResponse.json({ ...rankingFor("default", "country"), candidates: [] }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+
+    await applyRent(user);
+
+    expect(
+      await effectOf("Rent fits the target spend", "Applies to no country right now."),
+    ).toBeInTheDocument();
+  });
+
+  it("says it cannot tell when the ranking could not be read, and offers to read it again", async () => {
+    let failing = true;
+    mockServer.use(
+      http.get("/v1/rankings", () =>
+        failing
+          ? HttpResponse.json(
+              { code: "internal_error", message: "no ranking" },
+              { status: 500 },
+            )
+          : HttpResponse.json(rankingFor("default", "country")),
+      ),
+    );
+    const user = userEvent.setup();
+    renderShell("/configure");
+    const rules = await panel();
+
+    await applyRent(user);
+
+    expect(
+      await effectOf(
+        "Rent fits the target spend",
+        "The ranking could not be read, so whom this rule acts on is not known.",
+      ),
+    ).toHaveClass("rule-row__effect--unknown");
+    expect(
+      rules.getByText("Whom the compound rules flag could not be loaded"),
+    ).toBeInTheDocument();
+
+    failing = false;
+    await user.click(rules.getByRole("button", { name: "Try again" }));
+
+    expect(
+      await effectOf("Rent fits the target spend", "Applies to no country right now."),
+    ).toBeInTheDocument();
+  });
+
+  it("draws a rule that is off as off, never in red", async () => {
+    mockServer.use(
+      http.get("/v1/match-rule-results", () =>
+        HttpResponse.json({
+          items: [
+            {
+              match_rule: "country.eu_free_movement",
+              candidate: "country.united_kingdom",
+              match_result: "not_matching",
+              data_source: "manual",
+              retrieval_date: "2026-09-12T09:00:00Z",
+              is_proposal: false,
+            },
+          ],
+        }),
+      ),
+    );
+    renderShell("/configure");
+    await panel();
+
+    const gate = await effectOf(
+      "Free movement applies",
+      "Removes United Kingdom — not while this is off.",
+    );
+    expect(gate).toHaveClass("rule-row__effect--off");
+    expect(gate).not.toHaveClass("rule-row__effect--removes");
+    expect(
+      await effectOf("Rent fits the target spend", "Not applied, so it flags nobody."),
+    ).toHaveClass("rule-row__effect--off");
+  });
+
+  it("removes in red, and flags in amber once the gate is held as a warning", async () => {
+    mockServer.use(
+      http.get("/v1/match-rule-results", () =>
+        HttpResponse.json({
+          items: [
+            {
+              match_rule: "country.visa_route_exists",
+              candidate: "country.united_kingdom",
+              match_result: "not_matching",
+              data_source: "manual",
+              retrieval_date: "2026-09-12T09:00:00Z",
+              is_proposal: false,
+            },
+          ],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await panel();
+    expect(
+      await effectOf("A visa route exists", "Removes United Kingdom."),
+    ).toHaveClass("rule-row__effect--removes");
+
+    await user.selectOptions(
+      await screen.findByRole("combobox", { name: "What A visa route exists does when it fires" }),
+      "warning",
+    );
+
+    expect(
+      await effectOf("A visa route exists", "Flags United Kingdom."),
+    ).toHaveClass("rule-row__effect--flags");
   });
 });

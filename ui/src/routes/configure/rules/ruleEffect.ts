@@ -7,6 +7,20 @@
  * what it did.
  */
 
+import type { Idle, Read } from "../../../api/read";
+import type { Ranking, RuleOutcome } from "../../../api/endpoints";
+
+/**
+ * What a rule's sentence reports, which is what colours it (PL-156): red only for a rule that
+ * removes someone, amber for one that flags, and plain when it costs nothing or is not known.
+ */
+export type EffectTone = "removes" | "flags" | "nothing" | "unknown";
+
+export interface RuleEffect {
+  readonly sentence: string;
+  readonly tone: EffectTone;
+}
+
 export interface RuleResult {
   match_rule: string;
   candidate: string;
@@ -18,45 +32,64 @@ export interface RuleResult {
 const REMOVES = "not_matching";
 
 /**
- * The sentence beside one rule.
+ * The sentence beside one gate, from its recorded answers.
  *
  * **An unenforced rule states what it *would* do**, followed by the fact that it is not doing
  * it. A gate answered for nobody says so rather than staying silent: "no answers recorded" and
- * "answered, and rules nobody out" are different facts, and a blank would merge them.
+ * "answered, and rules nobody out" are different facts, and a blank would merge them. **The verb
+ * is the set's outcome** (D56): a gate held as a warning flags whom it would otherwise remove.
  */
 export function describeEffect(
   ruleId: string,
   results: readonly RuleResult[],
-  options: { enforced: boolean; nameOf?: (candidate: string) => string },
-): string {
+  options: {
+    enforced: boolean;
+    outcome?: RuleOutcome;
+    /** The level's candidates, in the singular: "country". */
+    level: string;
+    nameOf?: (candidate: string) => string;
+  },
+): RuleEffect {
   const mine = results.filter((result) => result.match_rule === ruleId);
   if (mine.length === 0) {
-    return "No answer has been recorded for this rule, so it never fires.";
+    return offWhen(!options.enforced, {
+      sentence: "No answer has been recorded for this rule, so it never fires.",
+      tone: "nothing",
+    });
   }
 
   // **Only a confirmed answer acts** (UI-12, Q218). A proposal is a model's reading that nobody
   // has checked, and the ranking ignores it, so it is mentioned apart and never as a removal.
   const confirmed = mine.filter((result) => result.is_proposal !== true);
   const proposed = mine.length - confirmed.length;
-  const removed = confirmed
+  const failing = confirmed
     .filter((result) => result.match_result === REMOVES)
     .map((result) => (options.nameOf ?? identity)(result.candidate))
     .sort();
+  const flags = options.outcome === "warning";
 
   const decided =
-    removed.length === 0
+    failing.length === 0
       ? `Answered for ${confirmed.length === 1 ? "one candidate" : `${confirmed.length} candidates`}, and rules nobody out.`
-      : `Removes ${list(removed)}.`;
-  const effect =
+      : `${flags ? "Flags" : "Removes"} ${list(failing, options.level)}.`;
+  const sentence =
     confirmed.length === 0
       ? `${awaiting(proposed)} confirmation, so this rules nobody out yet.`
       : proposed === 0
         ? decided
         : `${decided} ${awaiting(proposed)} confirmation and ${proposed === 1 ? "rules" : "rule"} nobody out until then.`;
+  const tone: EffectTone = failing.length === 0 ? "nothing" : flags ? "flags" : "removes";
+  return offWhen(!options.enforced, { sentence, tone });
+}
 
-  // The design's phrasing: the effect first, then the fact that it is switched off. Saying
-  // "not enforced" alone would leave the reader to work out what turning it on would cost.
-  return options.enforced ? effect : `${effect} Not while this is off.`;
+/**
+ * The design's phrasing for a rule that is off: what it would do, then "-- not while this is
+ * off". Saying "not enforced" alone would leave the reader to work out what turning it on costs.
+ */
+function offWhen(off: boolean, effect: RuleEffect): RuleEffect {
+  return off
+    ? { ...effect, sentence: `${effect.sentence.replace(/\.$/, "")} — not while this is off.` }
+    : effect;
 }
 
 function identity(candidate: string): string {
@@ -75,30 +108,85 @@ function awaiting(proposed: number): string {
  */
 export function describeUnreadAnswers(
   status: "idle" | "loading" | "error",
-): string {
-  return status === "error"
-    ? "The answers could not be read, so what this rule does is not known."
-    : "Reading the answers…";
+): RuleEffect {
+  return {
+    sentence:
+      status === "error"
+        ? "The answers could not be read, so what this rule does is not known."
+        : "Reading the answers…",
+    tone: "unknown",
+  };
 }
 
 /**
- * The sentence beside a compound rule.
+ * The sentence beside a compound rule, from the live ranking (PL-156).
  *
- * **Who it flags is a ranking's to say**, because a compound rule reads figures and the household
- * rather than a recorded answer, and this screen reads no ranking. It points there rather than
- * saying "nobody", which is what every compound rule used to read, applied or not.
+ * **Who it acts on is the ranking's to say**, because a compound rule reads figures and the
+ * household rather than a recorded answer: the candidates whose warnings or reasons for not
+ * matching name this rule are exactly the ones it flags or removes. A rule that is off is not
+ * evaluated, so nothing says whom it would flag, and the sentence does not guess.
  */
-export function describeCompoundEffect(applied: boolean): string {
-  return applied
-    ? "Applied. Who it flags right now is shown on Rank."
-    : "Not applied, so it flags nobody.";
+export function describeCompoundEffect(
+  ruleId: string,
+  options: {
+    applied: boolean;
+    outcome: RuleOutcome;
+    ranking: Read<Ranking> | Idle;
+    /** The level's candidates, in the singular: "country". */
+    level: string;
+  },
+): RuleEffect {
+  if (!options.applied) {
+    const verb = options.outcome === "warning" ? "flags" : "removes";
+    return { sentence: `Not applied, so it ${verb} nobody.`, tone: "nothing" };
+  }
+  const { ranking } = options;
+  if (ranking.state === "failed") {
+    return {
+      sentence: "The ranking could not be read, so whom this rule acts on is not known.",
+      tone: "unknown",
+    };
+  }
+  if (ranking.state !== "ready") return { sentence: "Reading the ranking…", tone: "unknown" };
+
+  const results = ranking.data.candidates;
+  const removed = results
+    .filter((each) => (each.non_match_reasons ?? []).some((reason) => reason.compound_rule === ruleId))
+    .map((each) => each.name)
+    .sort();
+  const flagged = results
+    .filter((each) => (each.warnings ?? []).some((warning) => warning.compound_rule === ruleId))
+    .map((each) => each.name)
+    .sort();
+  if (removed.length === 0 && flagged.length === 0) {
+    return { sentence: `Applies to no ${options.level} right now.`, tone: "nothing" };
+  }
+  const sentences = [
+    removed.length > 0 ? `Removes ${list(removed, options.level)}.` : "",
+    flagged.length > 0 ? `Flags ${list(flagged, options.level)}.` : "",
+  ];
+  return {
+    sentence: sentences.filter(Boolean).join(" "),
+    tone: removed.length > 0 ? "removes" : "flags",
+  };
 }
 
-/** Up to three named, then a count -- a sentence, never a list of ids running off the row. */
-function list(names: readonly string[]): string {
+/**
+ * One name, or a count of the level's candidates and up to three names -- "3 countries:
+ * Bulgaria, Hungary and Romania" -- a sentence, never a list of ids running off the row.
+ */
+function list(names: readonly string[], level: string): string {
   if (names.length === 1) return names[0] ?? "";
-  if (names.length <= 3) {
-    return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  }
-  return `${names.length} candidates: ${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
+  const shown = names.slice(0, 3);
+  const more = names.length - shown.length;
+  const named =
+    more > 0
+      ? `${shown.join(", ")} and ${more} more`
+      : `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
+  return `${names.length} ${plural(level)}: ${named}`;
+}
+
+/** A level is named by its id, a noun in the singular: "country", "city". */
+function plural(level: string): string {
+  return /[^aeiou]y$/.test(level) ? `${level.slice(0, -1)}ies` : `${level}s`;
 }

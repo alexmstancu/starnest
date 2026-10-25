@@ -2598,15 +2598,11 @@ select.field__control {
 
 /* **What it is doing, not what it is for.** A switch raises the question "is this costing me
    anything", and a description cannot answer it -- so the answer is on its own line, in the
-   colour of the consequence. */
+   colour of the consequence: its modifiers, by effect, are at the end of this sheet. */
 .rule-row__effect {
   font-size: 12.5px;
   line-height: 1.45;
-  color: var(--colour-danger);
-}
-
-.rule-row__effect--idle {
-  color: var(--colour-text-muted);
+  color: var(--colour-text-label);
 }
 
 /* Which kind of rule this list holds, repeated on the row so a reader who scrolled past the
@@ -4966,4 +4962,23 @@ select.field__control {
    answer to the selection now on screen. */
 .refreshing {
   opacity: 0.55;
+}
+
+/* A rule's cost line, coloured by what it does (PL-156): red only when it removes someone,
+   amber when it flags, plain when it costs nothing, and quiet when it is off or not known. */
+.rule-row__effect--removes {
+  color: var(--colour-danger);
+}
+
+.rule-row__effect--flags {
+  color: var(--colour-warning);
+}
+
+.rule-row__effect--unknown {
+  color: var(--colour-text-muted);
+}
+
+.rule-row__effect--off {
+  color: var(--colour-text-muted);
+  font-style: italic;
 }
