@@ -373,3 +373,12 @@ describe("which acquisition is still going", () => {
     expect(acquisitionInFlight(null, [{ id: 7, run_status: "halted_by_user" }])).toBeNull();
   });
 });
+
+/** PL-122: the outcome line opens in the shared status words, never the wire's status. */
+describe("how the outcome line opens", () => {
+  it("never prints a status it does not know as the wire has it", () => {
+    expect(outcomeSentence("exploded_somehow", { items_completed: 2 })).toBe(
+      "Its status is not known. 2 figures stored.",
+    );
+  });
+});

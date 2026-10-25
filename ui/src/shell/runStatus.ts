@@ -19,6 +19,8 @@ export interface RunStatusWords {
   word: string;
   /** The status as the card's heading, which says what is happening to the run. */
   heading: string;
+  /** How the card's outcome line opens, once the run has stopped. */
+  outcome: string;
   tone: RunTone;
 }
 
@@ -27,27 +29,45 @@ export interface RunStatusWords {
  * somebody has asked to stop, and the card says so in a word of its own (`runState`).
  */
 export const RUN_STATUS_WORDS = {
-  running: { word: "running", heading: "Acquiring now", tone: "live" },
+  running: { word: "running", heading: "Acquiring now", outcome: "Still going.", tone: "live" },
   stopping: {
     word: "stopping",
     heading: "Stopping after the source in flight",
+    outcome: "Stopping after the source in flight.",
     tone: "warn",
   },
-  completed: { word: "completed", heading: "Acquisition finished", tone: "good" },
-  halted_by_user: { word: "halted by you", heading: "Stopped by you", tone: "plain" },
+  completed: {
+    word: "completed",
+    heading: "Acquisition finished",
+    outcome: "Finished.",
+    tone: "good",
+  },
+  halted_by_user: {
+    word: "halted by you",
+    heading: "Stopped by you",
+    outcome: "Stopped when you asked, keeping everything it had written.",
+    tone: "plain",
+  },
   halted_on_spend_cap: {
     word: "halted at the spend cap",
     heading: "Halted at the spend cap",
+    outcome: "Stopped at the spend cap, keeping everything it had written.",
     tone: "warn",
   },
   // "Finished" over a run whose process was killed would be a plausible sentence that is false.
-  failed: { word: "failed", heading: "Acquisition did not finish", tone: "bad" },
+  failed: {
+    word: "failed",
+    heading: "Acquisition did not finish",
+    outcome: "Did not finish.",
+    tone: "bad",
+  },
 } as const satisfies Record<Run["run_status"] | "stopping", RunStatusWords>;
 
 /** A status this client does not know: said as not known, never printed as the wire has it. */
 const NOT_KNOWN: RunStatusWords = {
   word: "status not known",
   heading: "Acquisition",
+  outcome: "Its status is not known.",
   tone: "plain",
 };
 

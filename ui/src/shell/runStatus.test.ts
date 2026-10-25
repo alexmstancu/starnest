@@ -20,9 +20,10 @@ describe("a run's status in words", () => {
 
   it("never shows a wire identifier", () => {
     for (const status of [...contractStatuses(), "stopping"]) {
-      const { word, heading } = describeRunStatus(status);
+      const { word, heading, outcome } = describeRunStatus(status);
       expect(word).not.toMatch(/_/);
       expect(heading).not.toMatch(/_/);
+      expect(outcome).not.toMatch(/_/);
     }
   });
 
@@ -30,12 +31,13 @@ describe("a run's status in words", () => {
   it("keeps a stop by the reader apart from a halt at the spend cap", () => {
     const byYou = describeRunStatus("halted_by_user");
     const atTheCap = describeRunStatus("halted_on_spend_cap");
-    expect(byYou).toEqual({ word: "halted by you", heading: "Stopped by you", tone: "plain" });
-    expect(atTheCap).toEqual({
+    expect(byYou).toMatchObject({ word: "halted by you", heading: "Stopped by you", tone: "plain" });
+    expect(atTheCap).toMatchObject({
       word: "halted at the spend cap",
       heading: "Halted at the spend cap",
       tone: "warn",
     });
+    expect(byYou.outcome).not.toBe(atTheCap.outcome);
   });
 
   it("says a status it does not know is not known, rather than printing it", () => {

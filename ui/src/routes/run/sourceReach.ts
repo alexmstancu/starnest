@@ -18,6 +18,7 @@
  */
 
 import { sourceName } from "../../format/display";
+import { describeRunStatus } from "../../shell/runStatus";
 
 export interface SourceReach {
   data_source?: string | null;
@@ -176,19 +177,9 @@ export function outcomeSentence(
   return `${opening(status)} ${parts.join(", ")}.`;
 }
 
+/** The outcome line's opening, in the words every place a run's status appears uses (PL-122). */
 function opening(status: string): string {
-  switch (status) {
-    case "completed":
-      return "Finished.";
-    case "halted_on_spend_cap":
-      return "Stopped at the spend cap, keeping everything it had written.";
-    case "halted_by_user":
-      return "Stopped when you asked, keeping everything it had written.";
-    case "failed":
-      return "Did not finish.";
-    default:
-      return `${status}.`;
-  }
+  return describeRunStatus(status).outcome;
 }
 
 
