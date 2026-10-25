@@ -419,6 +419,23 @@ export function useRunScreen(
     void readOpening(newest.id);
   }, [runs, unclaimed, readOpening]);
 
+  /**
+   * Reads one run back and shows it. **A read changes nothing and costs nothing**, so a refusal
+   * of it offers Try again, which claims the card afresh and reads again (P1-14).
+   */
+  function readBack(runId: number, { focus = false }: { focus?: boolean } = {}): Promise<void> {
+    const ticket = claim(runId);
+    setArmed(null);
+    return act(
+      "opening",
+      async () => {
+        await watch(ticket, runId);
+        if (focus) focusCardOf(ticket, runId);
+      },
+      { runId, resend: () => readBack(runId, { focus }) },
+    );
+  }
+
   return {
     // Read during the render: every act claims inside a handler that also sets state.
     opening:
@@ -532,10 +549,7 @@ export function useRunScreen(
       setArmed(null);
     },
     refresh: () => {
-      if (!current) return;
-      setArmed(null);
-      const ticket = claim(current.id);
-      void act("opening", () => watch(ticket, current.id), { runId: current.id });
+      if (current) void readBack(current.id);
     },
     close: clear,
     stop: () => {
@@ -565,18 +579,7 @@ export function useRunScreen(
     },
     // Through `act` like everything else. A backend that is down or a run that cannot be read
     // now says so, where before the promise rejected into nothing and the click looked ignored.
-    open: (run) => {
-      const ticket = claim(run.id);
-      setArmed(null);
-      void act(
-        "opening",
-        async () => {
-          await watch(ticket, run.id);
-          focusCardOf(ticket, run.id);
-        },
-        { runId: run.id },
-      );
-    },
+    open: (run) => void readBack(run.id, { focus: true }),
   };
 }
 

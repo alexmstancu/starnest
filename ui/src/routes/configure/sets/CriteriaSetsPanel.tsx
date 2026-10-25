@@ -1,4 +1,4 @@
-import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { ActRefusal } from "../../../shell/ActRefusal";
 import { useSelection } from "../../../shell/SelectionContext";
 import { useCriteriaSets } from "./useCriteriaSets";
 
@@ -47,7 +47,7 @@ export function CriteriaSetsPanel() {
         </div>
       </header>
 
-      {form.failure !== null && <ErrorNotice error={form.failure} />}
+      <ActRefusal act="The change to the criteria sets" error={form.failure} />
 
       <ul className="set-list">
         {criteriaSets.map((set) => {

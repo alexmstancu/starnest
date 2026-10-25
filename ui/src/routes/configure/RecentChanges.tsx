@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from "react";
-import { ErrorNotice } from "../../shell/ErrorNotice";
+import { ActRefusal } from "../../shell/ActRefusal";
 import { describeReach, describeWhen, reachOf } from "./changeHistory";
 import type { ChangeHistory } from "./useChangeHistory";
 import { useFocusAfterUndo } from "./useFocusAfterUndo";
@@ -104,7 +104,7 @@ export function RecentChanges({
 
       {/* Outside the collapse: a refusal to undo is about what the server holds now, and
           hiding it behind a caret would let the screen and the database disagree unnoticed. */}
-      {history.failure !== null && <ErrorNotice error={history.failure} />}
+      <ActRefusal act="Going back" error={history.failure} />
 
       {shown &&
         (history.changes.length === 0 ? (

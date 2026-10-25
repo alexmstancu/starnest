@@ -1,8 +1,8 @@
 import { useRef, useState } from "react";
 import type { MatchRuleResult } from "../../../api/endpoints";
 import { formatMoney } from "../../../format/display";
+import { ActRefusal } from "../../../shell/ActRefusal";
 import { CheckboxField } from "../../../shell/CheckboxField";
-import { ErrorNotice } from "../../../shell/ErrorNotice";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { describePeriod } from "./proposalReading";
 import { proposalKey, useFocusAfterConfirm } from "./useFocusAfterConfirm";
@@ -72,7 +72,7 @@ export function ProposalsPanel({
         it. Researching costs money.
       </p>
 
-      {proposals.failure !== null && <ErrorNotice error={proposals.failure} />}
+      <ActRefusal act={proposals.failedAct} error={proposals.failure} onResend={proposals.resend ?? undefined} />
 
       <div className="rule-form__actions">
         <button
@@ -165,7 +165,7 @@ export function ProposalsPanel({
       >
         {pass.statusLine?.text}
       </p>
-      {pass.failure !== null && <ErrorNotice error={pass.failure} />}
+      <ActRefusal act="The research pass" error={pass.failure} />
 
       {pass.refusals.length > 0 && (
         <>

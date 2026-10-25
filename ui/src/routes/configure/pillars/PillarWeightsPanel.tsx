@@ -10,7 +10,7 @@ import { formatPercentage, pillarName } from "../../../format/display";
 import type { ChangeHistory } from "../useChangeHistory";
 import { useNotePillarChange } from "./useNotePillarChange";
 import type { PillarAnswers } from "./usePillarAnswers";
-import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { ActRefusal } from "../../../shell/ActRefusal";
 import { useWeightDrag } from "../useWeightDrag";
 import {
   comesToAHundred,
@@ -176,7 +176,7 @@ export function PillarWeightsPanel({
       {/* No "try again" button: the way to retry a save is the save button, which is still
           there. A second control that only cleared the message would offer a retry it does not
           perform. */}
-      {failure !== null && <ErrorNotice error={failure} />}
+      <ActRefusal act="The weight change" error={failure} />
 
       <div className="stage__summary">
         {/* The design's own line, verbatim. It reads oddly beside a pillar total -- the rule

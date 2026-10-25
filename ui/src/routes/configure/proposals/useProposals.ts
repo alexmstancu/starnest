@@ -47,6 +47,10 @@ export interface Proposals {
   busy: "estimating" | "confirming" | null;
   /** The last refusal from an estimate or a confirmation. Shown, never swallowed. */
   failure: unknown;
+  /** Which of the two was refused, as the subject of a sentence. */
+  failedAct: string;
+  /** Sends a refused estimate again; null for a confirmation, which is never resent (P1-14). */
+  resend: (() => Promise<void>) | null;
   estimate: (level: string) => void;
   /** The pass the estimate allowed has started, so it allows no other (UI-14). */
   forgetPlan: () => void;
@@ -75,6 +79,7 @@ export function useProposals(
   const [plan, setPlan] = useState<ResearchPlan | null>(null);
   const [busy, setBusy] = useState<Proposals["busy"]>(null);
   const [failure, setFailure] = useState<unknown>(null);
+  const [failed, setFailed] = useState<{ act: Proposals["busy"]; work: () => Promise<unknown> } | null>(null);
 
   // A ref, because two presses in one tick would both pass a check on state that has not
   // re-rendered yet.
@@ -93,7 +98,10 @@ export function useProposals(
     setBusy(act);
     setFailure(null);
     void work()
-      .catch((error: unknown) => setFailure(error))
+      .catch((error: unknown) => {
+        setFailure(error);
+        setFailed({ act, work });
+      })
       .finally(() => {
         inFlight.current = false;
         setBusy(null);
@@ -109,6 +117,14 @@ export function useProposals(
     plan,
     busy,
     failure,
+    failedAct: failed?.act === "confirming" ? "The confirmation" : "The estimate",
+    resend:
+      failed?.act === "estimating"
+        ? () => {
+            attempt("estimating", failed.work);
+            return Promise.resolve();
+          }
+        : null,
     estimate: (level) =>
       attempt("estimating", async () => {
         setPlan(await planMatchRuleResearch({ level }));

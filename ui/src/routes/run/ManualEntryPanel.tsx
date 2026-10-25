@@ -2,7 +2,7 @@ import { useCallback, useId } from "react";
 import { fetchCandidates } from "../../api/endpoints";
 import { useRead } from "../../api/useRead";
 import { useSourceNames } from "../../api/useSourceNames";
-import { ErrorNotice } from "../../shell/ErrorNotice";
+import { ActRefusal } from "../../shell/ActRefusal";
 import { LoadedRegion } from "../../shell/LoadedRegion";
 import { alwaysAsked } from "./alwaysAsked";
 import { candidateName, sourceName } from "../../format/display";
@@ -176,7 +176,7 @@ export function ManualEntryPanel({
         </div>
       )}
 
-      {entry.failure !== null && <ErrorNotice error={entry.failure} />}
+      <ActRefusal act="Storing the figure" error={entry.failure} />
 
       {entry.saved !== null && (
         /* **What it stored, not "done".** A figure written into the corpus is worth reading

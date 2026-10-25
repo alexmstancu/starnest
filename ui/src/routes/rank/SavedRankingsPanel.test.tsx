@@ -223,6 +223,25 @@ describe("saved rankings", () => {
     expect(screen.getByLabelText(/worth keeping/i)).toHaveValue("worth keeping");
   });
 
+  /** PL-004, P1-14: a refused save is dismissed, never sent again from the refusal. */
+  it("offers Dismiss and no Try again when a save was refused", async () => {
+    renderShell("/rank");
+    await userEvent.click(await armedSave());
+    mockServer.use(
+      http.post("/v1/evaluations", () =>
+        HttpResponse.json({ code: "score_scale_not_set", message: "x" }, { status: 409 }),
+      ),
+    );
+    await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+    const refusal = within(await screen.findByRole("alert"));
+    expect(refusal.getByText(/saving the ranking did not go through/i)).toBeInTheDocument();
+    expect(refusal.queryByRole("button", { name: "Try again" })).toBeNull();
+
+    await userEvent.click(refusal.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("reports a failure to list what has been saved", async () => {
     mockServer.use(http.get("/v1/evaluations", () => HttpResponse.error()));
     renderShell("/rank");
@@ -724,7 +743,8 @@ describe("the save control (PL-146)", () => {
     expect(await within(await savedList()).findByText(/none yet/i)).toBeInTheDocument();
   });
 
-  it("tries the save again from its failure, rather than only dismissing it", async () => {
+  /** P1-14: a save is not resent from its refusal; the form keeps the note, and Save sends it. */
+  it("saves again from the form after a failure, which offers no Try again", async () => {
     mockServer.use(http.post("/v1/evaluations", () => HttpResponse.error(), { once: true }));
     renderShell("/rank");
     await userEvent.click(await armedSave());
@@ -732,7 +752,8 @@ describe("the save control (PL-146)", () => {
     await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
 
     const failure = await screen.findByRole("alert");
-    await userEvent.click(within(failure).getByRole("button", { name: /try again/i }));
+    expect(within(failure).queryByRole("button", { name: /try again/i })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
 
     expect(
       await within(await savedList()).findByText("second time lucky"),

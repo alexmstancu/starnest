@@ -230,6 +230,43 @@ describe("a refused act", () => {
     expect(starts).toBe(1);
   });
 
+  it("reads a run again on Try again when reading it back failed", async () => {
+    renderShell("/acquire");
+    await screen.findByRole("region", { name: /acquisition 7/i });
+    failTheNextReadOf(6).release();
+    await openFromHistory("6");
+    const refusal = within(await screen.findByRole("alert"));
+    expect(refusal.getByText("Reading acquisition 6 did not go through")).toBeInTheDocument();
+
+    await userEvent.click(refusal.getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByRole("region", { name: /acquisition 6/i })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("offers Dismiss and no Try again when a stop was refused", async () => {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
+        HttpResponse.json({
+          ...STARTED_RUN_DETAIL,
+          id: Number(params["runId"]),
+          run_status: "running",
+          finished_at: null,
+        }),
+      ),
+      http.post(`${BASE}/data-acquisition-runs/:runId/stop`, () =>
+        HttpResponse.json({ code: "not_found", message: "x" }, { status: 404 }),
+      ),
+    );
+    renderShell("/acquire");
+    const card = within(await screen.findByRole("region", { name: /acquisition 7/i }));
+    await userEvent.click(card.getByRole("button", { name: /stop — keep what completed/i }));
+
+    const refusal = within(await screen.findByRole("alert"));
+    expect(refusal.getByText("Stopping acquisition 7 did not go through")).toBeInTheDocument();
+    expect(refusal.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
   it("says it is not known whether a start that got no answer began", async () => {
     mockServer.use(http.post(`${BASE}/data-acquisition-runs`, () => HttpResponse.error()));
     renderShell("/acquire");

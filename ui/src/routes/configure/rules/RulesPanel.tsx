@@ -7,7 +7,7 @@ import {
 import { useCandidateNames } from "../../../api/useCandidateNames";
 import type { Read } from "../../../api/read";
 import { candidateName } from "../../../format/display";
-import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { ActRefusal } from "../../../shell/ActRefusal";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import {
   describeCompoundEffect,
@@ -46,7 +46,7 @@ export function RulesPanel({
 
   return (
     <>
-      {rules.failure !== null && <ErrorNotice error={rules.failure} />}
+      <ActRefusal act="The change to the gate" error={rules.failure} />
 
       {/* Said once, at the top, because the difference between the two kinds is the thing a
           reader has to hold while reading either list. The disc marks it as the note that

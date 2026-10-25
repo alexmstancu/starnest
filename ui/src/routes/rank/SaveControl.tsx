@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { describeSaved } from "../../format/savedRanking";
-import { ErrorNotice } from "../../shell/ErrorNotice";
+import { ActRefusal } from "../../shell/ActRefusal";
 import { useSelection } from "../../shell/SelectionContext";
 import { useSavedRankings } from "./useSavedRankings";
 
@@ -122,9 +122,8 @@ export function SaveControl({
               : "Nothing is kept until you save it."}
       </span>
 
-      {saved.error != null && (
-        <ErrorNotice error={saved.error} onRetry={() => void keep()} />
-      )}
+      {/* A save is never sent again from its refusal (P1-14): Save is still there to press. */}
+      <ActRefusal act="Saving the ranking" error={saved.error} />
     </div>
   );
 }

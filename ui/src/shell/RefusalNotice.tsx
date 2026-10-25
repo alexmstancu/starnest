@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { type ReactNode, useLayoutEffect, useRef } from "react";
 import { presentError } from "../api/errorPresentation";
 
 /**
@@ -15,6 +15,7 @@ export function RefusalNotice({
   note,
   onDismiss,
   onResend,
+  children,
 }: {
   /** What was attempted, as the subject of a sentence: "The estimate". */
   act: string;
@@ -23,6 +24,8 @@ export function RefusalNotice({
   note?: string;
   onDismiss: () => void;
   onResend?: () => Promise<void>;
+  /** What the refusal names, drawn inside it. */
+  children?: ReactNode;
 }) {
   // **Dismiss and Try again take their own buttons away**, so focus goes back to the control
   // whose act was refused -- held when the refusal appeared -- rather than falling to the page.
@@ -40,6 +43,7 @@ export function RefusalNotice({
       <p className="failure-card__title">{act} did not go through</p>
       <p>{presentError(error).message}</p>
       {note !== undefined && <p>{note}</p>}
+      {children}
       <div className="failure-card__acts">
         {onResend && (
           <button

@@ -1155,6 +1155,46 @@ describe("the gate proposals while a write is in flight", () => {
     await waitFor(() => expect(estimates.sent).toBe(2));
   });
 
+  /** PL-004, P1-14: an estimate spends nothing, so its refusal offers to send it again. */
+  it.each([
+    ["answers", 1, "Gate proposals"],
+    ["is refused again", 2, "The estimate did not go through"],
+  ])("sends a refused estimate again on Try again, which %s", async (_case, refusals, expected) => {
+    let sent = 0;
+    mockServer.use(
+      http.post(`${BASE}/match-rule-research/plan`, () => {
+        sent += 1;
+        return sent <= refusals ? refused("SENTINEL_MESSAGE")() : undefined;
+      }),
+    );
+    renderShell("/configure");
+    await settled();
+    await userEvent.click(estimateButton());
+    const refusal = within(await theProposals().findByRole("alert"));
+    expect(refusal.getByText("The estimate did not go through")).toBeInTheDocument();
+
+    await userEvent.click(refusal.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(sent).toBe(2));
+    if (refusals === 1) {
+      expect(await theProposals().findByText(/gate answers to research/i)).toBeInTheDocument();
+      expect(theProposals().queryByRole("alert")).toBeNull();
+    } else {
+      expect(await theProposals().findByText(expected)).toBeInTheDocument();
+    }
+  });
+
+  it("offers Dismiss and no Try again when a confirmation was refused", async () => {
+    hold("put", CONFIRMATIONS, refused("SENTINEL_MESSAGE")).release();
+    renderShell("/configure");
+    await settled();
+    await userEvent.click(await theProposals().findByRole("button", { name: CONFIRM }));
+
+    const refusal = within(await theProposals().findByRole("alert"));
+    expect(refusal.getByText("The confirmation did not go through")).toBeInTheDocument();
+    expect(refusal.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
   it("lets go of Estimate after a refused estimate, with focus still on it", async () => {
     const user = userEvent.setup();
     const estimates = hold(

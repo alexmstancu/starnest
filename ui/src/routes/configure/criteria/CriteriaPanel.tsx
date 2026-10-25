@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import type { Criterion, CriterionRule } from "../../../api/endpoints";
 import { lockedAttributes } from "../../../api/errorPresentation";
 import { formatPercentage, pillarName } from "../../../format/display";
-import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { ActRefusal } from "../../../shell/ActRefusal";
 import { useEffect, useRef, useState } from "react";
 import type { CriteriaEditor } from "../useCriteriaEditor";
 import { useWeightDrag } from "../useWeightDrag";
@@ -495,23 +495,24 @@ function SaveFailure({
 
   return (
     <div className="save-failure">
-      <ErrorNotice error={error} />
-      {locked.length > 0 && (
-        <>
-          <p className="screen__note" id="lock-list-heading">
-            Locked, so unable to absorb the change:
-          </p>
-          {/* Named, because these attributes also appear in the rows above: a reader arriving
-              at the list out of context needs to be told which one it is -- by the name those
-              rows use, and in the same words. It was `<code>` around the id, which told them
-              to go looking for a key that is nowhere on the screen. */}
-          <ul className="lock-list" aria-labelledby="lock-list-heading">
-            {locked.map((attribute) => (
-              <li key={attribute}>{titleOf(attribute, catalog?.get(attribute))}</li>
-            ))}
-          </ul>
-        </>
-      )}
+      <ActRefusal act="The weight change" error={error}>
+        {locked.length > 0 && (
+          <>
+            <p className="screen__note" id="lock-list-heading">
+              Locked, so unable to absorb the change:
+            </p>
+            {/* Named, because these attributes also appear in the rows above: a reader arriving
+                at the list out of context needs to be told which one it is -- by the name those
+                rows use, and in the same words. It was `<code>` around the id, which told them
+                to go looking for a key that is nowhere on the screen. */}
+            <ul className="lock-list" aria-labelledby="lock-list-heading">
+              {locked.map((attribute) => (
+                <li key={attribute}>{titleOf(attribute, catalog?.get(attribute))}</li>
+              ))}
+            </ul>
+          </>
+        )}
+      </ActRefusal>
     </div>
   );
 }

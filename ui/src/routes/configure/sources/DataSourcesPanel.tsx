@@ -1,4 +1,4 @@
-import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { ActRefusal } from "../../../shell/ActRefusal";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { Stage } from "../Stage";
 import { inPriorityOrder, positionsOf } from "./sourceOrder";
@@ -79,7 +79,7 @@ export function DataSourcesPanel({
       }
     >
       {/* No "try again" here: a change is retried by making it again. */}
-      {sources.failure !== null && <ErrorNotice error={sources.failure} />}
+      <ActRefusal act="The change to the sources" error={sources.failure} />
 
       {sources.read.state !== "idle" && (
         <LoadedRegion

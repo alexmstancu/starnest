@@ -9,6 +9,7 @@ import { candidateOptions } from "./candidateOptions";
 import { CountField } from "./CountField";
 import { useCandidateRosterState } from "../../../api/useCandidateRoster";
 import { ErrorNotice } from "../../../shell/ErrorNotice";
+import { ActRefusal } from "../../../shell/ActRefusal";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { Stage } from "../Stage";
 import { NumberField } from "../../../shell/NumberField";
@@ -119,7 +120,7 @@ function HouseholdFields({
       {/* No "try again" button: the way to retry a save is the save button, which is still
           there. A second control that only cleared the message would offer a retry it does
           not perform. */}
-      {form.failure !== null && <ErrorNotice error={form.failure} />}
+      <ActRefusal act="Saving the household" error={form.failure} />
       {/* **A live region, always there and empty until a save lands** (NEW-42): a screen reader
           announces a change to a region it already knows, so one that appeared already saying
           "Saved." was never read out. */}
