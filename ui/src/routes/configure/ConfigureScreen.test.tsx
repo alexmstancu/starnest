@@ -1094,6 +1094,40 @@ describe("the rail's two undos", () => {
   });
 });
 
+/** PL-141: a merged entry reads from where it started, and one that went nowhere goes. */
+describe("an entry merged from repeated changes", () => {
+  it("reads a weight moved twice in a row as one change from where it started", async () => {
+    renderShell("/configure");
+    await settled();
+    const panel = await historyPanel();
+    await saveWeight(COST_OF_LIVING, "40");
+    await panel.findByText(/Weight for Cost of living index: 50\.0% to 40\.0%/);
+    await waitFor(() =>
+      expectNotHeld(screen.getByRole("slider", { name: `Weight for ${COST_OF_LIVING}` })),
+    );
+
+    await saveWeight(COST_OF_LIVING, "45");
+
+    await panel.findByText("Weight for Cost of living index: 50.0% to 45.0%, in Default");
+    expect(panel.getByText("1 in this session")).toBeInTheDocument();
+  });
+
+  it("drops a lock taken and let go again, whose undo would do nothing", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settled();
+    const panel = await historyPanel();
+    const lock = await findLockAnywhere(COST_OF_LIVING);
+    await user.click(lock);
+    await panel.findByText(`Locked ${COST_OF_LIVING}, in Default`);
+    await waitFor(() => expectNotHeld(lock));
+
+    await user.click(lock);
+
+    await waitFor(() => expect(panel.getByText("No changes yet.")).toBeInTheDocument());
+  });
+});
+
 /**
  * PL-138: every Configure edit is listed in Recent changes with the request that reverses it --
  * a criterion's rule and the source priority among them, not only weights, locks and sets.

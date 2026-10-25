@@ -46,6 +46,19 @@ describe("recording a change", () => {
     expect(history[0]).toMatchObject({ id: 2, before: 10, after: 28 });
   });
 
+  /** PL-141: a gesture that ended where it started changed nothing, and its undo would do nothing. */
+  it("drops a repeat that returns the target to where it started", () => {
+    const history = record(
+      record(record([], change(1, "career", 1, 2)), change(2, "housing", 10, 20)),
+      change(3, "housing", 20, 10),
+    );
+    expect(history.map((each) => each.id)).toEqual([1]);
+  });
+
+  it("drops a change that moved nothing", () => {
+    expect(record([], change(1, "housing", 10, 10))).toEqual([]);
+  });
+
   /**
    * The collapsed entry is the gesture as it now stands, so it carries the newest time: what
    * a reader checks a line against is when they last touched that weight, not when the drag

@@ -130,12 +130,20 @@ export function record<Value>(
     // reading a user checks it against is "when did I last touch this", not when they
     // started. **The earlier caveat survives**: proportions one step destroyed are in no
     // later state either, so the whole gesture cannot be undone exactly.
-    return [
-      { ...change, before: latest.before, caveat: change.caveat ?? latest.caveat },
-      ...history.slice(1),
-    ];
+    const merged = { ...change, before: latest.before, caveat: change.caveat ?? latest.caveat };
+    return [...wentSomewhere(merged), ...history.slice(1)];
   }
-  return [change, ...history];
+  return [...wentSomewhere(change), ...history];
+}
+
+/**
+ * **A change that ended where it started is no change** (PL-141): a lock taken and let go, a
+ * weight dragged back. Its undo would send what is already stored, so it is not listed. Never
+ * one nobody knows took effect, which is listed to be checked whatever it says.
+ */
+function wentSomewhere<Value>(change: Change<Value>): Change<Value>[] {
+  if (change.unconfirmed !== undefined) return [change];
+  return JSON.stringify(change.before) === JSON.stringify(change.after) ? [] : [change];
 }
 
 /** One weight in a pillar, as a rebalance answers with it. */
