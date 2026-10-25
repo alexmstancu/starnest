@@ -85,9 +85,11 @@ export function ProposalsPanel({
 
   return (
     <section className="panel" aria-labelledby="proposals-heading">
-      <h2 id="proposals-heading" className="panel__heading">
+      {/* An h3 under the rules stage's h2, a sibling of Gates and Compound rules (PL-162) --
+          and still an h3 when the panel is drawn alone in that stage, beside an unread set. */}
+      <h3 id="proposals-heading" className="panel__heading">
         Gate proposals
-      </h2>
+      </h3>
       <p className="panel__hint">
         A model can read the official pages about each gate and propose an
         answer with the pages it read. A proposal rules nothing out: confirming

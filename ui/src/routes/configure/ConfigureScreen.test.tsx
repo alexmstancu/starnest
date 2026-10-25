@@ -2115,6 +2115,39 @@ describe("a research pass while the screen changes around it", () => {
     expect(await theProposals().findByText(/no proposal is waiting/i)).toBeInTheDocument();
   });
 
+  /**
+   * PL-162. **The proposals heading nests under the rules stage**, a sibling of Gates and
+   * Compound rules, wherever the panel is drawn: beside a loaded set's rules, or alone in the
+   * stage when the set cannot be read and a pass needs its Stop.
+   */
+  it("heads the proposals one level below the stage, beside the rules and without them", async () => {
+    renderShell("/configure");
+    await settled();
+    await screen.findByRole("region", { name: "Gate proposals" });
+    expect(
+      theProposals().getByRole("heading", { name: "Gate proposals" }),
+    ).toHaveProperty("tagName", "H3");
+
+    await startAPass();
+    await waitFor(() =>
+      expect(theProposals().getByRole("status")).toHaveTextContent(/The last pass/),
+    );
+    mockServer.use(
+      http.get("/v1/criteria-sets/:id", () =>
+        HttpResponse.json(
+          { code: "unavailable", message: "the criteria set could not be read" },
+          { status: 503 },
+        ),
+      ),
+    );
+    await chooseSet("remote-only");
+    expect((await screen.findAllByText("The server failed while answering.")).length).toBeGreaterThan(0);
+
+    expect(
+      theProposals().getByRole("heading", { name: "Gate proposals" }),
+    ).toHaveProperty("tagName", "H3");
+  });
+
   it("goes on asking when the criteria set is switched mid-pass", async () => {
     const research = watchResearch({ holdAt: 2 });
     renderShell("/configure");
