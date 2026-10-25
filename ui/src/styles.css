@@ -5055,3 +5055,17 @@ select.field__control {
   display: flex;
   gap: 8px;
 }
+
+/* ── The selection's own controls, and the sources a retry would ask (PL-124) ─────────── */
+.group__box {
+  flex: none;
+  margin: 0;
+  accent-color: var(--colour-accent);
+}
+
+.confirm__sources {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--colour-warning-deep);
+}

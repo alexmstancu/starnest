@@ -12,12 +12,14 @@ import {
   fetchCriteriaSets,
   fetchRanking,
   fetchRun,
+  planRetry,
   planRun,
   renameCriteriaSet,
   replaceHousehold,
   replaceSettings,
   reorderDataSources,
   researchMatchRules,
+  retryRun,
   setCompoundRuleApplication,
   setMatchRuleEnforcement,
   restoreCriteriaSet,
@@ -30,6 +32,7 @@ import {
 import {
   HOUSEHOLD,
   RESEARCH_CALL_COST_EUR,
+  RUNS,
   RUN_ITEMS,
   RUN_REUSES,
   SETTINGS,
@@ -943,5 +946,80 @@ describe("the mock's estimate with nothing to ask", () => {
       1,
       [{ data_source: "llm", items: 1 }],
     ]);
+  });
+});
+
+/** PL-124. A retry and its estimate go back alike, refusing in the server's order. */
+describe("the mock's retry of exact pairs", () => {
+  const TAX = { candidate: "country.liechtenstein", attribute: "country.total_tax_rate_effective" };
+  const OTHER = { candidate: "country.malta", attribute: "country.homicide_rate" };
+
+  async function refused(act: () => Promise<unknown>): Promise<[string, unknown]> {
+    const error = (await act().catch((thrown: unknown) => thrown)) as ApiError;
+    return [error.code, error.details];
+  }
+
+  it("estimates exactly the selected failures, asking only the source that failed", async () => {
+    const plan = await planRetry(7, { items: "failed", pairs: [TAX] });
+
+    expect([plan.items_total, plan.by_source]).toEqual([1, [{ data_source: "oecd", items: 1 }]]);
+  });
+
+  it("refuses a run with nothing of the kind before it reads the selection", async () => {
+    expect(await refused(() => planRetry(6, { items: "failed", pairs: [OTHER] }))).toEqual([
+      "nothing_to_retry",
+      {},
+    ]);
+    expect(await refused(() => retryRun(6, { items: "unanswered", pairs: [] }))).toEqual([
+      "nothing_to_ask_again",
+      {},
+    ]);
+  });
+
+  it("refuses an empty selection, then one naming a pair the run does not hold", async () => {
+    expect(await refused(() => planRetry(7, { items: "failed", pairs: [] }))).toEqual([
+      "nothing_to_fetch",
+      { reason: "empty_scope" },
+    ]);
+    expect(await refused(() => retryRun(7, { items: "failed", pairs: [TAX, OTHER] }))).toEqual([
+      "selection_not_in_run",
+      { items: "failed", pairs: [OTHER] },
+    ]);
+  });
+
+  it("refuses a retry and its estimate while a run is in flight, naming it", async () => {
+    RUNS.unshift({ ...RUNS[0]!, id: 9, run_status: "running", finished_at: null });
+    try {
+      expect(await refused(() => planRetry(7, { items: "failed", pairs: [TAX] }))).toEqual([
+        "run_already_in_flight",
+        { run: 9 },
+      ]);
+      expect(await refused(() => retryRun(7, { items: "failed", pairs: [TAX] }))).toEqual([
+        "run_already_in_flight",
+        { run: 9 },
+      ]);
+    } finally {
+      RUNS.shift();
+    }
+  });
+
+  it("asks unanswered items of every switched-on source, and refuses with none on", async () => {
+    const plan = await planRetry(7, { items: "unanswered", pairs: [] }).catch(() => null);
+    expect(plan).toBeNull();
+    const asked = await planRetry(7, {
+      items: "unanswered",
+      pairs: [{ candidate: "country.liechtenstein", attribute: "country.overcrowding_rate" }],
+    });
+    expect(asked.by_source).toEqual([{ data_source: "eurostat", items: 1 }]);
+
+    await updateDataSource("eurostat", { is_enabled: false });
+    expect(
+      await refused(() =>
+        planRetry(7, {
+          items: "unanswered",
+          pairs: [{ candidate: "country.liechtenstein", attribute: "country.overcrowding_rate" }],
+        }),
+      ),
+    ).toEqual(["nothing_to_fetch", { reason: "no_source_switched_on" }]);
   });
 });

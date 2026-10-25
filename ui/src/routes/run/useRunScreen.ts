@@ -21,14 +21,15 @@ import {
   fetchHoldings,
   fetchRun,
   fetchSettings,
+  planRetry,
   planRun,
+  retryRun,
   startRun,
   stopRun,
   type Holdings,
   type Run,
   type RunDetail,
   type RunPlan,
-  type RunScope,
 } from "../../api/endpoints";
 import { newestRun, startOfLocalMonth } from "./databaseHolds";
 import { type Commitment, describeCommitment } from "./spendCommitment";
@@ -36,6 +37,7 @@ import { UNCLAIMED, useWatchedRun } from "./useWatchedRun";
 import type { Idle, Read } from "../../api/read";
 import { useRead } from "../../api/useRead";
 import { alwaysAsked } from "./alwaysAsked";
+import { type Proposal, levelOf } from "./runScope";
 import { isUnreachable } from "../../api/reachability";
 
 export type RunAct = "planning" | "running" | "opening" | "stopping";
@@ -65,7 +67,8 @@ export type GapKind = "failed" | "unanswered" | "not_reached" | "everything";
  * cannot undo.
  */
 export interface ArmedRun {
-  scope: RunScope;
+  /** What "Yes" sends: a retry of one run's pairs, or a run scoped to exact pairs (PL-124). */
+  proposal: Proposal;
   plan: RunPlan;
   commitment: Commitment;
   origin: GapKind;
@@ -142,11 +145,10 @@ export interface RunScreenState {
    */
   stop: () => void;
   /**
-   * Estimate a scoped run and arm it. **Scoped rather than a retry**, because
-   * `POST /{runId}/retry` takes only `failed | unanswered` over a whole run -- anything
-   * narrower has to go through `/plan` and then `POST /data-acquisition-runs`.
+   * Estimate a proposal and arm it (PL-124, D32): a retry through `planRetry`, which refuses
+   * as the retry would, or a run scoped to exact pairs through `planRun`.
    */
-  propose: (scope: RunScope, origin: GapKind) => void;
+  propose: (proposal: Proposal, origin: GapKind) => void;
   /**
    * The run whose card the reader should be taken to, and how many times that has been asked,
    * so asking again for the same run moves them again (PL-126). Null until an act asks.
@@ -221,7 +223,7 @@ export function useRunScreen(
   const armed =
     armedState !== null &&
     armedState.armedOn === (current?.id ?? null) &&
-    armedState.scope.level === levelId
+    levelOf(armedState.proposal) === levelId
       ? armedState
       : null;
   // Bumped by every change of selection, so an estimate read for the selection before it arms
@@ -519,7 +521,7 @@ export function useRunScreen(
         }),
       );
     },
-    propose: (scope, origin) => {
+    propose: (proposal, origin) => {
       const version = selectionVersion.current;
       const stillAsked = () => version === selectionVersion.current;
       const armedOn = current?.id ?? null;
@@ -527,7 +529,10 @@ export function useRunScreen(
         setArmed(null);
         setPlan(null);
         setPlanOrigin(null);
-        const planned = await planRun(scope);
+        const planned =
+          proposal.via === "retry"
+            ? await planRetry(proposal.runId, { items: proposal.items, pairs: proposal.pairs })
+            : await planRun(proposal.scope);
         // The cap is read at the moment of arming, not cached: it is a setting somebody may
         // have just changed, and a stale ceiling in a confirmation is worse than none.
         const settings = await fetchSettings();
@@ -539,7 +544,7 @@ export function useRunScreen(
           return;
         }
         setArmed({
-          scope,
+          proposal,
           plan: planned,
           origin,
           armedOn,
@@ -560,10 +565,17 @@ export function useRunScreen(
       void act("running", () =>
         holdingStarts(async () => {
           // Going uncapped is only ever accepted because the strip said so in as many words.
-          const started = await startRun({
-            ...armed.scope,
-            accept_uncapped_spend: armed.commitment.uncapped,
-          }).catch((refused: unknown) => giveTheCardBack(ticket, onCard, refused));
+          const accept_uncapped_spend = armed.commitment.uncapped;
+          const { proposal } = armed;
+          const started = await (
+            proposal.via === "retry"
+              ? retryRun(proposal.runId, {
+                  items: proposal.items,
+                  pairs: proposal.pairs,
+                  accept_uncapped_spend,
+                })
+              : startRun({ ...proposal.scope, accept_uncapped_spend })
+          ).catch((refused: unknown) => giveTheCardBack(ticket, onCard, refused));
           onStarted();
           setArmed(null);
           await watch(ticket, started.id);

@@ -26,7 +26,10 @@ import { OpenToHandEntry } from "./OpenToHandEntry";
 import { RemedyLink } from "./RemedyLink";
 import { UnsourcedAttributes } from "./UnsourcedAttributes";
 import { type Progress, progressBar } from "./runProgress";
-import { scopeFor } from "./runScope";
+import { type Item, type RemedyKind, proposalFor } from "./runScope";
+import { actionLabel } from "./remedyAction";
+import { describeSourcesAsked } from "./sourcesAsked";
+import { type GapSelection, useGapSelection } from "./useGapSelection";
 import {
   acquisitionInFlight,
   inFlight,
@@ -288,6 +291,23 @@ function GapRemedies({
   onCancel: () => void;
 }) {
   const failures = failuresIn(gaps.failed);
+  // The run each gap belongs to, so a selection from one run is retried through it (D32).
+  const runOf = new Map<string, number | null>(
+    [...gaps.failed, ...gaps.unanswered, ...gaps.not_reached].map((gap) => [
+      `${gap.candidate}|${gap.attribute}`,
+      gap.data_acquisition_run,
+    ]),
+  );
+  const failedPicks = useGapSelection(failures, levelId, run.disarm);
+  const unansweredPicks = useGapSelection(gaps.unanswered, levelId, run.disarm);
+  const notReachedPicks = useGapSelection(gaps.not_reached, levelId, run.disarm);
+  // **One action per card, and its label follows the selection** (PL-124): the whole bucket
+  // while nothing is picked, exactly the picked pairs once something is.
+  const proposeFrom = (kind: RemedyKind, all: readonly Item[], picks: GapSelection) =>
+    propose(
+      proposalFor(levelId, kind, picks.chosen.length > 0 ? picks.chosen : all, runOf),
+      kind,
+    );
   return (
     <>
       <GapCard
@@ -307,33 +327,24 @@ function GapRemedies({
                 blast radius, which is the thing a reader can act on. */}
             <p className="gap-card__note">{describeFailures(failures)}</p>
             <ItemGroups
-              // Its picks belong to this level's gaps, so another level starts them again.
-              key={levelId}
               items={failures}
               groupedBy="data_source"
               caption="Which sources broke"
-              level={levelId}
               detailKind="failed"
-              act="Retry"
-              busy={run.busy === "planning"}
-              onSelectionChange={run.disarm}
-              onPropose={(scope) => propose(scope, "failed")}
+              selected={failedPicks.selected}
+              onToggle={failedPicks.toggle}
             />
           </>
         )}
-        {/* **"Retry 12 failed", the design's fixed copy**, with the count in the label: the
-            cards stand side by side and each has its action at its foot. Held while any act is
-            in flight, never disabled (NEW-44); with nothing failing it is inert, since there
-            is nothing to wait for. */}
+        {/* Held while any act is in flight, never disabled (NEW-44); with nothing failing it is
+            inert, since there is nothing to wait for. */}
         <RemedyButton
           primary
           count={gaps.failed.length}
-          label={`Retry ${formatCount(gaps.failed.length)} failed`}
+          label={actionLabel("Retry", gaps.failed.length, "failed", failedPicks)}
           empty="Nothing is failing"
           held={run.busy !== null}
-          onClick={() =>
-            propose(scopeFor(levelId, gaps.failed), "failed")
-          }
+          onClick={() => proposeFrom("failed", failures, failedPicks)}
         />
         <GapEstimate kind="failed" run={run} onCancel={onCancel} />
       </GapCard>
@@ -352,28 +363,22 @@ function GapRemedies({
       >
         {gaps.unanswered.length > 0 && (
           <ItemGroups
-            key={levelId}
             items={gaps.unanswered}
             groupedBy="attribute"
             caption="Which values went unanswered"
-            level={levelId}
             detailKind="unanswered"
-            act="Retry"
-            busy={run.busy === "planning" || stillRunning !== null}
-            onSelectionChange={run.disarm}
-            onPropose={(scope) => propose(scope, "unanswered")}
+            selected={unansweredPicks.selected}
+            onToggle={unansweredPicks.toggle}
           />
         )}
         {/* "Retry 62 unanswered": the design uses one verb for both buckets and puts the
             difference in the noun. */}
         <RemedyButton
           count={gaps.unanswered.length}
-          label={`Retry ${formatCount(gaps.unanswered.length)} unanswered`}
+          label={actionLabel("Retry", gaps.unanswered.length, "unanswered", unansweredPicks)}
           empty="Nothing went unanswered"
           held={run.busy !== null || stillRunning !== null}
-          onClick={() =>
-            propose(scopeFor(levelId, gaps.unanswered), "unanswered")
-          }
+          onClick={() => proposeFrom("unanswered", gaps.unanswered, unansweredPicks)}
         />
         <GapEstimate kind="unanswered" run={run} onCancel={onCancel} />
       </GapCard>
@@ -385,25 +390,19 @@ function GapRemedies({
           lead="No source was asked yet. Worth asking."
         >
           <ItemGroups
-            key={levelId}
             items={gaps.not_reached}
             groupedBy="attribute"
             caption="Which values were not reached"
-            level={levelId}
             detailKind="not_reached"
-            act="Ask"
-            busy={run.busy === "planning"}
-            onSelectionChange={run.disarm}
-            onPropose={(scope) => propose(scope, "not_reached")}
+            selected={notReachedPicks.selected}
+            onToggle={notReachedPicks.toggle}
           />
           <RemedyButton
             count={gaps.not_reached.length}
-            label={`Ask ${formatCount(gaps.not_reached.length)} not reached`}
+            label={actionLabel("Ask", gaps.not_reached.length, "not reached", notReachedPicks)}
             empty=""
             held={run.busy !== null}
-            onClick={() =>
-              propose(scopeFor(levelId, gaps.not_reached), "not_reached")
-            }
+            onClick={() => proposeFrom("not_reached", gaps.not_reached, notReachedPicks)}
           />
           <GapEstimate kind="not_reached" run={run} onCancel={onCancel} />
         </GapCard>
@@ -551,6 +550,7 @@ function GapEstimate({
               role="alert"
             >
               <p className="confirm__message">{armed.commitment.sentence}</p>
+              <SourcesAsked plan={armed.plan} />
               <div className="confirm__acts">
                 <HeldButton
                   className="button button--primary"
@@ -571,6 +571,12 @@ function GapEstimate({
           )}
     </div>
   );
+}
+
+/** Which sources the armed acquisition would ask, named before anything is agreed to (PL-124). */
+function SourcesAsked({ plan }: { plan: RunPlan }) {
+  const sentence = describeSourcesAsked(plan, useSourceNames());
+  return sentence === "" ? null : <p className="confirm__sources">{sentence}</p>;
 }
 
 /**

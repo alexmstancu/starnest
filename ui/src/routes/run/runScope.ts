@@ -1,12 +1,9 @@
 /**
- * Turning a selection of failed or unanswered items into a run that asks about exactly those.
- *
- * **Why this is not `POST /{runId}/retry`.** That endpoint takes `items: failed | unanswered`
- * over the whole run and nothing narrower, so anything the reader has picked out has to go
- * through `/data-acquisition-runs/plan` and then `POST /data-acquisition-runs` with a scope.
- * A routing decision, not a limitation: the scope carries what to ask about, and a retry
- * carries only which bucket.
+ * Turning a selection of failed or unanswered items into a run that asks about exactly those
+ * pairs (PL-124, D32): a retry of the run they came from, or a run scoped to the pairs.
  */
+
+import type { RunPair, RunScope } from "../../api/endpoints";
 
 /** One thing a run did not get an answer for. A failure also names the source that refused. */
 export interface Item {
@@ -52,34 +49,50 @@ export function groupBy(
   return [...groups].map(([key, grouped]) => ({ key, items: grouped }));
 }
 
+/** What a remedy card goes over again: its failures, its unanswered items, or what was never asked. */
+export type RemedyKind = "failed" | "unanswered" | "not_reached";
+
 /**
- * The scope a run needs to ask about exactly these items.
+ * How a selection is asked about again (PL-124, D32), always as its exact pairs.
  *
- * **Candidates and attributes are separate lists, so the scope is their product.** Asking
- * about two countries and two attributes asks four questions, not the two that were selected.
- * That is what `RunScope` can express, and pretending otherwise would be the interface
- * inventing a shape the contract does not have -- so the caller is told the real size.
+ * **A retry of the one run they belong to, where there is one**: a failure is then asked only of
+ * the sources that failed on it, and the estimate is the retry's own. A selection spanning
+ * several runs, or pairs no run has asked about, is a run scoped to those pairs, which asks
+ * every switched-on source -- the strip names them before anything is agreed to.
  */
-export function scopeFor(
-  level: string,
-  items: readonly Item[],
-): { level: string; candidates: string[]; attributes: string[] } {
-  return {
-    level,
-    candidates: [...new Set(items.map((item) => item.candidate))].sort(),
-    attributes: [...new Set(items.map((item) => item.attribute))].sort(),
-  };
+export type Proposal =
+  | { via: "retry"; level: string; runId: number; items: "failed" | "unanswered"; pairs: RunPair[] }
+  | { via: "scoped"; scope: RunScope };
+
+/** The distinct pairs of a selection, in the order picked: an item two sources failed on is one. */
+export function pairsOf(items: readonly Item[]): RunPair[] {
+  const pairs = new Map<string, RunPair>();
+  for (const { candidate, attribute } of items) {
+    pairs.set(`${candidate}|${attribute}`, { candidate, attribute });
+  }
+  return [...pairs.values()];
 }
 
 /**
- * How many questions the scope actually asks, as against how many items were picked.
- *
- * They differ whenever the selection is not a full rectangle, and a reader about to spend
- * money is entitled to the real number rather than the flattering one.
+ * The proposal for `items` of one kind, at `level`. `runOf` names the run each pair's gap
+ * belongs to, by `candidate|attribute`; null where no run has asked about it.
  */
-export function questionsIn(scope: {
-  candidates: string[];
-  attributes: string[];
-}): number {
-  return scope.candidates.length * scope.attributes.length;
+export function proposalFor(
+  level: string,
+  kind: RemedyKind,
+  items: readonly Item[],
+  runOf: ReadonlyMap<string, number | null>,
+): Proposal {
+  const pairs = pairsOf(items);
+  const runs = new Set(pairs.map((pair) => runOf.get(`${pair.candidate}|${pair.attribute}`) ?? null));
+  const [only] = runs;
+  if (kind !== "not_reached" && runs.size === 1 && only !== null && only !== undefined) {
+    return { via: "retry", level, runId: only, items: kind, pairs };
+  }
+  return { via: "scoped", scope: { level, pairs } };
+}
+
+/** The level a proposal is at, so one for a level the reader has left is never started. */
+export function levelOf(proposal: Proposal): string {
+  return proposal.via === "retry" ? proposal.level : proposal.scope.level;
 }

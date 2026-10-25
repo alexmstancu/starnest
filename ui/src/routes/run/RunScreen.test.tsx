@@ -22,6 +22,7 @@ import {
   STORED_VALUES,
 } from "../../mocks/fixtures";
 import { type Holdings, type Run, type RunDetail, updateDataSource } from "../../api/endpoints";
+import { presentError } from "../../api/errorPresentation";
 import { formatMoney } from "../../format/display";
 import { mockServer } from "../../mocks/server";
 import {
@@ -266,7 +267,7 @@ describe("an estimate with nothing to ask", () => {
     const { result } = renderHook(() => useRunScreen("country"));
     await waitFor(() => expect(result.current.current?.id).toBe(7));
 
-    act(() => result.current.propose({ level: "country" }, "not_reached"));
+    act(() => result.current.propose({ via: "scoped", scope: { level: "country" } }, "not_reached"));
     await waitFor(() => expect(result.current.plan?.items_total).toBe(0));
 
     expect(result.current.armed).toBeNull();
@@ -448,20 +449,14 @@ describe("running and retrying", () => {
     ).toBeInTheDocument();
   });
 
-  it("arms a confirmation before retrying what failed, then starts a scoped run (UI-02)", async () => {
-    const started: unknown[] = [];
+  it("arms a confirmation before retrying what failed, then retries its run (UI-02, PL-124)", async () => {
     renderShell("/acquire");
     await estimate();
     await userEvent.click(
       screen.getByRole("button", { name: /start this acquisition/i }),
     );
     await screen.findByRole("region", { name: /acquisition 8/i });
-    mockServer.use(
-      http.post(`${BASE}/data-acquisition-runs`, async ({ request }) => {
-        started.push(await request.json());
-        return HttpResponse.json({ id: 12 }, { status: 202 });
-      }),
-    );
+    const started = recordRetries(12);
 
     await userEvent.click(
       await screen.findByRole("button", { name: /^Retry 1 failed$/i }),
@@ -475,12 +470,30 @@ describe("running and retrying", () => {
     await userEvent.click(within(strip).getByRole("button", { name: /yes, start it/i }));
 
     await waitFor(() => expect(started).toHaveLength(1));
-    expect(started[0]).toMatchObject({ level: "country" });
+    // The gap's own run, over exactly its pair: the retry asks only the source that failed.
+    expect(started[0]).toEqual({
+      runId: 7,
+      body: { items: "failed", pairs: [TAX_PAIR], accept_uncapped_spend: false },
+    });
     expect(
       await screen.findByRole("region", { name: /acquisition 12/i }),
     ).toBeInTheDocument();
   });
 });
+
+const TAX_PAIR = { candidate: "country.liechtenstein", attribute: "country.total_tax_rate_effective" };
+
+/** Records every retry sent, with the run it named, and answers with run `id`. */
+function recordRetries(id: number): { runId: number; body: unknown }[] {
+  const sent: { runId: number; body: unknown }[] = [];
+  mockServer.use(
+    http.post(`${BASE}/data-acquisition-runs/:runId/retry`, async ({ params, request }) => {
+      sent.push({ runId: Number(params["runId"]), body: await request.json() });
+      return HttpResponse.json({ ...RUNS[0], id }, { status: 202 });
+    }),
+  );
+  return sent;
+}
 
 /** Serves `gaps` as what the database holds at country level, values stored made to close. */
 function serveGaps(gaps: Partial<Holdings["gaps"]>): void {
@@ -688,8 +701,15 @@ describe("what no source was asked about yet", () => {
     await userEvent.click(card.getByRole("button", { name: "Ask 2 not reached" }));
 
     expect(await card.findByRole("alert")).toBeInTheDocument();
+    // Exact pairs, as a scoped run: what was never asked has no run to retry (PL-124).
     expect(planned).toEqual([
-      { level: "country", candidates: ["country.estonia", "country.spain"], attributes: [TAX_RATE] },
+      {
+        level: "country",
+        pairs: [
+          { candidate: "country.spain", attribute: TAX_RATE },
+          { candidate: "country.estonia", attribute: TAX_RATE },
+        ],
+      },
     ]);
   });
 });
@@ -760,15 +780,9 @@ describe("what nobody answered", () => {
     expect(went.queryByText(/country\./)).toBeNull();
   });
 
-  it("arms a confirmation before asking again, then starts a scoped run (UI-02)", async () => {
-    const started: unknown[] = [];
+  it("arms a confirmation before asking again, then retries its run's unanswered items (UI-02, PL-124)", async () => {
     await openTheRun();
-    mockServer.use(
-      http.post(`${BASE}/data-acquisition-runs`, async ({ request }) => {
-        started.push(await request.json());
-        return HttpResponse.json({ id: 14 }, { status: 202 });
-      }),
-    );
+    const started = recordRetries(14);
 
     await userEvent.click(screen.getByRole("button", { name: /^Retry 2 unanswered$/i }));
 
@@ -780,7 +794,7 @@ describe("what nobody answered", () => {
     await userEvent.click(within(strip).getByRole("button", { name: /yes, start it/i }));
 
     await waitFor(() => expect(started).toHaveLength(1));
-    expect(started[0]).toMatchObject({ level: "country" });
+    expect(started[0]).toMatchObject({ runId: 7, body: { items: "unanswered" } });
     expect(
       await screen.findByRole("region", { name: /acquisition 14/i }),
     ).toBeInTheDocument();
@@ -1130,8 +1144,10 @@ describe("a run's progress", () => {
 });
 
 /**
- * UX review C. `POST /{runId}/retry` takes only `failed | unanswered` over a whole run, so a
- * narrower selection goes through `/plan` and then `POST /data-acquisition-runs` with a scope.
+ * PL-124, D32. **A selection is asked about as its exact pairs**: through the retry of the run
+ * its gaps belong to, estimated by `planRetry`, so a failure is asked only of the source that
+ * failed; a selection spanning runs is a run scoped to those pairs. The card has one action,
+ * and its label follows the selection.
  */
 describe("re-asking about part of a run", () => {
   async function openRun() {
@@ -1142,6 +1158,30 @@ describe("re-asking about part of a run", () => {
       screen.getByRole("button", { name: /start this acquisition/i }),
     );
     await screen.findByRole("region", { name: /acquisition 8/i });
+  }
+
+  function failedCard() {
+    return within(screen.getByRole("region", { name: /^1\s*failed$/ }));
+  }
+
+  async function selectEveryFailure(): Promise<void> {
+    const group = within(await screen.findByRole("region", { name: /which sources broke/i }));
+    await userEvent.click(group.getByRole("button", { name: "Select all" }));
+  }
+
+  function recordPlans(): { retries: { runId: number; body: unknown }[]; scoped: unknown[] } {
+    const sent = { retries: [] as { runId: number; body: unknown }[], scoped: [] as unknown[] };
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/:runId/retry/plan`, async ({ params, request }) => {
+        sent.retries.push({ runId: Number(params["runId"]), body: await request.json() });
+        return undefined;
+      }),
+      http.post(`${BASE}/data-acquisition-runs/plan`, async ({ request }) => {
+        sent.scoped.push(await request.clone().json());
+        return undefined;
+      }),
+    );
+    return sent;
   }
 
   /**
@@ -1167,151 +1207,198 @@ describe("re-asking about part of a run", () => {
         name: /which values went unanswered/i,
       }),
     );
-    // The group head is the attribute's name, as a failure's head is its source's.
     expect(
       group.getByRole("button", { name: /^Overcrowding rate 1 item$/i }),
     ).toBeInTheDocument();
   });
 
-  /**
-   * **Nothing is picked until somebody picks**, which is the design's own initial state. The
-   * card's action already covers the whole bucket, so a list that opened with everything ticked
-   * made the selection meaningless -- it could only ever narrow, and it started at everything.
-   */
-  it("starts with nothing selected, and selects all on request", async () => {
+  it("has one action, whose label follows the selection", async () => {
     await openRun();
-    const group = within(
-      await screen.findByRole("region", { name: /which sources broke/i }),
-    );
+    expect(failedCard().getByRole("button", { name: "Retry 1 failed" })).toBeInTheDocument();
 
-    expect(
-      group.getByRole("button", { name: /^Retry 0 selected$/ }),
-    ).toBeDisabled();
+    await selectEveryFailure();
 
-    await userEvent.click(group.getByRole("button", { name: "Select all" }));
+    expect(failedCard().getByRole("button", { name: "Retry 1 selected" })).toBeInTheDocument();
+    expect(failedCard().queryByRole("button", { name: /^Retry \d+ failed$/ })).toBeNull();
 
-    expect(
-      group.getByRole("button", { name: /^Retry 1 selected$/ }),
-    ).toBeEnabled();
+    await userEvent.click(failedCard().getByRole("button", { name: "Clear all" }));
+    expect(failedCard().getByRole("button", { name: "Retry 1 failed" })).toBeInTheDocument();
+  });
+
+  it("estimates a selection through its run's retry, over exactly its pairs", async () => {
+    await openRun();
+    const sent = recordPlans();
+    await selectEveryFailure();
+
+    await userEvent.click(screen.getByRole("button", { name: "Retry 1 selected" }));
+
+    await screen.findByRole("button", { name: /yes, start it/i });
+    expect(sent.retries).toEqual([{ runId: 7, body: { items: "failed", pairs: [TAX_PAIR] } }]);
+    expect(sent.scoped).toEqual([]);
   });
 
   /**
-   * The routing decision, made visible: a narrow selection plans a *new* run rather than
-   * calling the retry endpoint, which cannot express anything narrower than a whole bucket.
+   * UX review D. Nothing that can spend fires on a click, and the strip names the sources the
+   * retry would ask -- only the one that failed.
    */
-  it("plans a scoped run rather than calling the retry endpoint", async () => {
-    const planned: unknown[] = [];
-    const retried: number[] = [];
+  it("arms a confirmation naming the sources it would ask", async () => {
     await openRun();
-    // Installed *after* the run is on screen: overriding the start endpoint beforehand would
-    // break the very setup this test depends on.
-    mockServer.use(
-      http.post(`${BASE}/data-acquisition-runs/plan`, async ({ request }) => {
-        planned.push(await request.json());
-        return HttpResponse.json(RUN_PLAN);
-      }),
-      http.post(`${BASE}/data-acquisition-runs/:runId/retry`, ({ params }) => {
-        retried.push(Number(params["runId"]));
-        return HttpResponse.json({ id: 12 }, { status: 202 });
-      }),
-    );
-    const group = within(
-      await screen.findByRole("region", { name: /which sources broke/i }),
-    );
+    await selectEveryFailure();
 
-    await userEvent.click(group.getByRole("button", { name: "Select all" }));
-    await userEvent.click(
-      group.getByRole("button", { name: /^Retry 1 selected$/ }),
-    );
-
-    expect(retried).toEqual([]);
-    expect(planned.at(-1)).toEqual({
-      level: "country",
-      candidates: ["country.liechtenstein"],
-      attributes: ["country.total_tax_rate_effective"],
-    });
-  });
-
-  /**
-   * UX review D. Nothing that can spend fires on a click: the estimate already said what it
-   * would cost, and this is the step between reading that and it happening.
-   */
-  it("arms a confirmation rather than starting immediately", async () => {
-    await openRun();
-    const group = within(
-      await screen.findByRole("region", { name: /which sources broke/i }),
-    );
-
-    await userEvent.click(group.getByRole("button", { name: "Select all" }));
-    await userEvent.click(
-      group.getByRole("button", { name: /^Retry 1 selected$/ }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: "Retry 1 selected" }));
 
     const strip = await screen.findByRole("alert");
-    expect(strip).toHaveTextContent(/This starts a new acquisition over 96 values from acquisition 8\./);
-    // The shipped plan asks no paid source, and saying so plainly is what stops a reader
-    // learning to click past the confirmations that do cost something.
+    expect(strip).toHaveTextContent(/This starts a new acquisition over 1 values/);
+    expect(strip).toHaveTextContent("It asks OECD about 1 item.");
     expect(strip).toHaveTextContent(/costs nothing/i);
-    expect(
-      within(strip).getByRole("button", { name: /yes, start it/i }),
-    ).toBeEnabled();
   });
 
   it("starts nothing when the confirmation is cancelled", async () => {
-    const started: unknown[] = [];
     await openRun();
-    mockServer.use(
-      http.post(`${BASE}/data-acquisition-runs`, async ({ request }) => {
-        started.push(await request.json());
-        return HttpResponse.json({ id: 12 }, { status: 202 });
-      }),
-    );
-    const group = within(
-      await screen.findByRole("region", { name: /which sources broke/i }),
-    );
-    await userEvent.click(group.getByRole("button", { name: "Select all" }));
-    await userEvent.click(
-      group.getByRole("button", { name: /^Retry 1 selected$/ }),
-    );
+    const started = recordRetries(12);
+    await selectEveryFailure();
+    await userEvent.click(screen.getByRole("button", { name: "Retry 1 selected" }));
 
     const strip = await screen.findByRole("alert");
-    await userEvent.click(
-      within(strip).getByRole("button", { name: "Not yet" }),
-    );
+    await userEvent.click(within(strip).getByRole("button", { name: "Not yet" }));
 
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     expect(started).toEqual([]);
   });
 
-  it("starts the scoped run once it is agreed to", async () => {
-    const started: unknown[] = [];
+  it("retries exactly the selection once it is agreed to", async () => {
     await openRun();
-    mockServer.use(
-      http.post(`${BASE}/data-acquisition-runs`, async ({ request }) => {
-        started.push(await request.json());
-        return HttpResponse.json({ id: 12 }, { status: 202 });
-      }),
-    );
-    const group = within(
-      await screen.findByRole("region", { name: /which sources broke/i }),
-    );
-    await userEvent.click(group.getByRole("button", { name: "Select all" }));
-    await userEvent.click(
-      group.getByRole("button", { name: /^Retry 1 selected$/ }),
-    );
+    const started = recordRetries(12);
+    await selectEveryFailure();
+    await userEvent.click(screen.getByRole("button", { name: "Retry 1 selected" }));
 
     const strip = await screen.findByRole("alert");
-    await userEvent.click(
-      within(strip).getByRole("button", { name: /yes, start it/i }),
-    );
+    await userEvent.click(within(strip).getByRole("button", { name: /yes, start it/i }));
 
     await waitFor(() => expect(started).toHaveLength(1));
-    expect(started[0]).toMatchObject({
-      level: "country",
-      candidates: ["country.liechtenstein"],
-      attributes: ["country.total_tax_rate_effective"],
-      accept_uncapped_spend: false,
+    expect(started[0]).toEqual({
+      runId: 7,
+      body: { items: "failed", pairs: [TAX_PAIR], accept_uncapped_spend: false },
     });
+  });
+
+  it("scopes a selection spanning two runs to its pairs, naming every source asked", async () => {
+    const malta = { candidate: "country.malta", attribute: "country.homicide_rate" };
+    serveGaps({
+      failed: [
+        { ...TAX_PAIR, data_acquisition_run: 7, failures: [{ data_source: "eurostat", error_message: "late" }] },
+        { ...malta, data_acquisition_run: 6, failures: [{ data_source: "eurostat", error_message: "late" }] },
+      ],
+    });
+    renderShell("/acquire");
+    const sent = recordPlans();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Retry 2 failed" }));
+
+    const strip = await screen.findByRole("alert");
+    expect(sent.scoped).toEqual([{ level: "country", pairs: [TAX_PAIR, malta] }]);
+    expect(sent.retries).toEqual([]);
+    expect(strip).toHaveTextContent("It asks Eurostat about 2 items.");
+  });
+
+  it("says a selection the run does not hold was not retried, and offers only Dismiss", async () => {
+    await openRun();
+    await selectEveryFailure();
+    await userEvent.click(screen.getByRole("button", { name: "Retry 1 selected" }));
+    await screen.findByRole("button", { name: /yes, start it/i });
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/:runId/retry`, () =>
+        HttpResponse.json(
+          {
+            code: "selection_not_in_run",
+            message: "SENTINEL_MESSAGE",
+            details: { items: "failed", pairs: [TAX_PAIR] },
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /yes, start it/i }));
+
+    const refusal = (await screen.findByText("The start did not go through")).parentElement!;
+    expect(refusal).toHaveTextContent(
+      "One selected item is not among what this acquisition can retry, so nothing was retried.",
+    );
+    expect(refusal).not.toHaveTextContent("SENTINEL_MESSAGE");
+    expect(within(refusal).queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("refuses the estimate of a retry while a run is in flight, naming it", async () => {
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/:runId/retry/plan`, () =>
+        HttpResponse.json(
+          { code: "run_already_in_flight", message: "SENTINEL_MESSAGE", details: { run: 9 } },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderShell("/acquire");
+
+    await userEvent.click(await screen.findByRole("button", { name: "Retry 1 failed" }));
+
+    const refusal = await screen.findByRole("alert");
+    expect(refusal).toHaveTextContent("The estimate did not go through");
+    expect(refusal).toHaveTextContent("Acquisition 9 is still going, and one runs at a time.");
+    expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();
+  });
+
+  it("says a retry whose sources are all switched off would ask nobody, pointing at Source priority", async () => {
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/:runId/retry/plan`, () =>
+        HttpResponse.json(
+          { code: "nothing_to_fetch", message: "SENTINEL_MESSAGE", details: { reason: "sources_switched_off" } },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderShell("/acquire");
+
+    await userEvent.click(await screen.findByRole("button", { name: "Retry 1 failed" }));
+
+    const refusal = await screen.findByRole("alert");
+    expect(refusal).toHaveTextContent(/a retry would ask nobody/);
+    expect(within(refusal).getByRole("link", { name: "Open Source priority in Configure" })).toBeInTheDocument();
+  });
+
+  it("offers Try again for a failed estimate, which asks the same retry again", async () => {
+    let asked = 0;
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/:runId/retry/plan`, () => {
+        asked += 1;
+        return asked === 1
+          ? HttpResponse.json({ code: "internal_error", message: "SENTINEL_MESSAGE" }, { status: 500 })
+          : undefined;
+      }),
+    );
+    renderShell("/acquire");
+    await userEvent.click(await screen.findByRole("button", { name: "Retry 1 failed" }));
+    const refusal = await screen.findByRole("alert");
+
+    await userEvent.click(within(refusal).getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByRole("button", { name: /yes, start it/i })).toBeInTheDocument();
+    expect(asked).toBe(2);
+  });
+
+  it("refuses an empty selection as nothing selected", async () => {
+    const { result } = renderHook(() => useRunScreen("country"));
+    await waitFor(() => expect(result.current.current?.id).toBe(7));
+
+    act(() =>
+      result.current.propose({ via: "retry", level: "country", runId: 7, items: "failed", pairs: [] }, "failed"),
+    );
+
+    await waitFor(() => expect(result.current.refusal).not.toBeNull());
+    expect(result.current.armed).toBeNull();
+    expect(presentError(result.current.refusal?.error).message).toBe(
+      "Nothing is selected, so there is nothing to ask.",
+    );
   });
 });
 
@@ -1390,9 +1477,7 @@ describe("picking out individual items", () => {
     await userEvent.click(group.getByRole("button", { name: "Clear all" }));
     await userEvent.click(group.getByRole("button", { name: "Select all" }));
 
-    expect(
-      group.getByRole("button", { name: /^Retry 1 selected$/ }),
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Retry 1 selected" })).toBeInTheDocument();
   });
 
   it("picks a single item without touching the others", async () => {
@@ -1405,38 +1490,52 @@ describe("picking out individual items", () => {
       }),
     );
 
-    expect(
-      group.getByRole("button", { name: /^Retry 1 selected$/ }),
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Retry 1 selected" })).toBeInTheDocument();
   });
 
-  /**
-   * `RunScope` carries candidates and attributes as separate lists, so a selection that is not
-   * a full rectangle asks about more pairs than it has items. Somebody about to spend money
-   * gets the real number.
-   */
-  it("says when a selection would ask about more pairs than it holds", async () => {
-    const group = within(
-      await (async () => {
-        renderShell("/acquire");
-        await estimate();
-        await userEvent.click(
-          screen.getByRole("button", { name: /start this acquisition/i }),
-        );
-        await screen.findByRole("region", { name: /acquisition 8/i });
-        return screen.findByRole("region", {
-          name: /which values went unanswered/i,
-        });
-      })(),
-    );
+  /** PL-124. A group's own box is tri-state: clear, mixed, then ticked as its items are picked. */
+  it("draws a group's box ticked, mixed or clear by how much of it is picked", async () => {
+    serveSourceNames({ eurostat: "Eurostat" });
+    serveGaps({
+      failed: failedGapsOf([
+        { data_source: "eurostat", candidate: "country.malta", attribute: "country.homicide_rate", error_message: "late" },
+        { data_source: "eurostat", candidate: "country.spain", attribute: "country.homicide_rate", error_message: "late" },
+      ]),
+    });
+    renderShell("/acquire");
+    const group = within(await screen.findByRole("region", { name: /which sources broke/i }));
+    const box = await group.findByRole("checkbox", { name: "Every item in Eurostat" });
+    expect(box).not.toBeChecked();
+    expect(box).not.toBePartiallyChecked();
+
+    await userEvent.click(group.getByRole("button", { name: "Eurostat 2 items" }));
+    await userEvent.click(group.getByRole("checkbox", { name: /for Malta$/ }));
+    expect(box).toBePartiallyChecked();
+
+    await userEvent.click(box);
+    expect(box).toBeChecked();
+    expect(screen.getByRole("button", { name: "Retry 2 selected" })).toBeInTheDocument();
+
+    await userEvent.click(box);
+    expect(box).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Retry 2 failed" })).toBeInTheDocument();
+  });
+
+  /** PL-124. Select all, Clear all, All and None are held where they would do nothing. */
+  it("holds a selection control that would do nothing, never disabling it", async () => {
+    const group = await failureGroup();
+    expectHeld(group.getByRole("button", { name: "Clear all" }));
+    expectHeld(group.getByRole("button", { name: "None" }));
+    expectNotHeld(group.getByRole("button", { name: "Select all" }));
 
     await userEvent.click(group.getByRole("button", { name: "Select all" }));
 
-    // Two unanswered items share one candidate and differ by attribute, so the scope is one
-    // candidate by two attributes -- two pairs for two items, a full rectangle.
-    expect(
-      group.getByRole("button", { name: /^Retry 2 selected$/ }),
-    ).toBeEnabled();
+    const selectAll = group.getByRole("button", { name: "Select all" });
+    expectHeld(selectAll);
+    expect(selectAll).toBeEnabled();
+    expect(selectAll).toHaveFocus();
+    expectHeld(group.getByRole("button", { name: "All" }));
+    expectNotHeld(group.getByRole("button", { name: "Clear all" }));
   });
 });
 
@@ -4657,7 +4756,7 @@ describe("acting from the keyboard", () => {
 
   it("keeps focus on Retry while its estimate is read, and a second Enter asks nothing", async () => {
     const user = userEvent.setup();
-    const plans = holdEach("post", "/data-acquisition-runs/plan");
+    const plans = holdEach("post", "/data-acquisition-runs/:runId/retry/plan");
     renderShell("/acquire");
     const retry = await screen.findByRole("button", { name: "Retry 1 failed" });
 
@@ -4678,18 +4777,15 @@ describe("acting from the keyboard", () => {
     expect(plans.requests.sent).toBe(1);
   });
 
-  it("keeps focus on a group's Retry while its estimate is read, and lets go once it is", async () => {
+  it("keeps focus on a selection's Retry while its estimate is read, and lets go once it is", async () => {
     const user = userEvent.setup();
-    const plans = holdEach("post", "/data-acquisition-runs/plan");
+    const plans = holdEach("post", "/data-acquisition-runs/:runId/retry/plan");
     renderShell("/acquire");
     const group = within(
       await screen.findByRole("region", { name: /which sources broke/i }),
     );
-    // Nothing picked is not a write in flight: the button is disabled outright until there is.
-    const retrySelected = group.getByRole("button", { name: /^Retry 0 selected$/ });
-    expect(retrySelected).toBeDisabled();
-    expectNotHeld(retrySelected);
     await user.click(group.getByRole("button", { name: "Select all" }));
+    const retrySelected = screen.getByRole("button", { name: "Retry 1 selected" });
 
     await enterOn(user, retrySelected);
     await waitFor(() => expect(plans.requests.sent).toBe(1));
@@ -4761,7 +4857,7 @@ describe("acting from the keyboard", () => {
     const { yes } = await aRetryArmed();
     const starts = holdEach(
       "post",
-      "/data-acquisition-runs",
+      "/data-acquisition-runs/:runId/retry",
       refusal("run_already_in_flight", "run 7 is still going"),
     );
 
@@ -4790,7 +4886,7 @@ describe("acting from the keyboard", () => {
     const { yes, notYet } = await aRetryArmed();
     const starts = holdEach(
       "post",
-      "/data-acquisition-runs",
+      "/data-acquisition-runs/:runId/retry",
       refusal("run_already_in_flight", "run 7 is still going"),
     );
     act(() => notYet.focus());
@@ -4909,8 +5005,9 @@ describe("acting from the keyboard", () => {
   async function aStartInFlight(
     user: ReturnType<typeof userEvent.setup>,
     startBy: HTMLElement,
+    path = "/data-acquisition-runs",
   ): Promise<{ starts: { requests: { sent: number } }; release: () => void }> {
-    const starts = holdEach("post", "/data-acquisition-runs");
+    const starts = holdEach("post", path);
     await user.click(startBy);
     await waitFor(() => expect(starts.requests.sent).toBe(1));
     return { starts, release: starts.release };
@@ -4938,7 +5035,7 @@ describe("acting from the keyboard", () => {
   it("keeps Yes and Not yet held while the run is started", async () => {
     const user = userEvent.setup();
     const { yes, notYet } = await aRetryArmed();
-    const { starts, release } = await aStartInFlight(user, yes);
+    const { starts, release } = await aStartInFlight(user, yes, "/data-acquisition-runs/:runId/retry");
 
     expectHeld(yes);
     expect(yes).toHaveTextContent("Starting…");
@@ -5058,7 +5155,16 @@ describe("an armed start whose scope changes", () => {
     const group = await theFailureGroup();
     await userEvent.click(group.getByRole("button", { name: /^OECD 1 item$/ }));
     await userEvent.click(group.getByRole("button", { name: "Select all" }));
-    await userEvent.click(group.getByRole("button", { name: /^Retry 1 selected$/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Retry 1 selected" }));
+    await screen.findByRole("alert");
+    return group;
+  }
+
+  /** The whole bucket, armed with nothing picked. */
+  async function armTheBucket() {
+    const group = await theFailureGroup();
+    await userEvent.click(group.getByRole("button", { name: /^OECD 1 item$/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Retry 1 failed" }));
     await screen.findByRole("alert");
     return group;
   }
@@ -5070,6 +5176,7 @@ describe("an armed start whose scope changes", () => {
       "an item unticked",
       (group) => userEvent.click(group.getByRole("checkbox", { name: /for Liechtenstein$/ })),
     ],
+    ["the group's box cleared", (group) => userEvent.click(group.getByRole("checkbox", { name: "Every item in OECD" }))],
   ])("is disarmed when the selection changes: %s", async (_, change) => {
     const started = recordStarts();
     const group = await armTheSelection();
@@ -5081,17 +5188,32 @@ describe("an armed start whose scope changes", () => {
     expect(started).toEqual([]);
   });
 
+  it.each<[string, (group: Awaited<ReturnType<typeof armTheBucket>>) => Promise<void>]>([
+    ["Select all", (group) => userEvent.click(group.getByRole("button", { name: "Select all" }))],
+    ["All on the group", (group) => userEvent.click(group.getByRole("button", { name: "All" }))],
+    ["the group's box ticked", (group) => userEvent.click(group.getByRole("checkbox", { name: "Every item in OECD" }))],
+    ["an item ticked", (group) => userEvent.click(group.getByRole("checkbox", { name: /for Liechtenstein$/ }))],
+  ])("is disarmed when a pick narrows the whole bucket: %s", async (_, change) => {
+    const started = recordStarts();
+    const group = await armTheBucket();
+
+    await change(group);
+
+    expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();
+    expect(started).toEqual([]);
+  });
+
   it("does not arm when the selection changes while the estimate is read", async () => {
     const plan = heldAnswer();
     const group = await theFailureGroup();
     mockServer.use(
-      http.post(`${BASE}/data-acquisition-runs/plan`, async () => {
+      http.post(`${BASE}/data-acquisition-runs/:runId/retry/plan`, async () => {
         await plan.held;
         return HttpResponse.json(RUN_PLAN);
       }),
     );
     await userEvent.click(group.getByRole("button", { name: "Select all" }));
-    await userEvent.click(group.getByRole("button", { name: /^Retry 1 selected$/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Retry 1 selected" }));
 
     await userEvent.click(group.getByRole("button", { name: "Clear all" }));
     plan.release();
@@ -5162,19 +5284,19 @@ describe("an armed start whose scope changes", () => {
     await armTheSelection();
 
     expect(screen.getByRole("alert")).toHaveTextContent(
-      /^This starts a new acquisition over 96 values from acquisition 7\./,
+      /^This starts a new acquisition over 1 values from acquisition 7\./,
     );
   });
 
-  it("sends exactly the scope it named", async () => {
+  it("sends exactly the pairs it named", async () => {
     const planned: unknown[] = [];
     mockServer.use(
-      http.post(`${BASE}/data-acquisition-runs/plan`, async ({ request }) => {
+      http.post(`${BASE}/data-acquisition-runs/:runId/retry/plan`, async ({ request }) => {
         planned.push(await request.json());
-        return HttpResponse.json(RUN_PLAN);
+        return undefined;
       }),
     );
-    const started = recordStarts();
+    const started = recordRetries(14);
     await armTheSelection();
 
     await userEvent.click(
@@ -5182,13 +5304,9 @@ describe("an armed start whose scope changes", () => {
     );
 
     await waitFor(() => expect(started).toHaveLength(1));
-    const named = {
-      level: "country",
-      candidates: ["country.liechtenstein"],
-      attributes: ["country.total_tax_rate_effective"],
-    };
+    const named = { items: "failed", pairs: [TAX_PAIR] };
     expect(planned).toEqual([named]);
-    expect(started).toEqual([{ ...named, accept_uncapped_spend: false }]);
+    expect(started).toEqual([{ runId: 7, body: { ...named, accept_uncapped_spend: false } }]);
   });
 
   it("is disarmed when the level changes", async () => {
@@ -5198,7 +5316,7 @@ describe("an armed start whose scope changes", () => {
     );
     await waitFor(() => expect(result.current.current?.id).toBe(7));
 
-    act(() => result.current.propose({ level: "country" }, "failed"));
+    act(() => result.current.propose({ via: "scoped", scope: { level: "country" } }, "failed"));
     await waitFor(() => expect(result.current.armed).not.toBeNull());
 
     rerender({ level: "city" });
@@ -5278,11 +5396,7 @@ describe("where focus goes when the pressed control goes", () => {
   }
 
   it("takes Yes to the new acquisition's heading", async () => {
-    mockServer.use(
-      http.post(`${BASE}/data-acquisition-runs`, () =>
-        HttpResponse.json({ id: 14 }, { status: 202 }),
-      ),
-    );
+    recordRetries(14);
     await armTheFailedRetry();
 
     await userEvent.click(screen.getByRole("button", { name: /yes, start it/i }));
@@ -5320,7 +5434,7 @@ describe("where focus goes when the pressed control goes", () => {
       await screen.findByRole("region", { name: /which sources broke/i }),
     );
     await userEvent.click(group.getByRole("button", { name: "Select all" }));
-    const retry = group.getByRole("button", { name: /^Retry 1 selected$/ });
+    const retry = screen.getByRole("button", { name: "Retry 1 selected" });
     await userEvent.click(retry);
 
     await userEvent.click(await screen.findByRole("button", { name: "Not yet" }));
@@ -5368,7 +5482,7 @@ describe("which card says it is estimating", () => {
     renderShell("/acquire");
     await screen.findByRole("region", { name: /acquisition 7/i });
     mockServer.use(
-      http.post(`${BASE}/data-acquisition-runs/plan`, async () => {
+      http.post(`${BASE}/data-acquisition-runs/:runId/retry/plan`, async () => {
         await plan.held;
         return HttpResponse.json(RUN_PLAN);
       }),
@@ -5496,7 +5610,7 @@ describe("a change of level", () => {
     const plan = holdThePlan(refused);
     const { result, rerender } = renderAtLevel();
     await waitFor(() => expect(result.current.current?.id).toBe(7));
-    act(() => result.current.propose({ level: "country" }, "failed"));
+    act(() => result.current.propose({ via: "scoped", scope: { level: "country" } }, "failed"));
     await waitFor(() => expect(result.current.busy).toBe("planning"));
 
     rerender({ level: "city" });
@@ -5521,7 +5635,7 @@ describe("a change of level", () => {
   it("clears an armed start rather than hiding it until the level comes back", async () => {
     const { result, rerender } = renderAtLevel();
     await waitFor(() => expect(result.current.current?.id).toBe(7));
-    act(() => result.current.propose({ level: "country" }, "failed"));
+    act(() => result.current.propose({ via: "scoped", scope: { level: "country" } }, "failed"));
     await waitFor(() => expect(result.current.armed).not.toBeNull());
 
     rerender({ level: "city" });
@@ -5534,7 +5648,7 @@ describe("a change of level", () => {
     const plan = holdThePlan();
     const { result, rerender } = renderAtLevel();
     await waitFor(() => expect(result.current.current?.id).toBe(7));
-    act(() => result.current.propose({ level: "country" }, "failed"));
+    act(() => result.current.propose({ via: "scoped", scope: { level: "country" } }, "failed"));
     await waitFor(() => expect(result.current.busy).toBe("planning"));
 
     rerender({ level: "city" });

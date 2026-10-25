@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { type Item, groupBy, keyOf, questionsIn, scopeFor } from "./runScope";
+import { type Item, type RemedyKind, groupBy, keyOf, levelOf, pairsOf, proposalFor } from "./runScope";
 
 const failure = (
   candidate: string,
   attribute: string,
-  data_source: string,
+  data_source = "eurostat",
 ): Item => ({ candidate, attribute, data_source });
 
 describe("naming one item", () => {
@@ -71,53 +71,69 @@ describe("grouping what a run could not answer", () => {
   });
 });
 
-describe("the scope a selection becomes", () => {
-  it("collects the distinct candidates and attributes", () => {
+describe("the proposal a selection becomes (PL-124)", () => {
+  const SEVEN = new Map<string, number | null>([
+    ["country.portugal|rent", 7],
+    ["country.portugal|tax", 7],
+    ["country.spain|rent", 6],
+    ["country.malta|rent", null],
+  ]);
+
+  it("names each pair once, however many sources failed on it", () => {
     expect(
-      scopeFor("country", [
-        failure("country.portugal", "rent", "eurostat"),
+      pairsOf([
         failure("country.portugal", "tax", "oecd"),
-        failure("country.spain", "rent", "eurostat"),
+        failure("country.portugal", "tax", "eurostat_estimate"),
+        failure("country.portugal", "rent", "eurostat"),
       ]),
-    ).toEqual({
-      level: "country",
-      candidates: ["country.portugal", "country.spain"],
-      attributes: ["rent", "tax"],
-    });
-  });
-
-  it("scopes an empty selection to nothing, never to everything", () => {
-    // `null` in `RunScope` means "every one at this level", so an empty list must stay an
-    // empty list -- turning it into null would sweep the whole level by accident.
-    expect(scopeFor("country", [])).toEqual({
-      level: "country",
-      candidates: [],
-      attributes: [],
-    });
-  });
-
-  /**
-   * The honest number. `RunScope` holds candidates and attributes as separate lists, so it
-   * asks their product -- and a reader about to spend money gets the real size rather than
-   * the flattering one.
-   */
-  it("reports the product, not the count of items picked", () => {
-    const scope = scopeFor("country", [
-      failure("country.portugal", "rent", "eurostat"),
-      failure("country.spain", "tax", "eurostat"),
+    ).toEqual([
+      { candidate: "country.portugal", attribute: "tax" },
+      { candidate: "country.portugal", attribute: "rent" },
     ]);
-    expect(questionsIn(scope)).toBe(4);
   });
 
-  it("reports a full rectangle at its face value", () => {
-    const scope = scopeFor("country", [
-      failure("country.portugal", "rent", "eurostat"),
-      failure("country.portugal", "tax", "eurostat"),
-    ]);
-    expect(questionsIn(scope)).toBe(2);
+  it("retries the one run a selection belongs to, over exactly its pairs", () => {
+    const proposal = proposalFor(
+      "country",
+      "failed",
+      [failure("country.portugal", "rent", "eurostat"), failure("country.portugal", "tax", "oecd")],
+      SEVEN,
+    );
+
+    expect(proposal).toEqual({
+      via: "retry",
+      level: "country",
+      runId: 7,
+      items: "failed",
+      pairs: [
+        { candidate: "country.portugal", attribute: "rent" },
+        { candidate: "country.portugal", attribute: "tax" },
+      ],
+    });
+    expect(levelOf(proposal)).toBe("country");
   });
 
-  it("asks nothing for an empty scope", () => {
-    expect(questionsIn({ candidates: [], attributes: [] })).toBe(0);
+  it("asks unanswered items again through their run's retry", () => {
+    const proposal = proposalFor("country", "unanswered", [failure("country.spain", "rent")], SEVEN);
+
+    expect(proposal).toMatchObject({ via: "retry", runId: 6, items: "unanswered" });
+  });
+
+  it.each<[string, RemedyKind, Item[]]>([
+    ["a selection spanning two runs", "failed", [failure("country.portugal", "rent"), failure("country.spain", "rent")]],
+    ["a pair no run has asked about", "unanswered", [failure("country.malta", "rent")]],
+    ["what was never reached", "not_reached", [failure("country.portugal", "rent")]],
+  ])("scopes %s to its exact pairs", (_, kind, items) => {
+    const proposal = proposalFor("city", kind, items, SEVEN);
+
+    expect(proposal).toEqual({ via: "scoped", scope: { level: "city", pairs: pairsOf(items) } });
+    expect(levelOf(proposal)).toBe("city");
+  });
+
+  it("scopes an empty selection to no pair, never to the whole level", () => {
+    expect(proposalFor("country", "failed", [], SEVEN)).toEqual({
+      via: "scoped",
+      scope: { level: "country", pairs: [] },
+    });
   });
 });

@@ -169,6 +169,85 @@ function planOver(items: number, sources: readonly DataSource[]): components["sc
   };
 }
 
+interface RetryAsked {
+  items: "failed" | "unanswered";
+  pairs?: { candidate: string; attribute: string }[];
+  accept_uncapped_spend?: boolean;
+}
+
+async function retryAsked(request: Request): Promise<RetryAsked> {
+  const body = (await request.json().catch(() => ({}))) as Partial<RetryAsked>;
+  return { ...body, items: body.items ?? "failed" };
+}
+
+/** A 409, written with its code at the call so the refusal-code scan can read it. */
+function refusedWith(body: { code: string; details?: Record<string, unknown> }): { refused: Response } {
+  return {
+    refused: HttpResponse.json({ message: body.code, details: {}, ...body }, { status: 409 }),
+  };
+}
+
+/**
+ * A retry of part of run `runId`, in the server's order (`_go_back`, `retry_run`, `ask_again`):
+ * a run in flight first, then a run with nothing of the kind, an empty selection, a pair the run
+ * does not hold, and -- for failures -- every source that failed now off. **A source the mock's
+ * list does not name counts as on**: the list is shorter than the server's catalog (OECD), and
+ * an unlisted source is not one anybody switched off.
+ */
+function goBack(
+  runId: number,
+  asked: RetryAsked,
+): { refused: Response } | { plan: components["schemas"]["RunPlan"] } {
+  const going = RUNS.find((run) => run.run_status === "running");
+  if (going !== undefined) return refusedWith({ code: "run_already_in_flight", details: { run: going.id } });
+  const run = runDetailOf(runId);
+  const held =
+    asked.items === "failed"
+      ? (run.failures ?? []).map((failure) => ({ ...failure }))
+      : [...(run.unanswered ?? []), ...(run.not_reached ?? [])].map((item) => ({
+          ...item,
+          data_source: undefined as string | undefined,
+        }));
+  if (held.length === 0) {
+    return refusedWith({ code: asked.items === "failed" ? "nothing_to_retry" : "nothing_to_ask_again" });
+  }
+  const key = (pair: { candidate: string; attribute: string }) => `${pair.candidate}|${pair.attribute}`;
+  if (asked.pairs?.length === 0) return refusedWith({ code: "nothing_to_fetch", details: { reason: "empty_scope" } });
+  const holds = new Set(held.map(key));
+  const outside = (asked.pairs ?? []).filter((pair) => !holds.has(key(pair)));
+  if (outside.length > 0) return refusedWith({ code: "selection_not_in_run", details: { items: asked.items, pairs: outside } });
+  const wanted = asked.pairs === undefined ? holds : new Set(asked.pairs.map(key));
+  const selected = held.filter((item) => wanted.has(key(item)));
+  const items = new Set(selected.map(key)).size;
+  if (asked.items === "unanswered") {
+    const sources = sourcesAsked({ pairs: [] });
+    if (sources.length === 0) return refusedWith({ code: "nothing_to_fetch", details: { reason: "no_source_switched_on" } });
+    return { plan: planOver(items, sources) };
+  }
+  const reachable = selected.filter(
+    (failure) => dataSources.find((source) => source.id === failure.data_source)?.is_enabled !== false,
+  );
+  if (reachable.length === 0) return refusedWith({ code: "nothing_to_fetch", details: { reason: "sources_switched_off" } });
+  const perSource = new Map<string, Set<string>>();
+  for (const failure of reachable) {
+    const source = failure.data_source ?? "";
+    perSource.set(source, (perSource.get(source) ?? new Set()).add(key(failure)));
+  }
+  const paid = [...perSource.keys()].some(
+    (id) => dataSources.find((source) => source.id === id)?.source_kind === "llm",
+  );
+  const paidItems = paid ? new Set(reachable.filter((f) => dataSources.find((s) => s.id === f.data_source)?.source_kind === "llm").map(key)).size : 0;
+  return {
+    plan: {
+      items_total: new Set(reachable.map(key)).size,
+      llm_call_count: paidItems,
+      estimated_cost_eur: paidItems * EUR_PER_PAID_CALL,
+      by_source: [...perSource].map(([data_source, pairs]) => ({ data_source, items: pairs.size })),
+      ...(paidItems > 0 ? { estimate_basis: PAID_RUN_PLAN.estimate_basis } : {}),
+    },
+  };
+}
+
 export function resetMockData(): void {
   criteriaSetDetails = makeCriteriaSetDetails();
   deletedCriteriaSets = {};
@@ -1045,40 +1124,27 @@ export const handlers = [
     ),
   ),
 
-  http.post(
-    `${BASE}/data-acquisition-runs/:runId/retry`,
-    async ({ request }) => {
-      // Which part of the run: the failures by default, the unanswered items on request
-      // (`reqs.md` Q217). The mock refuses the kind the run has none of, as the API does.
-      const body = (await request.json().catch(() => ({}))) as {
-        items?: "failed" | "unanswered";
-      };
-      const items = body.items ?? "failed";
-      const available =
-        items === "unanswered"
-          ? (STARTED_RUN_DETAIL.unanswered ?? [])
-          : (STARTED_RUN_DETAIL.failures ?? []);
-      if (available.length === 0) {
-        return HttpResponse.json(
-          {
-            code:
-              items === "unanswered"
-                ? "nothing_to_ask_again"
-                : "nothing_to_retry",
-            message: `this run has no ${items} items, so a new run would do nothing`,
-          },
-          { status: 409 },
-        );
-      }
+  // **The estimate and the retry go back the same way** (PL-124, D32), so neither is kinder.
+  http.post(`${BASE}/data-acquisition-runs/:runId/retry/plan`, async ({ params, request }) => {
+    const gone = goBack(Number(params["runId"]), await retryAsked(request));
+    return "refused" in gone ? gone.refused : HttpResponse.json(gone.plan);
+  }),
+
+  http.post(`${BASE}/data-acquisition-runs/:runId/retry`, async ({ params, request }) => {
+    const asked = await retryAsked(request);
+    const gone = goBack(Number(params["runId"]), asked);
+    if ("refused" in gone) return gone.refused;
+    if (gone.plan.llm_call_count > 0 && settings.run_spend_cap_eur == null && asked.accept_uncapped_spend !== true) {
       return HttpResponse.json(
-        {
-          ...STARTED_RUN,
-          id: STARTED_RUN.id + (items === "unanswered" ? 2 : 1),
-        },
-        { status: 202 },
+        { code: "spend_cap_not_set", message: "no spend cap is set", details: {} },
+        { status: 409 },
       );
-    },
-  ),
+    }
+    return HttpResponse.json(
+      { ...STARTED_RUN, id: STARTED_RUN.id + (asked.items === "unanswered" ? 2 : 1), purpose: asked.items === "unanswered" ? "ask_again" : "retry" },
+      { status: 202 },
+    );
+  }),
 
   http.get(`${BASE}/values`, ({ request }) => {
     // Both axes the contract offers: every value for one candidate, or every candidate's

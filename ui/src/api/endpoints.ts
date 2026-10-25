@@ -246,6 +246,45 @@ export function startRun(
   );
 }
 
+export type RunPair = components["schemas"]["RunPair"];
+
+/**
+ * What a retry of part of one run would ask (PL-124, D32): `items` names the kind -- failed, or
+ * unanswered and not reached -- and `pairs` the exact items selected, each one the run's own.
+ */
+export interface RetrySelection {
+  items: "failed" | "unanswered";
+  pairs: RunPair[];
+}
+
+/** The estimate of a retry, refused as the retry itself would be. */
+export function planRetry(
+  runId: number,
+  selection: RetrySelection,
+  options?: RequestOptions,
+): Promise<RunPlan> {
+  return postJson("/data-acquisition-runs/{runId}/retry/plan", selection, {
+    ...options,
+    pathParams: { runId },
+  });
+}
+
+/**
+ * A new run over exactly the selected items of one run: a failure is asked only of the sources
+ * that failed on it. Uncapped spend is accepted per request, as for `startRun`.
+ */
+export function retryRun(
+  runId: number,
+  selection: RetrySelection & { accept_uncapped_spend?: boolean },
+  options?: RequestOptions,
+): Promise<Run> {
+  return postJson(
+    "/data-acquisition-runs/{runId}/retry",
+    { accept_uncapped_spend: false, ...selection },
+    { ...options, pathParams: { runId } },
+  );
+}
+
 export type Holdings = components["schemas"]["Holdings"];
 
 /**

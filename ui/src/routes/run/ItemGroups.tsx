@@ -2,56 +2,40 @@ import { useId, useState } from "react";
 import { useAttributeNames } from "../../api/useAttributeNames";
 import { useCandidateNames } from "../../api/useCandidateNames";
 import { useSourceNames } from "../../api/useSourceNames";
-import { formatCount } from "../../format/display";
 import { HeldButton } from "../../shell/HeldButton";
 import { failureGroups } from "./failureGroups";
 import { groupLabel, groupMeta, itemDetail, itemPhrase, type ItemNames } from "./itemNames";
-import { type Item, groupBy, keyOf, questionsIn, scopeFor } from "./runScope";
+import { type Item, groupBy, keyOf } from "./runScope";
 
 /**
  * The database's gaps of one kind -- failed, unanswered or not reached -- grouped and
- * selectable, with a scoped re-ask.
+ * selectable. **The card holds the selection** (PL-124), so its one action can follow it.
  *
  * **Grouped by what the question actually is.** A failure is a source refusing, so failures
  * group by source: "what did OECD refuse?". Nothing refused an unanswered item -- no source
  * covers it -- so those group by attribute: "which attribute does nobody answer?". Treating
  * them alike would put the wrong question at the top of each list.
  *
- * **A narrow selection is a new run, not a retry.** `POST /{runId}/retry` takes only
- * `failed | unanswered` over a whole run, so anything narrower goes through `/plan` and then
- * `POST /data-acquisition-runs` with a scope.
+ * **A control that would do nothing is held**, never disabled: Select all once everything is
+ * picked, None on a group with nothing picked. Disabled, it would throw focus off as it greyed.
  */
 export function ItemGroups({
   items,
   groupedBy,
   caption,
-  level,
-  act,
   detailKind,
-  busy,
-  onSelectionChange,
-  onPropose,
+  selected,
+  onToggle,
 }: {
   items: readonly Item[];
   groupedBy: "data_source" | "attribute";
   caption: string;
-  level: string;
   /** Which detail each row carries -- see `itemDetail`. */
   detailKind: "failed" | "unanswered" | "not_reached";
-  /** What the button will be called, e.g. "Retry". */
-  act: string;
-  /** An estimate is being read, so the button is held until it answers (NEW-44). */
-  busy: boolean;
-  /** Any change to what is picked, so a start armed for the old selection is put away (PL-116). */
-  onSelectionChange: () => void;
-  onPropose: (scope: ReturnType<typeof scopeFor>) => void;
+  selected: ReadonlySet<string>;
+  onToggle: (keys: readonly string[], on: boolean) => void;
 }) {
   const headingId = useId();
-  // **Nothing picked to begin with, as the design has it** (`selFail:{}` in its own state).
-  // The card's own action already covers the whole bucket -- "Retry 12 failed" -- so a list
-  // that opened with everything ticked made the selection say nothing: picking is how a reader
-  // narrows, and it cannot narrow from a state that is already everything.
-  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
 
   // In the component that renders the names, not threaded from a parent. One shared promise
@@ -63,21 +47,10 @@ export function ItemGroups({
   };
 
   const groups = groupBy(items, groupedBy);
-  const chosen = items.filter((item) => selected.has(keyOf(item)));
-  const scope = scopeFor(level, chosen);
-  const questions = questionsIn(scope);
-
-  function toggle(keys: readonly string[], on: boolean): void {
-    onSelectionChange();
-    setSelected((current) => {
-      const next = new Set(current);
-      for (const key of keys) {
-        if (on) next.add(key);
-        else next.delete(key);
-      }
-      return next;
-    });
-  }
+  const every = items.map(keyOf);
+  const pickedOf = (keys: readonly string[]) => keys.filter((key) => selected.has(key)).length;
+  const allPicked = pickedOf(every);
+  const toggle = onToggle;
 
   return (
     <section className="panel panel--nested" aria-labelledby={headingId}>
@@ -86,20 +59,16 @@ export function ItemGroups({
       </h3>
 
       <div className="group__actions">
-        <button
-          type="button"
+        <HeldButton
           className="button"
-          onClick={() => toggle(items.map(keyOf), true)}
+          held={allPicked === every.length}
+          onClick={() => toggle(every, true)}
         >
           Select all
-        </button>
-        <button
-          type="button"
-          className="button"
-          onClick={() => toggle(items.map(keyOf), false)}
-        >
+        </HeldButton>
+        <HeldButton className="button" held={allPicked === 0} onClick={() => toggle(every, false)}>
           Clear all
-        </button>
+        </HeldButton>
       </div>
 
       <ul className="group__list">
@@ -110,6 +79,14 @@ export function ItemGroups({
           return (
             <li key={group.key} className="group">
               <div className="group__head">
+                {/* **Tri-state**, as the design has it: ticked when the whole group is picked,
+                    mixed when part of it is, and a press picks the rest or clears it. */}
+                <GroupBox
+                  label={`Every item in ${groupLabel(names, groupedBy, group.key)}`}
+                  picked={picked}
+                  held={keys.length}
+                  onToggle={(on) => toggle(keys, on)}
+                />
                 <button
                   type="button"
                   className="group__toggle"
@@ -136,20 +113,16 @@ export function ItemGroups({
                     {groupMeta(group.items.length, picked)}
                   </span>
                 </button>
-                <button
-                  type="button"
+                <HeldButton
                   className="button"
+                  held={picked === keys.length}
                   onClick={() => toggle(keys, true)}
                 >
                   All
-                </button>
-                <button
-                  type="button"
-                  className="button"
-                  onClick={() => toggle(keys, false)}
-                >
+                </HeldButton>
+                <HeldButton className="button" held={picked === 0} onClick={() => toggle(keys, false)}>
                   None
-                </button>
+                </HeldButton>
               </div>
 
               {expanded && (
@@ -202,29 +175,34 @@ export function ItemGroups({
         })}
       </ul>
 
-      {/* **The honest number.** `RunScope` carries candidates and attributes as separate
-          lists, so a selection that is not a full rectangle asks more questions than it has
-          items -- and somebody about to spend money gets the real size, not the flattering
-          one. */}
-      {questions > chosen.length && (
-        <p className="panel__hint">
-          {formatCount(chosen.length)} selected, but a run is scoped by
-          candidate and by attribute, so this would ask about{" "}
-          {formatCount(questions)} pairs.
-        </p>
-      )}
-
-      {/* Held while an estimate is read, never disabled (NEW-44); disabled while nothing is
-          picked, where there is nothing to wait for. */}
-      <HeldButton
-        className="button"
-        held={busy}
-        disabled={chosen.length === 0}
-        onClick={() => onPropose(scope)}
-      >
-        {act} {formatCount(chosen.length)} selected
-      </HeldButton>
     </section>
+  );
+}
+
+/** A group's own box: ticked, mixed or clear by how much of the group is picked. */
+function GroupBox({
+  label,
+  picked,
+  held,
+  onToggle,
+}: {
+  label: string;
+  picked: number;
+  held: number;
+  onToggle: (on: boolean) => void;
+}) {
+  const mixed = picked > 0 && picked < held;
+  return (
+    <input
+      type="checkbox"
+      className="group__box"
+      aria-label={label}
+      checked={picked === held && held > 0}
+      ref={(box) => {
+        if (box !== null) box.indeterminate = mixed;
+      }}
+      onChange={() => onToggle(picked < held)}
+    />
   );
 }
 
