@@ -2174,7 +2174,7 @@ describe("the six stages", () => {
   /** The stage headings, in document order; the gate proposals' heading is not a stage. */
   function stageTitles(): string[] {
     return screen
-      .getAllByRole("heading", { level: 3 })
+      .getAllByRole("heading", { level: 2 })
       .map((heading) => heading.textContent ?? "")
       .filter((title) => STAGES.some((stage) => stage.test(title)));
   }
