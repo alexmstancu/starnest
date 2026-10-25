@@ -53,6 +53,7 @@ import {
   type WeightUsedTone,
 } from "./attributeScores";
 import { howScored } from "./howScored";
+import { groupedByIndex, isEarlierEdition } from "./outsideEditions";
 
 /**
  * One candidate's evidence: every stored value, and the outside indices beside them.
@@ -917,55 +918,75 @@ function ExternalScoreTable({
             <th scope="col">Caveats</th>
           </tr>
         </thead>
-        <tbody>
-          {scores.map((score) => (
-            // A publisher may have more than one opinion of a candidate: the natural key in
-            // `external_score` is the publisher, the whole period and the moment it was read
-            // (`0113`), so the key here is the same one. Keyed on publisher alone, two Numbeo
-            // indices for one country collided and React rendered one of them twice; keyed
-            // without the period's end, two editions differing only there did (UI-30).
-            <tr
-              key={[
-                score.data_source,
-                score.reference_period?.start ?? "",
-                score.reference_period?.end ?? "",
-                score.retrieval_date ?? "",
-              ].join("-")}
-            >
-              <th scope="row">
-                <PublisherName
-                  publisher={sourceName(names, score.data_source)}
-                  methodology={score.methodology_url}
-                />
-                {/* **Both dates, as every stored figure has them** (UI-20): what period the
-                    opinion describes and when it was read. A 2019 index and this year's are
-                    different claims, and the row could not tell them apart. */}
-                <span className="value-cell__meta">
-                  <span className="value-cell__label">Describes</span>
-                  <span className="value-cell__fact">
-                    {score.reference_period
-                      ? `${formatDate(score.reference_period.start)} to ${formatDate(score.reference_period.end)}`
-                      : ABSENT}
-                  </span>
-                  <span className="value-cell__label">Fetched</span>
-                  <span className="value-cell__fact">
-                    {formatDateTime(score.retrieval_date)}
-                  </span>
-                </span>
-              </th>
-              <td>
-                {score.published_value ?? "—"}
-                {score.published_rank != null &&
-                  (score.published_rank_of != null
-                    ? ` (rank ${score.published_rank} of ${score.published_rank_of})`
-                    : ` (rank ${score.published_rank})`)}
-              </td>
-              <td>{score.published_scale}</td>
-              <td>{score.caveats ?? ""}</td>
-            </tr>
-          ))}
-        </tbody>
+        {/* **One body per index** (PL-171): a publisher and its series, in the server's order,
+            with the edition that stands for it and the earlier ones kept as history. */}
+        {groupedByIndex(scores).map((index) => (
+          <tbody key={`${index.publisher} ${index.series}`}>
+            {index.editions.map((score) => (
+              <OutsideEdition
+                // The natural key of `external_score` (`0113`, PL-171): the index, the whole
+                // period and the moment it was read (UI-30).
+                key={[
+                  score.reference_period?.start ?? "",
+                  score.reference_period?.end ?? "",
+                  score.retrieval_date ?? "",
+                ].join("-")}
+                score={score}
+                publisher={sourceName(names, score.data_source)}
+                several={index.editions.length > 1}
+              />
+            ))}
+          </tbody>
+        ))}
       </table>
     </div>
+  );
+}
+
+function OutsideEdition({
+  score,
+  publisher,
+  several,
+}: {
+  score: ExternalScore;
+  publisher: string;
+  /** Whether its index has more than one edition here, so the one that stands is said. */
+  several: boolean;
+}) {
+  const earlier = isEarlierEdition(score);
+  return (
+    <tr className={earlier ? "table__row--history" : undefined}>
+      <th scope="row">
+        <PublisherName publisher={publisher} methodology={score.methodology_url} />
+        <span className="outside-series">{score.series}</span>
+        {earlier ? (
+          <span className="chip chip--neutral">Earlier edition, kept as history</span>
+        ) : (
+          several && <span className="chip chip--quiet">Current edition</span>
+        )}
+        {/* **Both dates, as every stored figure has them** (UI-20): what period the
+            opinion describes and when it was read. A 2019 index and this year's are
+            different claims, and the row could not tell them apart. */}
+        <span className="value-cell__meta">
+          <span className="value-cell__label">Describes</span>
+          <span className="value-cell__fact">
+            {score.reference_period
+              ? `${formatDate(score.reference_period.start)} to ${formatDate(score.reference_period.end)}`
+              : ABSENT}
+          </span>
+          <span className="value-cell__label">Fetched</span>
+          <span className="value-cell__fact">{formatDateTime(score.retrieval_date)}</span>
+        </span>
+      </th>
+      <td>
+        {score.published_value ?? "—"}
+        {score.published_rank != null &&
+          (score.published_rank_of != null
+            ? ` (rank ${score.published_rank} of ${score.published_rank_of})`
+            : ` (rank ${score.published_rank})`)}
+      </td>
+      <td>{score.published_scale}</td>
+      <td>{score.caveats ?? ""}</td>
+    </tr>
   );
 }

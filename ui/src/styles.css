@@ -5152,3 +5152,19 @@ select.field__control {
   color: var(--colour-text-strong);
   font-weight: var(--weight-strong);
 }
+
+/* Outside opinions by index (PL-171): the series under its publisher, and an earlier edition
+   quieter than the one that stands. */
+.outside-series {
+  display: block;
+  font-size: var(--font-size-small);
+  color: var(--colour-text-label);
+}
+
+.table--external > tbody + tbody {
+  border-top: var(--border-width) solid var(--colour-border-strong);
+}
+
+.table__row--history {
+  color: var(--colour-text-muted);
+}

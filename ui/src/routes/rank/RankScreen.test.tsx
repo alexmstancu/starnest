@@ -1259,6 +1259,8 @@ function outsideOpinions(...scores: Record<string, unknown>[]): void {
 const NUMBEO = {
   candidate: "country.portugal",
   data_source: "numbeo",
+  series: "Crime Index",
+  is_current: true,
   published_value: 72.4,
   published_scale: "0-100, higher is safer",
   reference_period: { start: "2026-01-01", end: "2026-06-30" },
@@ -1351,6 +1353,80 @@ describe("an outside opinion's provenance", () => {
     expect(within(outside).getAllByRole("row", { name: /numbeo/i })).toHaveLength(2);
     expect(outside).toHaveTextContent("72.4");
     expect(outside).toHaveTextContent("70.1");
+  });
+});
+
+/**
+ * PL-171 (ST-10). **Which edition stands is the server's to say** (`is_current`), and an index
+ * is a publisher *and* its series: an earlier edition reads as history beside the current one,
+ * and a publisher's second index is never read as the first one's history.
+ */
+describe("an outside index's editions", () => {
+  const EARLIER = {
+    ...NUMBEO,
+    is_current: false,
+    published_value: 69.8,
+    reference_period: { start: "2025-01-01", end: "2025-06-30" },
+    retrieval_date: "2025-09-01T08:00:00Z",
+  };
+  const QUALITY = {
+    ...NUMBEO,
+    series: "Quality of Life Index",
+    published_value: 180.2,
+    published_scale: "no upper bound, higher is better",
+  };
+
+  /** Each row's text, body by body, as drawn. */
+  function bodies(outside: HTMLElement): string[][] {
+    return [...outside.querySelectorAll("tbody")].map((body) =>
+      [...body.querySelectorAll("tr")].map((row) => row.textContent ?? ""),
+    );
+  }
+
+  it("labels an earlier edition as history beside the current one", async () => {
+    outsideOpinions(NUMBEO, EARLIER);
+
+    const outside = await portugalsOutsideOpinions();
+
+    const [current, earlier] = within(outside).getAllByRole("row", { name: /numbeo/i });
+    expect(current).toHaveTextContent("Current edition");
+    expect(current).not.toHaveTextContent(/history/i);
+    expect(earlier).toHaveTextContent("Earlier edition, kept as history");
+    expect(earlier).toHaveTextContent("69.8");
+  });
+
+  it("never reads a publisher's second index as the first one's history", async () => {
+    outsideOpinions(NUMBEO, QUALITY);
+
+    const outside = await portugalsOutsideOpinions();
+
+    expect(outside).not.toHaveTextContent(/history|current edition/i);
+    expect(bodies(outside)).toHaveLength(2);
+    expect(bodies(outside)[0]![0]).toContain("Crime Index");
+    expect(bodies(outside)[1]![0]).toContain("Quality of Life Index");
+  });
+
+  it("groups by publisher and series in the server's order, editions as served", async () => {
+    outsideOpinions(QUALITY, NUMBEO, EARLIER);
+
+    const outside = await portugalsOutsideOpinions();
+
+    const [quality, crime] = bodies(outside);
+    expect(quality).toHaveLength(1);
+    expect(quality![0]).toContain("180.2");
+    expect(crime).toHaveLength(2);
+    expect(crime![0]).toContain("72.4");
+    expect(crime![1]).toContain("69.8");
+  });
+
+  it("demotes nothing the server did not mark as an earlier edition", async () => {
+    const unmarked: Record<string, unknown> = { ...EARLIER };
+    delete unmarked["is_current"];
+    outsideOpinions(NUMBEO, unmarked);
+
+    const outside = await portugalsOutsideOpinions();
+
+    expect(outside).not.toHaveTextContent(/history/i);
   });
 });
 
