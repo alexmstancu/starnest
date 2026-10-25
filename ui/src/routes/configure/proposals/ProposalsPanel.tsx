@@ -13,7 +13,7 @@ import {
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { CheckboxField } from "../../../shell/CheckboxField";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
-import { refocusIfLost } from "../focusReturn";
+import { refocusIfLost } from "../../../shell/focusReturn";
 import { describePeriod } from "./proposalReading";
 import { leavesEstimateUnspent } from "./researchPass";
 import { proposalKey, useFocusAfterConfirm } from "./useFocusAfterConfirm";

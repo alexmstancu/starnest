@@ -2148,7 +2148,7 @@ describe("dismissing the outcome while the set is unread", () => {
     mockServer.use(http.get(`${BASE}/criteria-sets/:id`, setRead));
     await userEvent.selectOptions(
       screen.getByRole("combobox", { name: /active criteria set/i }),
-      "remote-only",
+      "remote_only",
     );
     await waitFor(() =>
       expect(within(rulesStage()).queryByRole("region", { name: /^Gates/ })).toBeNull(),
