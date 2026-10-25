@@ -104,6 +104,12 @@ class TestWhatATableRefuses:
         with pytest.raises(TranscriptionError, match="about eighty"):
             read_table(a_table(tmp_path, f"AT,about eighty,2025,{A_PAGE},\n"))
 
+    @pytest.mark.parametrize("figure", ["NaN", "Infinity", "-Infinity", "inf", "sNaN"])
+    def test_a_figure_that_is_not_finite_is_refused(self, tmp_path: Path, figure: str) -> None:
+        """`Decimal` reads each of these as a number, and the database refuses every one."""
+        with pytest.raises(TranscriptionError, match=f"{figure!r} is not a finite number"):
+            read_table(a_table(tmp_path, f"AT,{figure},2025,{A_PAGE},\n"))
+
     @pytest.mark.parametrize("period", ["", "May 2025", "2025/26", "25"])
     def test_a_period_that_is_not_a_year_or_a_span_is_refused(
         self, tmp_path: Path, period: str

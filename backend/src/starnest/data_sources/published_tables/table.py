@@ -164,9 +164,12 @@ def _rows_of(body: list[str], name: str) -> tuple[Row, ...]:
 
 def _a_figure(text: str, where: str) -> Decimal:
     try:
-        return Decimal(text)
+        figure = Decimal(text)
     except InvalidOperation as unreadable:
         raise TranscriptionError(f"{where}: {text!r} is not a number") from unreadable
+    if not figure.is_finite():
+        raise TranscriptionError(f"{where}: {text!r} is not a finite number")
+    return figure
 
 
 def _a_period(text: str, where: str) -> tuple[date, date]:

@@ -350,6 +350,12 @@ drift.
 same way, and each threshold child table pins its own — so a `LabelSet` attribute cannot be
 given a numeric range, and exactly one threshold kind can exist.
 
+**Every number the domain reads is finite in the table as well** (`0518`). PostgreSQL's
+`numeric` holds NaN and both infinities, and sorts NaN above every number, so `x >= 0` and
+`x > 0` admit it. Each numeric column therefore carries a `<table>_<column>_is_finite` check,
+unless a bound on both sides already refuses all three; `test_finite_figures_behaviour` holds
+every numeric column in the schema to one or the other.
+
 ### 3.4 Never discarding, and why only rejection is stored
 
 Nothing is deleted. A value that fails validation is stored with its `rejection_reason` and never
