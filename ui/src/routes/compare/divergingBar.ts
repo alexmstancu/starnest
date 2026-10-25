@@ -7,12 +7,17 @@
  * left can only show size -- the sign has to be read off a minus in the text, one cell at a
  * time. Anchored in the middle, a column of them reads as a shape.
  *
- * **Two denominators, two jobs.** The bar's reach is measured against the largest gap *on the
- * screen* (`scale`), so a column of bars shows which differences are big relative to the rest
- * -- the same five-point gap looks large in a table of small gaps and small in a table of large
- * ones, which is what a reader comparing places actually wants. The tint, in contrast, is
- * measured against the *focus's own value* (`focusValue`): a five-point gap on a figure of ten
- * is half of it, on a figure of ninety it is noise, and only the first is worth colouring.
+ * **One ruler for size, one floor for noise.** The bar's reach is measured against the largest
+ * gap *on the screen* (`scale`), so a column of bars shows which differences are big relative to
+ * the rest -- the same five-point gap looks large in a table of small gaps and small in a table
+ * of large ones, which is what a reader comparing places actually wants. **The tint deepens with
+ * that same reach**, across a range wide enough to see, so a longer bar is always a stronger
+ * tint and two long gaps of different lengths never share one colour. That is a divergence from
+ * the design, whose tint tops out at a gap of 30% of the focus's figure and so painted every
+ * large gap alike (`docs/design-brief.md`). Whether a cell is tinted at all is still the
+ * design's call, judged against the *focus's own value* (`focusValue`): a five-point gap on a
+ * figure of ten is half of it, on a figure of ninety it is noise, and only the first is worth
+ * colouring.
  *
  * A `.tsx` under `routes/` may not call `Number` (`CLAUDE.md`), so the arithmetic is here.
  */
@@ -50,7 +55,7 @@ export interface Divergence {
   /** The bar's left edge on a 100-wide track: the centre going right, back from it going left. */
   left: number;
   /**
-   * How opaque the tint is, 0 to 1, ramping with the size of the difference.
+   * How opaque the tint is, 0 to 1, deepening with the bar's reach.
    *
    * **Continuous, and still not a style.** The hue is a class on the tint layer; only the
    * alpha is data, carried as SVG's `fill-opacity` attribute -- so design stays in
@@ -78,12 +83,14 @@ export interface Divergence {
 
 /** Below this share of the focus's value a difference is noise, and a tint would claim it is not. */
 const NOTICEABLE = 0.05;
-/** Where the tint stops getting stronger, as a share of the focus's value. */
-const FULL = 0.3;
-/** The faintest tint worth drawing, and the span it ramps across to the strongest. */
+/**
+ * The faintest tint worth drawing, and the span it deepens across with the bar to the strongest.
+ * Wider than the design's 0.33: across that, bars a quarter of the scale apart drew tints the
+ * eye could not tell apart.
+ */
 const FAINT_ALPHA = 0.09;
-const RAMP_ALPHA = 0.33;
-/** Past this much of the tint's ramp the cell takes a border as well. */
+const RAMP_ALPHA = 0.45;
+/** Past this share of the largest gap the cell takes a border as well. */
 const EMPHATIC = 0.6;
 /** The smallest bar drawn for a non-zero gap, so a real difference is never invisible. */
 const MIN_WIDTH = 1.5;
@@ -143,7 +150,7 @@ export function divergingBar(
   const anchor = isFiniteNumber(focusValue) ? Math.abs(focusValue) : 0;
   const relative = anchor > 0 ? size / anchor : 0;
   const lit = relative >= NOTICEABLE;
-  const ramp = lit ? Math.min(1, (relative - NOTICEABLE) / (FULL - NOTICEABLE)) : 0;
+  const emphatic = lit && reach >= EMPHATIC;
 
   return {
     direction,
@@ -151,9 +158,9 @@ export function divergingBar(
     width,
     left,
     barOpacity,
-    alpha: lit ? FAINT_ALPHA + ramp * RAMP_ALPHA : 0,
-    edge: lit && ramp >= EMPHATIC,
-    borderAlpha: lit && ramp >= EMPHATIC ? BORDER_ALPHA + BORDER_RAMP * ramp : 0,
+    alpha: lit ? FAINT_ALPHA + reach * RAMP_ALPHA : 0,
+    edge: emphatic,
+    borderAlpha: emphatic ? BORDER_ALPHA + BORDER_RAMP * reach : 0,
     faint: !lit,
     shade: shadeOf(reach),
   };

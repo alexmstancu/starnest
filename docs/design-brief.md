@@ -135,15 +135,20 @@ it at 40, which is four and a half times an even share of eleven pillars -- righ
 wrong for three, where it silently clamps a weight the server would accept. The floor is still
 40, so the eleven-pillar case is drawn exactly as designed.
 
-**The comparison matrix's cells follow the design exactly** (2026-10-25, at the user's call,
-replacing a short-lived divergence that tied the tint to the bar). The box and its padding, the
-type, the tint's ramp from 5% to 30% of the focus's own figure, the border in its top band and
-the bar's colour deepening with its reach are the design's own formulas (`divergingBar.ts`).
-One consequence is worth knowing: every gap past 30% of the focus's figure takes the full tint,
-so on real data several large gaps share one background, and their bars' length and shade carry
-the difference. A cell with no gap to read -- a figure missing on either side -- draws no track,
-as the design's does. The hues are classes in `styles.css`; only opacities and geometry are SVG
-attributes, because `routes/` carries no inline style.
+**The comparison matrix's cells follow the design, except in how strong a tint is** (2026-10-25,
+at the user's call). The box and its padding, the type, the 1px border on the strongest cells,
+the bar's colour deepening from pale to deep with its reach, and the design's floor -- no tint
+below a gap of 5% of the focus's own figure -- are the design's own formulas
+(`divergingBar.ts`). **The tint's strength is not.** The design ramps it from 0.09 to 0.42 as the
+gap grows to 30% of the focus's figure, so on real data every large gap took the same full
+tint: four cells 46 to 65 points behind, with bars of visibly different lengths, drew one red.
+The tint now deepens with the bar's own reach -- the share of the largest gap on screen, the
+ruler the bar is drawn against -- from 0.09 to 0.54, a span wide enough that bars a quarter of
+the scale apart draw tints the eye can tell apart, which the design's 0.33 could not. The border
+marks the longest bars, from 60% of the largest gap. A cell with no gap to read -- a figure
+missing on either side -- draws no track, as the design's does. The hues are classes in
+`styles.css`; only opacities and geometry are SVG attributes, because `routes/` carries no
+inline style.
 
 **A level is offered as soon as it holds a candidate.** The design disables City outright.
 Which levels exist and which hold candidates are catalog rows, so the condition is read off

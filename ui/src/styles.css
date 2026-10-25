@@ -2100,10 +2100,10 @@ select.field__control {
 }
 
 /* **The tint starts at a gap worth noticing** -- a twentieth of the focus's own figure; below
-   that a difference is noise -- and deepens with the gap's share of the focus to the strongest
-   at 30%, where the top band also takes a border (`divergingBar.ts`). The hue is here and both
-   opacities are data on the rect, which is what lets them be continuous without design leaving
-   this file.
+   that a difference is noise -- and **deepens with the bar**, to the strongest on the longest bar
+   on screen, where the top band also takes a border (`divergingBar.ts`). The hue is here and
+   both opacities are data on the rect, which is what lets them be continuous without design
+   leaving this file.
 
    A layer rather than a background, so it sits under the number without tinting the text. It
    covers the cell's border box, as a background does, and is clipped to its rounded corners: a
