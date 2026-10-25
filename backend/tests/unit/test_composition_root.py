@@ -18,6 +18,7 @@ at all, and is asserted below rather than assumed.
 
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -76,6 +77,37 @@ class TestTheEntryPointTheContainerNames:
         _, app = build()
 
         assert app is not None
+
+
+class TestTheDatabasePool:
+    """PL-011's value count stalled the browser suite: one connection meant every request queued
+    behind the slowest, and a generic plan for a prepared statement made the slowest take 15 s.
+    The pool is read off its construction, which `open=False` keeps from connecting."""
+
+    @staticmethod
+    def _built(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+        import psycopg_pool
+
+        made: dict[str, Any] = {}
+        real = psycopg_pool.AsyncConnectionPool
+
+        def recorded(conninfo: str = "", **kwargs: Any) -> Any:
+            made.update(kwargs)
+            return real(conninfo, **kwargs)
+
+        monkeypatch.setattr(psycopg_pool, "AsyncConnectionPool", recorded)
+        build()
+        return made
+
+    def test_more_than_one_request_reaches_the_database_at_once(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        assert self._built(monkeypatch)["max_size"] > 1
+
+    def test_every_query_is_planned_with_the_parameters_it_is_given(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        assert self._built(monkeypatch)["kwargs"]["prepare_threshold"] is None
 
 
 class TestWhatIsActuallyWiredIn:

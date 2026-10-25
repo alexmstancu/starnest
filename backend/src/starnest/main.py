@@ -176,7 +176,21 @@ def build() -> tuple[Environment, "FastAPI"]:
     )
 
     environment = Environment()  # type: ignore[call-arg]
-    pool = AsyncConnectionPool(environment.database_url, min_size=1, open=False)
+    # **More than one connection, and every query planned with its own parameters.** With one
+    # connection (psycopg_pool's `max_size` defaults to `min_size`), every request queued behind
+    # the slowest, and a request that waited 30 s answered 500 (PoolTimeout); the suites have
+    # always run on four. And every query in storage/queries takes optional filters written
+    # `:x IS NULL OR ...`: once psycopg prepared one (after five calls on a connection),
+    # PostgreSQL could settle on a single generic plan that cannot drop the unused filters --
+    # measured 40 ms becoming 350 ms for the values a ranking cites, and stalls of 15 s and more
+    # under the browser suite. An unprepared statement is planned with the values it is given.
+    pool = AsyncConnectionPool(
+        environment.database_url,
+        min_size=1,
+        max_size=4,
+        open=False,
+        kwargs={"prepare_threshold": None},
+    )
 
     catalog = PostgresCatalogStore(pool)
     runs = PostgresRunStore(pool)
