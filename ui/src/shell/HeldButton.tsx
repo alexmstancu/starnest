@@ -17,6 +17,7 @@ export function HeldButton({
   held,
   disabled = false,
   id,
+  ariaLabel,
   className,
   title,
   onClick,
@@ -27,6 +28,8 @@ export function HeldButton({
   held: boolean;
   disabled?: boolean;
   id?: string;
+  /** A fuller name than the visible text, which it contains (WCAG 2.5.3). */
+  ariaLabel?: string;
   className: string;
   title?: string;
   onClick: () => void;
@@ -41,6 +44,7 @@ export function HeldButton({
       title={title}
       disabled={disabled}
       aria-disabled={held || undefined}
+      aria-label={ariaLabel}
       onClick={() => {
         if (!held) onClick();
       }}

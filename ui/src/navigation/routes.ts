@@ -49,6 +49,12 @@ export const ROUTES = [
 export type RoutePath = (typeof ROUTES)[number]["path"];
 
 
+/**
+ * The fragment that leads to Acquire's "Every acquisition so far" (PL-127): the sidebar links to
+ * the table itself, and Acquire takes the reader there.
+ */
+export const HISTORY_ANCHOR = "every-acquisition";
+
 /** Where `/` lands. The household is configured first on a fresh installation (`reqs.md` 8.2). */
 export const DEFAULT_ROUTE = ROUTES[0].path;
 

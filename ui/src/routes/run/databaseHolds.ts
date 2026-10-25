@@ -150,6 +150,8 @@ export function scoredFigure(counts: MatchCounts, setName: string): Tile {
 
 /** What a history row says a pass covered and reached. */
 export interface RunReach {
+  /** What the run was for; null for a run from before purposes were recorded. */
+  purpose?: RunPurpose | null;
   scope_candidates?: number;
   scope_attributes?: number;
   items_total?: number;
@@ -162,18 +164,23 @@ export interface RunReach {
  *
  * **Its size, not its contents.** The scope is stored expanded -- one row per candidate and
  * one per attribute -- so a history row carries two counts, and "32 candidates over 41
- * attributes" is what those two mean. **A pass over exact pairs asked for fewer values than
- * their cross product** (C04-N14), so it is counted in values: a two-item retry over two
- * candidates and two attributes is "2 values over 2 candidates", never four.
+ * attributes" is what those two mean. **A pass over exact pairs is counted in items** (C04-N14,
+ * PL-127): a retry, an ask-again or a scoped run by its purpose, and a run that recorded none
+ * when it asked for fewer items than their cross product -- a two-item retry over two
+ * candidates and two attributes is "2 items over 2 candidates", never four.
  */
 export function describeScope(run: RunReach): string {
   const candidates = run.scope_candidates ?? 0;
   const attributes = run.scope_attributes ?? 0;
   if (candidates === 0 || attributes === 0) return "—";
   const items = run.items_total;
-  if (items !== undefined && items < candidates * attributes) {
+  const overPairs =
+    run.purpose === null || run.purpose === undefined
+      ? items !== undefined && items < candidates * attributes
+      : run.purpose !== "sweep";
+  if (items !== undefined && overPairs) {
     return (
-      `${String(items)} ${items === 1 ? "value" : "values"}` +
+      `${String(items)} ${items === 1 ? "item" : "items"}` +
       ` over ${String(candidates)} ${candidates === 1 ? "candidate" : "candidates"}`
     );
   }
@@ -234,4 +241,22 @@ export function describeRefresh(
 
 function valuesWord(count: number): string {
   return count === 1 ? "value" : "values";
+}
+
+export type RunPurpose = "sweep" | "retry" | "ask_again" | "scoped";
+
+const PURPOSE_WORDS: Record<RunPurpose, string> = {
+  sweep: "The whole level",
+  retry: "A retry of failures",
+  ask_again: "Asked again",
+  scoped: "Chosen items",
+};
+
+/**
+ * What a run was for, as the history says it (PL-127, D34). **Nothing for a run that recorded no
+ * purpose**: those came before purposes were recorded, and a guess from the counts would be
+ * a claim the run never made.
+ */
+export function describePurpose(purpose: RunPurpose | null | undefined): string {
+  return purpose === null || purpose === undefined ? "" : PURPOSE_WORDS[purpose];
 }

@@ -29,7 +29,7 @@ import {
   type SetNames,
 } from "../format/savedRanking";
 import { HOUSEHOLD_LABELS } from "../format/vocabulary";
-import { ROUTES } from "../navigation/routes";
+import { HISTORY_ANCHOR, ROUTES } from "../navigation/routes";
 import { LoadedRegion } from "./LoadedRegion";
 import { SavedRankingRow } from "./SavedRankingRow";
 import { useSelection } from "./SelectionContext";
@@ -477,7 +477,8 @@ function LastAcquisitionCard({ summary }: { summary: ShellSummary }) {
       {/* Found by label rather than by position: `ROUTES[1]` meant "Acquire" only for as long
           as nobody reordered the list, and reordering it is a change nothing would have
           failed on. */}
-      <Link className="panel__link" to={ACQUIRE.path}>
+      {/* To the table itself, not the top of Acquire (PL-127). */}
+      <Link className="panel__link" to={{ pathname: ACQUIRE.path, hash: HISTORY_ANCHOR }}>
         Acquisition history
       </Link>
     </section>

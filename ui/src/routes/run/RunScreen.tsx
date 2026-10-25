@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useId, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import {
   type Holdings,
   type Run,
@@ -19,9 +20,15 @@ import { RefusalNotice } from "../../shell/RefusalNotice";
 import { describeRunStatus } from "../../shell/runStatus";
 import { RunStatusChip } from "../../shell/RunStatusChip";
 import { useSelection } from "../../shell/SelectionContext";
+import { HISTORY_ANCHOR } from "../../navigation/routes";
 import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
 import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
-import { describeGaps, describeRefresh, describeScope } from "./databaseHolds";
+import {
+  describeGaps,
+  describePurpose,
+  describeRefresh,
+  describeScope,
+} from "./databaseHolds";
 import { describeFailures, failuresIn } from "./failureGroups";
 import { HeldButton } from "../../shell/HeldButton";
 import { runRefusedFor } from "./inFlightRefusal";
@@ -85,6 +92,14 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
     }
   };
   const gapsHeading = useRef<HTMLHeadingElement>(null);
+  // **The sidebar's "Acquisition history" leads to the table itself** (PL-127), not to the top.
+  const historyHeading = useRef<HTMLHeadingElement>(null);
+  const location = useLocation();
+  useEffect(() => {
+    if (location.hash !== `#${HISTORY_ANCHOR}`) return;
+    historyHeading.current?.focus();
+    historyHeading.current?.scrollIntoView?.({ block: "start" });
+  }, [location.hash, location.key]);
   // The acquisition still going, if any: one runs at a time, so it holds every way to start.
   const stillRunning = acquisitionInFlight(
     run.current,
@@ -268,8 +283,8 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
           drawn before the first answer, so nothing can be chosen from a list nobody has read. */}
       {run.history.state === "ready" && <AcquisitionDiffPanel runs={run.history.data} />}
 
-      <section aria-labelledby="every-acquisition">
-        <h2 id="every-acquisition" className="panel__heading">
+      <section aria-labelledby={HISTORY_ANCHOR}>
+        <h2 id={HISTORY_ANCHOR} ref={historyHeading} tabIndex={-1} className="panel__heading">
           Every acquisition so far
         </h2>
         <LoadedRegion
@@ -829,13 +844,7 @@ function RunReport({
     // can address, rather than the nearest box that happens to contain the heading.
     <section
       ref={card}
-      className={
-        state === "stopping"
-          ? "acquisition acquisition--stopping"
-          : going
-            ? "acquisition acquisition--going"
-            : "acquisition"
-      }
+      className={cardClass(state)}
       // **Labelled by the acquisition, headed by its state.** The design heads the card with
       // the state because its prototype only ever has the run it just started; this screen can
       // open any run in the history, so the region a reader -- or a test, or a screen reader --
@@ -862,7 +871,7 @@ function RunReport({
 
       {/* **The stopping state is drawn** (PL-123): Stop has withdrawn, so the card says what
           happens next and when it was asked, from the stop time the run carries. */}
-      {state === "stopping" && (
+      {state === STOPPING && (
         <p className="acquisition__stopping">
           Stop asked at {formatTime(run.stop_requested_at)}. The source in flight finishes,
           nothing new starts, and everything completed is kept.
@@ -921,6 +930,14 @@ function RunReport({
   );
 }
 
+/** The card's frame: amber while a stop is asked (PL-123), teal while it runs. */
+function cardClass(state: string): string {
+  if (state === STOPPING) return "acquisition acquisition--stopping";
+  return inFlight(state) ? "acquisition acquisition--going" : "acquisition";
+}
+
+const STOPPING = "stopping";
+
 /** Whether focus is lost, or still on the screen that holds `element`. */
 function focusIsHereOrLost(element: HTMLElement | null): boolean {
   const focused = document.activeElement;
@@ -974,6 +991,7 @@ function RunHistory({
                 <HeldButton
                   className="link-button"
                   held={held}
+                  ariaLabel={`Open acquisition ${String(run.id)}`}
                   onClick={() => onOpen(run)}
                 >
                   {run.id}
@@ -982,7 +1000,13 @@ function RunHistory({
               <td>{formatDateTime(run.started_at)}</td>
               {/* Its size, not its contents: the scope is stored expanded, so a row carries
                   two counts rather than a list of what it covered. */}
-              <td className="run-scope">{describeScope(run)}</td>
+              <td className="run-scope">
+                {/* What it was for (PL-127), said only where the run recorded it. */}
+                {describePurpose(run.purpose) !== "" && (
+                  <span className="run-scope__purpose">{describePurpose(run.purpose)}</span>
+                )}
+                {describeScope(run)}
+              </td>
               <td>
                 <RunStatusChip status={run.run_status} />
               </td>

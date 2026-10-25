@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   describeGaps,
+  describePurpose,
   describeRefresh,
   describeScope,
   holdingsFigures,
@@ -178,10 +179,10 @@ describe("how big a pass was", () => {
   it("counts the values a pass over exact pairs asked for", () => {
     expect(
       describeScope({ scope_candidates: 2, scope_attributes: 2, items_total: 2 }),
-    ).toBe("2 values over 2 candidates");
+    ).toBe("2 items over 2 candidates");
     expect(
       describeScope({ scope_candidates: 1, scope_attributes: 3, items_total: 1 }),
-    ).toBe("1 value over 1 candidate");
+    ).toBe("1 item over 1 candidate");
   });
 
   it("keeps the cross product where the pass asked for all of it", () => {
@@ -253,5 +254,38 @@ describe("what refreshing everything re-asks", () => {
     expect(describeRefresh(null)).toBe(
       "Re-asks every value at this level. The estimate first: what would be fetched, and what it would cost, before anything is.",
     );
+  });
+});
+
+/** UF-099 (PL-127): a history row says what each run was for, from the purpose it recorded. */
+describe("what a run was for", () => {
+  it.each([
+    ["sweep", "The whole level"],
+    ["retry", "A retry of failures"],
+    ["ask_again", "Asked again"],
+    ["scoped", "Chosen items"],
+  ] as const)("words %s", (purpose, words) => {
+    expect(describePurpose(purpose)).toBe(words);
+  });
+
+  /** Not recorded before purposes were: never guessed from the counts. */
+  it("says nothing for a run that recorded no purpose", () => {
+    expect(describePurpose(null)).toBe("");
+    expect(describePurpose(undefined)).toBe("");
+  });
+
+  it("words a pair-scoped run by its items, though they fill its rectangle", () => {
+    expect(
+      describeScope({ purpose: "retry", scope_candidates: 2, scope_attributes: 1, items_total: 2 }),
+    ).toBe("2 items over 2 candidates");
+    expect(
+      describeScope({ purpose: "scoped", scope_candidates: 1, scope_attributes: 1, items_total: 1 }),
+    ).toBe("1 item over 1 candidate");
+  });
+
+  it("words a sweep as the rectangle it is", () => {
+    expect(
+      describeScope({ purpose: "sweep", scope_candidates: 32, scope_attributes: 41, items_total: 1312 }),
+    ).toBe("32 candidates over 41 attributes");
   });
 });

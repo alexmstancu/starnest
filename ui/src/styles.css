@@ -5145,3 +5145,10 @@ select.field__control {
   color: var(--colour-warning);
   font-size: var(--font-size-small);
 }
+
+/* What a past acquisition was for (PL-127), on its own line above its size. */
+.run-scope__purpose {
+  display: block;
+  color: var(--colour-text-strong);
+  font-weight: var(--weight-strong);
+}

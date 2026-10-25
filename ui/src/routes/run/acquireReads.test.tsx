@@ -464,7 +464,7 @@ describe("the last acquisition when it could not be read", () => {
     await within(await findRegion(LAST_ACQUISITION)).findByText(/could not be loaded/i);
 
     const six = await screen.findByRole("rowheader", { name: "6" });
-    await userEvent.click(within(six).getByRole("button", { name: "6" }));
+    await userEvent.click(within(six).getByRole("button", { name: "Open acquisition 6" }));
     const card = await findRegion(/^acquisition 6$/i);
     await userEvent.click(within(card).getByRole("button", { name: "Dismiss" }));
 

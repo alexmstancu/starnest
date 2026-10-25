@@ -644,7 +644,7 @@ describe("the remedy cards", () => {
     await screen.findByRole("button", { name: "Retry 1 failed" });
     const six = await screen.findByRole("rowheader", { name: "6" });
 
-    await userEvent.click(within(six).getByRole("button", { name: "6" }));
+    await userEvent.click(within(six).getByRole("button", { name: "Open acquisition 6" }));
     await screen.findByRole("region", { name: /^acquisition 6$/i });
 
     expect(screen.getByRole("button", { name: "Retry 1 failed" })).toBeInTheDocument();
@@ -835,7 +835,7 @@ describe("the run history", () => {
 
     // The acquisition's own number is what opens it: a separate button in a fifth column is
     // a target to hunt for on every row.
-    await userEvent.click(within(row).getByRole("button", { name: "7" }));
+    await userEvent.click(within(row).getByRole("button", { name: "Open acquisition 7" }));
 
     expect(
       await screen.findByRole("region", { name: /acquisition 7/i }),
@@ -860,7 +860,7 @@ describe("the run history", () => {
 
     // The acquisition's own number is what opens it: a separate button in a fifth column is
     // a target to hunt for on every row.
-    await userEvent.click(within(row).getByRole("button", { name: "7" }));
+    await userEvent.click(within(row).getByRole("button", { name: "Open acquisition 7" }));
 
     expect(await screen.findByRole("alert")).toBeInTheDocument();
   });
@@ -972,7 +972,7 @@ describe("what the database holds", () => {
     const panel = await thePanel();
     const six = await screen.findByRole("rowheader", { name: "6" });
 
-    await userEvent.click(within(six).getByRole("button", { name: "6" }));
+    await userEvent.click(within(six).getByRole("button", { name: "Open acquisition 6" }));
     await screen.findByRole("region", { name: /^acquisition 6$/i });
 
     expect(figure(panel, "Values stored")).toHaveTextContent(/1,309\s*of 1,312/);
@@ -2269,7 +2269,7 @@ describe("what changed between two acquisitions", () => {
         if (new URL(request.url).searchParams.get("limit") === "1") return;
         const runs: Run[] = RUNS.map((run) =>
           run.id === 6
-            ? { ...run, scope_candidates: 2, scope_attributes: 2, items_total: 2 }
+            ? { ...run, purpose: "retry", scope_candidates: 2, scope_attributes: 2, items_total: 2 }
             : run,
         );
         return HttpResponse.json({ items: runs, total: runs.length });
@@ -2281,7 +2281,7 @@ describe("what changed between two acquisitions", () => {
     expect(
       within(
         await panel.findByRole("combobox", { name: /later acquisition/i }),
-      ).getByRole("option", { name: /^Acquisition 6 — .* \(2 values over 2 candidates\)$/ }),
+      ).getByRole("option", { name: /^Acquisition 6 — .* \(2 items over 2 candidates\)$/ }),
     ).toBeInTheDocument();
   });
 
@@ -3183,7 +3183,7 @@ describe("the acquisition card the design asks for", () => {
     renderShell("/acquire");
     const history = await screen.findByRole("table");
 
-    await userEvent.click(within(history).getByRole("button", { name: "6" }));
+    await userEvent.click(within(history).getByRole("button", { name: "Open acquisition 6" }));
 
     expect(
       await screen.findByRole("region", { name: /acquisition 6/i }),
@@ -3750,7 +3750,7 @@ function aRunWhoseStopIsHeld(): { release: () => void } {
 
 async function openFromHistory(id: string): Promise<void> {
   const number = await screen.findByRole("rowheader", { name: id });
-  await userEvent.click(within(number).getByRole("button", { name: id }));
+  await userEvent.click(within(number).getByRole("button", { name: `Open acquisition ${id}` }));
 }
 
 /**
@@ -5214,7 +5214,7 @@ describe("acting from the keyboard", () => {
     const reads = holdEach("get", "/data-acquisition-runs/:runId");
     const pastRun = within(
       screen.getByRole("rowheader", { name: "7" }),
-    ).getByRole("button", { name: "7" });
+    ).getByRole("button", { name: "Open acquisition 7" });
 
     for (const control of [
       card.getByRole("button", { name: "Refresh" }),
@@ -5515,7 +5515,7 @@ describe("opening an acquisition from the history", () => {
 
     expect(await screen.findByText("Reading acquisition 6 did not go through")).toBeInTheDocument();
     const number = screen.getByRole("rowheader", { name: "6" });
-    expect(within(number).getByRole("button", { name: "6" })).toHaveFocus();
+    expect(within(number).getByRole("button", { name: "Open acquisition 6" })).toHaveFocus();
     expect(scrolled).toEqual([]);
   });
 
