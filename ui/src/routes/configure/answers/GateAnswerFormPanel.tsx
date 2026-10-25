@@ -1,10 +1,19 @@
-import type { ReactNode, RefObject } from "react";
+import { type ReactNode, type RefObject, useLayoutEffect, useRef } from "react";
+import type { Read } from "../../../api/read";
 import { candidateName, formatMatchStatus } from "../../../format/display";
 import { CheckboxField } from "../../../shell/CheckboxField";
+import { useRetryFocus } from "../../../shell/useRetryFocus";
 import type { DraftField, DraftProblem } from "./gateAnswerForm";
 import type { GateAnswers } from "./useGateAnswers";
 
 const ANSWERS = ["matching", "not_matching", "unknown"] as const;
+
+/** The roster's state as a read, for the focus a Try again hands on. */
+const ROSTER_READ: Record<"loading" | "ready" | "error", Read<unknown>> = {
+  loading: { state: "pending" },
+  ready: { state: "ready", data: null, readAt: new Date(0), refresh: "idle" },
+  error: { state: "failed", error: null },
+};
 
 /**
  * The form that records, corrects or rules out one gate answer. **Markup only**: the draft, its
@@ -31,13 +40,32 @@ export function GateAnswerFormPanel({
     draft.candidate,
   );
 
+  // **Its Try again takes itself away** (RULES "Focus"): the form holds focus while the
+  // candidates are read again, and hands it to a new Try again if that fails too.
+  const form = useRef<HTMLFormElement>(null);
+  const { retryButton, hold } = useRetryFocus(ROSTER_READ[answers.candidates.status], form);
+  // **A save that empties the form can unmount the field it was sent from** -- the override
+  // reason goes with its box -- so focus moves to Save, which stays, rather than to the page.
+  const saveButton = useRef<HTMLButtonElement>(null);
+  const sentFromTheForm = useRef(false);
+  useLayoutEffect(() => {
+    if (answers.saving || !sentFromTheForm.current) return;
+    sentFromTheForm.current = false;
+    const focused = document.activeElement;
+    if (focused === null || focused === document.body) saveButton.current?.focus();
+  }, [answers.saving]);
+
   return (
     <form
+      ref={form}
+      tabIndex={-1}
       className="gate-answer-form"
       aria-label="Record a gate answer"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!held) answers.save();
+        if (held) return;
+        sentFromTheForm.current = form.current?.contains(document.activeElement) ?? false;
+        answers.save();
       }}
     >
       <div className="field-grid">
@@ -99,7 +127,15 @@ export function GateAnswerFormPanel({
       {answers.candidates.status === "error" && (
         <p className="field__note field__note--warning">
           The candidates could not be read, so none can be chosen.{" "}
-          <button type="button" className="button" onClick={answers.candidates.reload}>
+          <button
+            ref={retryButton}
+            type="button"
+            className="button"
+            onClick={() => {
+              hold();
+              answers.candidates.reload();
+            }}
+          >
             Try again
           </button>
         </p>
@@ -190,6 +226,7 @@ export function GateAnswerFormPanel({
 
       <div className="rule-form__actions">
         <button
+          ref={saveButton}
           type="submit"
           className="button button--primary"
           aria-disabled={held || undefined}

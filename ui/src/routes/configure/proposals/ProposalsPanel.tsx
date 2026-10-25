@@ -1,5 +1,6 @@
 import { type RefObject, useEffect, useRef, useState } from "react";
 import type { MatchRuleResult } from "../../../api/endpoints";
+import type { Read } from "../../../api/read";
 import { useCandidateNames } from "../../../api/useCandidateNames";
 import { useMatchRuleNames } from "../../../api/useMatchRuleNames";
 import {
@@ -15,6 +16,7 @@ import { CheckboxField } from "../../../shell/CheckboxField";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { RefusalNotice } from "../../../shell/RefusalNotice";
 import { refocusIfLost } from "../../../shell/focusReturn";
+import { useRetryFocus } from "../../../shell/useRetryFocus";
 import { describePeriod } from "../gateAnswerReading";
 import { leavesEstimateUnspent } from "./researchPass";
 import { proposalKey, useFocusAfterConfirm } from "./useFocusAfterConfirm";
@@ -74,6 +76,11 @@ export function ProposalsPanel({
   const [acceptUncapped, setAcceptUncapped] = useState(false);
   const estimateButton = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLElement>(null);
+  const levelsRegion = useRef<HTMLDivElement>(null);
+  const { retryButton: levelsRetry, hold: holdForLevels } = useRetryFocus(
+    LEVELS_AS_READ[proposals.levels],
+    levelsRegion,
+  );
   useFocusAfterPass(pass.end, estimateButton);
   const confirmFocus = useFocusAfterConfirm(proposals, estimateButton);
   // **Held while an estimate, a pass or a confirmation is in flight, never disabled** (NEW-44):
@@ -268,7 +275,9 @@ export function ProposalsPanel({
         prominence="region"
       >
         {() => (
-        <>
+        // Holds focus while the candidates are read again, for the Try again below (RULES
+        // "Focus"): that button takes itself away when pressed.
+        <div ref={levelsRegion} tabIndex={-1}>
           {/* **Unknown is not this level's** (PL-151): until the candidates are read, nothing
               says which level a proposal is about, so none is listed or confirmable yet. */}
           {proposals.levels === "pending" && (
@@ -280,7 +289,15 @@ export function ProposalsPanel({
                 The candidates could not be read, so which level each proposal
                 is about is not known: every level&apos;s proposals are listed.
               </p>
-              <button type="button" className="button" onClick={proposals.rereadLevels}>
+              <button
+                ref={levelsRetry}
+                type="button"
+                className="button"
+                onClick={() => {
+                  holdForLevels();
+                  proposals.rereadLevels();
+                }}
+              >
                 Read the candidates again
               </button>
             </div>
@@ -327,7 +344,7 @@ export function ProposalsPanel({
               </tbody>
             </table>
           )}
-        </>
+        </div>
         )}
       </LoadedRegion>
     </section>
@@ -464,3 +481,10 @@ function PageLink({ page }: { page: string }) {
     </a>
   );
 }
+
+/** Whether the candidates have been read, as a read, for the focus a Try again hands on. */
+const LEVELS_AS_READ: Record<"pending" | "ready" | "failed", Read<unknown>> = {
+  pending: { state: "pending" },
+  ready: { state: "ready", data: null, readAt: new Date(0), refresh: "idle" },
+  failed: { state: "failed", error: null },
+};

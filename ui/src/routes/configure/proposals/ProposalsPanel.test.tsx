@@ -259,6 +259,32 @@ describe("what the panel shows", () => {
     expect(theProposals().getByRole("row", { name: new RegExp(PROPOSED_FOR) })).toBeInTheDocument();
   });
 
+  /** RULES "Focus": the button takes itself away when pressed, and focus must not go to BODY. */
+  it("keeps focus off the page when Read the candidates again takes itself away", async () => {
+    const candidates = { down: true };
+    mockServer.use(
+      http.get(`${BASE}/candidates`, () =>
+        candidates.down
+          ? HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 })
+          : undefined,
+      ),
+    );
+    renderShell("/configure");
+    await screen.findByRole("region", { name: "Gate proposals" });
+    const retry = await theProposals().findByRole("button", { name: "Read the candidates again" });
+    candidates.down = false;
+
+    await userEvent.click(retry);
+
+    await waitFor(() =>
+      expect(theProposals().queryByRole("button", { name: "Read the candidates again" })).toBeNull(),
+    );
+    expect(document.activeElement).not.toBe(document.body);
+    expect(screen.getByRole("region", { name: "Gate proposals" })).toContainElement(
+      document.activeElement as HTMLElement,
+    );
+  });
+
   it("prints a page that is not a web address as text, never as a link", async () => {
     mockServer.use(
       http.get(`${BASE}/match-rule-results`, () =>

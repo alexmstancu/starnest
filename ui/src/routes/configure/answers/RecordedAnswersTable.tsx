@@ -127,12 +127,6 @@ function AnswerRow({
       <td>{candidate}</td>
       <td>
         {formatMatchStatus(answer.match_result)}
-        {answer.needs_recheck === true && (
-          <p className="answer-row__ended">
-            The household's citizenships have changed since this was recorded, so it may need
-            checking again. It applies until you change it.
-          </p>
-        )}
       </td>
       <td>
         {describePeriod(answer.reference_period)}

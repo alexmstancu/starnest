@@ -569,7 +569,7 @@ describe("re-checking a recorded answer", () => {
     expect(
       theAnswers().getByRole("button", { name: "Re-check Free movement applies for Spain" }),
     ).toBeInTheDocument();
-    expect(theAnswers().getByText(/household's citizenships have changed/i)).toBeInTheDocument();
+    expect(theAnswers().getByText(/check it again/i)).toBeInTheDocument();
     expect(theAnswers().queryByRole("button", { name: `Re-check ${VISA}` })).toBeNull();
   });
 
@@ -709,5 +709,135 @@ describe("re-checking a recorded answer", () => {
       ),
     );
     expect(asked).toHaveLength(1);
+  });
+});
+
+describe("a save while the form is still in use (review #3)", () => {
+  /** Holds every PUT until `release`, then lets the mock answer it. */
+  function holdWrites(): { release: () => void } {
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockServer.use(
+      http.put(`${BASE}/match-rule-results/:matchRuleId/:candidateId`, async () => {
+        await released;
+        return undefined;
+      }),
+    );
+    return { release };
+  }
+
+  it("keeps focus on Save when the field it was sent from goes with the emptied form", async () => {
+    renderShell("/configure");
+    await settled();
+    await fillAnAnswer();
+    await userEvent.click(theForm().getByRole("checkbox", { name: "This overrides what the sources say" }));
+
+    await userEvent.type(theForm().getByLabelText("Override reason"), "Checked myself{Enter}");
+
+    await waitFor(() => expect(theForm().queryByLabelText("Override reason")).toBeNull());
+    expect(theForm().getByRole("button", { name: "Save the answer" })).toHaveFocus();
+  });
+
+  it("keeps what was typed while the save was in flight, and still says it was recorded", async () => {
+    const writes = holdWrites();
+    renderShell("/configure");
+    await settled();
+    await fillAnAnswer();
+    await save();
+
+    await userEvent.type(theForm().getByLabelText("Reason"), "Typed while the save was in flight");
+    writes.release();
+
+    await waitFor(() =>
+      expect(theAnswers().getByRole("status")).toHaveTextContent(
+        "Recorded Not matching for UK Skilled Worker route and United Kingdom.",
+      ),
+    );
+    expect(theForm().getByLabelText("Reason")).toHaveValue("Typed while the save was in flight");
+  });
+
+  it("keeps an answer loaded by Answer differently while the save was in flight", async () => {
+    const writes = holdWrites();
+    renderShell("/configure");
+    await settled();
+    await fillAnAnswer();
+    await save();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Answer A visa route exists for Portugal differently" }),
+    );
+    writes.release();
+
+    await waitFor(() => expect(theAnswers().getByRole("status")).toHaveTextContent(/^Recorded/));
+    expect(theForm().getByLabelText("Candidate")).toHaveValue("country.portugal");
+  });
+});
+
+describe("before the candidates say which level an answer is about (review #8)", () => {
+  it("lists no answer, and offers no Change, until the candidates are read", async () => {
+    serveAnswers([
+      RECORDED,
+      { ...RECORDED, match_rule: "not_manually_excluded", candidate: "city.lisbon" },
+    ]);
+    let release: () => void = () => undefined;
+    const roster = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockServer.use(
+      http.get(`${BASE}/candidates`, async () => {
+        await roster;
+        return undefined;
+      }),
+    );
+    renderShell("/configure");
+    await screen.findByRole("region", { name: "Gate answers" });
+    await theAnswers().findByRole("form", { name: "Record a gate answer" });
+
+    expect(theAnswers().queryByRole("button", { name: /^Change/ })).toBeNull();
+    expect(theAnswers().queryByText(/No gate answer has been recorded/)).toBeNull();
+    release();
+
+    expect(
+      await theAnswers().findByRole("button", { name: "Change UK Skilled Worker route for United Kingdom" }),
+    ).toBeInTheDocument();
+    expect(theAnswers().queryByRole("row", { name: /Lisbon/ })).toBeNull();
+  });
+});
+
+describe("the candidates' Try again (review #4)", () => {
+  it("keeps focus off the page when it takes itself away", async () => {
+    const candidates = { down: true };
+    mockServer.use(
+      http.get(`${BASE}/candidates`, () =>
+        candidates.down
+          ? HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 })
+          : undefined,
+      ),
+    );
+    renderShell("/configure");
+    await screen.findByRole("region", { name: "Gate answers" });
+    const retry = await theAnswers().findByRole("button", { name: "Try again" });
+    candidates.down = false;
+
+    await userEvent.click(retry);
+
+    await waitFor(() => expect(theAnswers().queryByRole("button", { name: "Try again" })).toBeNull());
+    expect(document.activeElement).not.toBe(document.body);
+    expect(screen.getByRole("region", { name: "Gate answers" })).toContainElement(
+      document.activeElement as HTMLElement,
+    );
+  });
+});
+
+describe("an answer to check again (review #11)", () => {
+  it("says so once", async () => {
+    serveAnswers([{ ...RECORDED, assumed_citizenships: ["country.united_kingdom"], needs_recheck: true }]);
+    renderShell("/configure");
+    await settled();
+
+    const row = await theAnswers().findByRole("row", { name: /UK Skilled Worker route/ });
+    expect(within(row).getAllByText(/check(ing)? it again|checking again/)).toHaveLength(1);
   });
 });

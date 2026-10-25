@@ -79,12 +79,17 @@ export function useGateAnswers(
   );
   const rosterState = useCandidateRosterState();
 
+  // **Unknown is not this level's** (PL-151): until the candidates are read, nothing says
+  // which level an answer is about, so none is listed -- or offered a Change -- as this one's.
+  const rosterRead = rosterState.status !== "loading";
   const recorded = useMemo(
     () =>
-      atLevel(read.state === "ready" ? read.data.items : [], rosterState.roster, level).filter(
-        (answer) => answer.is_proposal !== true,
-      ),
-    [read, rosterState.roster, level],
+      read.state === "ready" && rosterRead
+        ? atLevel(read.data.items, rosterState.roster, level).filter(
+            (answer) => answer.is_proposal !== true,
+          )
+        : [],
+    [read, rosterRead, rosterState.roster, level],
   );
   const candidates = useMemo(
     () => ({
@@ -100,8 +105,12 @@ export function useGateAnswers(
   const [failure, setFailure] = useState<unknown>(null);
   const [saved, setSaved] = useState<MatchRuleResult | null>(null);
   const inFlight = useRef(false);
+  // Moves with every edit, so a save that lands empties the form only if nothing was typed or
+  // loaded into it after the save was sent.
+  const revision = useRef(0);
 
   const load = useCallback((next: GateAnswerDraft) => {
+    revision.current += 1;
     setDraft(next);
     setProblems([]);
     setSaved(null);
@@ -118,10 +127,11 @@ export function useGateAnswers(
     setProblems([]);
     setFailure(null);
     setSaving(true);
+    const sentAt = revision.current;
     void putMatchRuleResult(reading.matchRule, reading.candidate, reading.input)
       .then((stored) => {
         setSaved(stored);
-        setDraft(emptyDraft());
+        if (revision.current === sentAt) setDraft(emptyDraft());
         onAnswered();
       })
       .catch((error: unknown) => setFailure(error))
@@ -132,7 +142,8 @@ export function useGateAnswers(
   }
 
   return {
-    read,
+    // Drawn as still being read until the candidates say which answers are this level's.
+    read: rosterRead ? read : PENDING,
     recorded,
     stale: read.state === "ready" && read.refresh !== "idle",
     gates: gates.read.state === "idle" ? PENDING : gates.read,
@@ -140,6 +151,7 @@ export function useGateAnswers(
     candidates,
     draft,
     change: (edit) => {
+      revision.current += 1;
       setDraft((current) => ({ ...current, ...edit }));
       setSaved(null);
     },
