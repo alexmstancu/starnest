@@ -32,7 +32,12 @@ from starnest.data import (
     RuleOutcome,
     Value,
 )
-from starnest.evaluation.magnitudes import PublishedFigure, UnscoreableValueError, figure_of
+from starnest.evaluation.magnitudes import (
+    PublishedFigure,
+    UnscoreableValueError,
+    figure_of,
+    threshold_reading,
+)
 from starnest.evaluation.normalisation import scores_for
 from starnest.evaluation.results import (
     AttributeScore,
@@ -448,12 +453,13 @@ def _magnitudes_of(values: Sequence[Value]) -> dict[str, Decimal]:
     3.0) -- could never fire at all. Both are things `reqs.md` 3.7a says a rule may do.
 
     A value nothing can compare is absent rather than zero, and `_holds` treats an absent figure
-    as a condition that does not hold: an unmeasured condition is not a satisfied one.
+    as a condition that does not hold: an unmeasured condition is not a satisfied one. **An
+    assigned score is read as a percentage of its own scale**, as a threshold reads it (C06-S1).
     """
     magnitudes: dict[str, Decimal] = {}
     for value in values:
         try:
-            magnitudes[str(value.attribute)] = figure_of(value).magnitude
+            magnitudes[str(value.attribute)] = threshold_reading(value)
         except UnscoreableValueError:
             continue
     return magnitudes

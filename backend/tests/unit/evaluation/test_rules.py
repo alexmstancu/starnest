@@ -14,10 +14,12 @@ import pytest
 from starnest.criteria import (
     BooleanThreshold,
     LabelThreshold,
+    NormalisationMethod,
     RangeThreshold,
     ShareThreshold,
 )
 from starnest.data import (
+    AssignedScore,
     Boolean,
     CompoundRule,
     CompoundRuleCondition,
@@ -478,9 +480,26 @@ class TestTheGates:
         )
 
 
+def _a_method_it_permits(value_type: ValueType) -> dict[str, NormalisationMethod]:
+    """An assigned score is read `as_is` only; every other type here takes the default."""
+    if value_type is ValueType.ASSIGNED_SCORE:
+        return {"normalisation_method": NormalisationMethod.AS_IS}
+    return {}
+
+
+def _on_ten(score: str) -> AssignedScore:
+    return AssignedScore(
+        value=Decimal(score), range_min=Decimal(0), range_max=Decimal(10), assigned_by="human"
+    )
+
+
 def _verdict(threshold, value_type, payload):
     """One criterion with `threshold`, one candidate whose value carries `payload`."""
-    criterion = a_criterion(value_type=value_type, matching_threshold=threshold)
+    criterion = a_criterion(
+        value_type=value_type,
+        matching_threshold=threshold,
+        **_a_method_it_permits(value_type),
+    )
     value = a_value(value_type=value_type, payload=payload)
     return thresholds_that_rule_out([criterion], [value])
 
@@ -562,6 +581,35 @@ class TestMatchingThresholds:
         )
 
         assert on_the_max == ()
+
+    @pytest.mark.parametrize(("score", "ruled_out"), [("7", False), ("5", False), ("3", True)])
+    def test_a_threshold_on_an_assigned_score_reads_it_on_its_own_scale(
+        self, score: str, ruled_out: bool
+    ) -> None:
+        """C06-S1, N2: 7 on 0-10 is 70% of its scale, above a minimum of 50, never "7"."""
+        out = _verdict(
+            RangeThreshold(min_value=Decimal(50)), ValueType.ASSIGNED_SCORE, _on_ten(score)
+        )
+
+        assert bool(out) is ruled_out
+
+    def test_a_maximum_on_an_assigned_score_reads_it_on_its_own_scale_too(self) -> None:
+        out = _verdict(
+            RangeThreshold(max_value=Decimal(80)), ValueType.ASSIGNED_SCORE, _on_ten("9")
+        )
+
+        assert "90% of its scale (9 on 0 to 10), above your maximum of 80%" in (
+            out[0].reason_detail
+        )
+
+    def test_the_reason_reads_a_percentage_of_the_scale_not_the_raw_figure(self) -> None:
+        out = _verdict(
+            RangeThreshold(min_value=Decimal(50)), ValueType.ASSIGNED_SCORE, _on_ten("3")
+        )
+
+        assert "is 30% of its scale (3 on 0 to 10), below your minimum of 50%" in (
+            out[0].reason_detail
+        )
 
     def test_must_contain_rules_out_when_the_label_is_absent(self) -> None:
         out = _verdict(

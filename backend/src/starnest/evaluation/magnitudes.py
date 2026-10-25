@@ -166,3 +166,21 @@ def share_of_its_scale(figure: PublishedFigure) -> Decimal | None:
     if highest <= lowest:
         return None
     return (figure.magnitude - lowest) / (highest - lowest)
+
+
+def threshold_reading(value: Value) -> Decimal:
+    """The figure a threshold or a compound condition compares (C06-S1, `reqs.md` 5.2).
+
+    **An assigned score is read as a percentage of the scale it was given on** (N2): 7 on 0 to
+    10 is 70, so a minimum of 50 admits it, and the same judgement given on 0 to 100 reads the
+    same. Its raw figure means nothing across ranges, and the score scale moves when the
+    household sets it, so neither could be a line somebody draws once. Every other figure is
+    its magnitude in the attribute's unit -- an `Index` keeps its publisher's, which the
+    attribute declares once, and a `Ratio`'s share already is a percentage.
+    """
+    figure = figure_of(value)
+    if isinstance(value.payload, AssignedScore):
+        share = share_of_its_scale(figure)
+        assert share is not None, "an assigned score always declares a range running upwards"
+        return share * 100
+    return figure.magnitude

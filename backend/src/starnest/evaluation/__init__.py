@@ -21,6 +21,7 @@ from starnest.evaluation.magnitudes import (
     figure_of,
     is_scoreable,
     magnitude_of,
+    threshold_reading,
 )
 from starnest.evaluation.normalisation import NormalisationError, scores_for
 from starnest.evaluation.ranking import (
@@ -87,5 +88,6 @@ __all__ = [
     "redistribute",
     "renormalise",
     "scores_for",
+    "threshold_reading",
     "thresholds_that_rule_out",
 ]

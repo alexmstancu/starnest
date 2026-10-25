@@ -1060,6 +1060,42 @@ class TestAnAssignedScore:
         assert scores == {"country.portugal": 30}
 
 
+class TestARuleOnAnAssignedScore:
+    """C06-S1, N2: a compound condition reads an assigned score as a percentage of its own
+    scale, as a threshold does -- never the raw figure, which means nothing across ranges."""
+
+    @staticmethod
+    def a_rule_at_least_half_way() -> CompoundRule:
+        return CompoundRule(
+            id="cheap_but_taxed",
+            name="Easy to settle",
+            level="country",
+            shape=CompoundRuleShape.ALL_CONDITIONS_HOLD,
+            outcome=RuleOutcome.WARNING,
+            conditions=(
+                CompoundRuleCondition(ordinal=1, attribute=ADMIN_EASE, threshold_min=Decimal(50)),
+            ),
+        )
+
+    def test_a_compound_condition_on_an_assigned_score_reads_it_on_its_own_scale(self) -> None:
+        applying = admin_ease_as_is().model_copy(
+            update={"applied_compound_rules": frozenset({"cheap_but_taxed"})}
+        )
+        values = {
+            "country.portugal": (an_assigned_score("country.portugal", "7", on=("0", "10")),),
+            "country.spain": (an_assigned_score("country.spain", "30", on=("0", "100")),),
+        }
+
+        found = by_candidate(
+            rank(applying, values, scale=100, compound_rules=[self.a_rule_at_least_half_way()])
+        )
+
+        assert [str(w.compound_rule) for w in found["country.portugal"].warnings] == [
+            "cheap_but_taxed"
+        ]
+        assert found["country.spain"].warnings == ()
+
+
 class TestEachContributionNamesTheValueBehindIt:
     """What closes the provenance chain: a total, down through one contribution, to the stored
     row that produced it -- which a saved evaluation then freezes (`reqs.md` 3.4a)."""

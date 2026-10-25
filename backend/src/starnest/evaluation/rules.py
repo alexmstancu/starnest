@@ -29,6 +29,7 @@ from starnest.criteria.thresholds import (
     ShareThreshold,
 )
 from starnest.data import (
+    AssignedScore,
     AttributeId,
     Boolean,
     CompoundRule,
@@ -43,7 +44,7 @@ from starnest.data import (
     ShareComposition,
     Value,
 )
-from starnest.evaluation.magnitudes import UnscoreableValueError, magnitude_of
+from starnest.evaluation.magnitudes import UnscoreableValueError, threshold_reading
 from starnest.evaluation.wording import (
     NO_NAMES,
     Names,
@@ -361,6 +362,23 @@ def thresholds_that_rule_out(
     return tuple(reasons)
 
 
+def _reading_in_words(value: Value, reading: Decimal, names: Names) -> str:
+    """ "70% of its scale (7 on 0 to 10)" for an assigned score; the figure and unit otherwise."""
+    if isinstance(value.payload, AssignedScore):
+        given = value.payload
+        return (
+            f"{readable_figure(reading)}% of its scale ({readable_figure(given.value)} on "
+            f"{readable_figure(given.range_min)} to {readable_figure(given.range_max)})"
+        )
+    return figure_in_words(names, str(value.attribute), reading)
+
+
+def _bound_in_words(value: Value, bound: Decimal, names: Names) -> str:
+    if isinstance(value.payload, AssignedScore):
+        return f"{readable_figure(bound)}%"
+    return figure_in_words(names, str(value.attribute), bound)
+
+
 def _crosses(threshold: MatchingThreshold, value: Value, names: Names) -> str | None:
     """Why the value is on the wrong side of the line, or None when it is admitted or cannot be
     judged -- no figure, a rejected value, or a payload of a shape this threshold does not read.
@@ -370,24 +388,25 @@ def _crosses(threshold: MatchingThreshold, value: Value, names: Names) -> str | 
     are a safe default, never a silent rule-out, for a row written past the domain.
 
     **In words** (PL-067): the attribute as the catalog names it, the figure with its unit and
-    at a readable precision, a label in quotes rather than as a Python repr.
+    at a readable precision, a label in quotes rather than as a Python repr. An assigned score
+    is judged and worded as a percentage of its own scale (C06-S1), with the figure as given.
     """
     attribute = str(value.attribute)
     called = attribute_called(names, attribute)
     if isinstance(threshold, RangeThreshold):
         try:
-            figure = magnitude_of(value)
+            figure = threshold_reading(value)
         except UnscoreableValueError:
             return None
         if threshold.min_value is not None and figure < threshold.min_value:
             return (
-                f"{called} is {figure_in_words(names, attribute, figure)}, below your minimum of "
-                f"{figure_in_words(names, attribute, threshold.min_value)}"
+                f"{called} is {_reading_in_words(value, figure, names)}, below your minimum of "
+                f"{_bound_in_words(value, threshold.min_value, names)}"
             )
         if threshold.max_value is not None and figure > threshold.max_value:
             return (
-                f"{called} is {figure_in_words(names, attribute, figure)}, above your maximum of "
-                f"{figure_in_words(names, attribute, threshold.max_value)}"
+                f"{called} is {_reading_in_words(value, figure, names)}, above your maximum of "
+                f"{_bound_in_words(value, threshold.max_value, names)}"
             )
         return None
     if isinstance(threshold, LabelThreshold):

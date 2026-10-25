@@ -32,6 +32,7 @@ from starnest.evaluation import (
     is_scoreable,
     magnitude_of,
     scores_for,
+    threshold_reading,
 )
 
 from .builders import a_criterion, a_value
@@ -376,3 +377,43 @@ class TestEveryDeclaredScaleTravels:
         )
 
         assert on_no_scale == [], f"as_is may read these, and they declare no scale: {on_no_scale}"
+
+
+class TestWhatAThresholdReads:
+    """C06-S1, N2: a threshold on an assigned score compares a percentage of the scale the score
+    was given on, and every other figure in the attribute's own unit."""
+
+    def test_an_assigned_score_is_read_as_a_percentage_of_its_own_scale(self) -> None:
+        value = a_value(
+            value_type=ValueType.ASSIGNED_SCORE,
+            payload=AssignedScore(
+                value=Decimal(7), range_min=Decimal(0), range_max=Decimal(10), assigned_by="human"
+            ),
+        )
+
+        assert threshold_reading(value) == Decimal(70)
+
+    def test_a_range_that_does_not_start_at_zero_is_read_from_its_bottom(self) -> None:
+        value = a_value(
+            value_type=ValueType.ASSIGNED_SCORE,
+            payload=AssignedScore(
+                value=Decimal(3), range_min=Decimal(1), range_max=Decimal(5), assigned_by="human"
+            ),
+        )
+
+        assert threshold_reading(value) == Decimal(50)
+
+    def test_an_index_keeps_its_publishers_unit(self) -> None:
+        """Its unit is declared once for the attribute, so a threshold is written in it."""
+        value = a_value(
+            value_type=ValueType.INDEX, payload=AT_THE_MIDDLE_OF_ITS_SCALE[ValueType.INDEX]
+        )
+
+        assert threshold_reading(value) == Decimal(0)
+
+    def test_any_other_figure_is_its_magnitude(self) -> None:
+        assert threshold_reading(a_value(payload=Count(count=42))) == Decimal(42)
+
+    def test_a_value_with_no_figure_has_no_reading(self) -> None:
+        with pytest.raises(UnscoreableValueError):
+            threshold_reading(a_value(value_type=ValueType.BOOLEAN, payload=Boolean(value=True)))
