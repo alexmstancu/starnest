@@ -644,14 +644,22 @@ SELECT r.match_rule,
        -- The citizenships the live version assumed, and whether the household's differ now
        -- (Q239). NULL where the version recorded none (written before 0517): an unknown
        -- assumption cannot be shown to match, so it is flagged while the household holds any.
-       -- Flagged only; the answer applies until a person records again.
+       -- Flagged only; the answer applies until a person records again. **And only on a gate a
+       -- citizenship can change** -- one the catalog names a clearing citizenship for, or one
+       -- the citizenships decide outright: a manual exclusion is not about nationality, and
+       -- re-recording it to settle a flag would re-date an audited exclusion.
        CASE WHEN live.citizenships_recorded THEN
            ARRAY(SELECT a.citizenship
                  FROM   match_rule_answer_citizenship AS a
                  WHERE  a.answer = r.answer
                  ORDER  BY a.citizenship)
        END AS assumed_citizenships,
-       CASE WHEN live.citizenships_recorded THEN
+       (SELECT gate.decided_by_citizenship
+               OR EXISTS (SELECT 1 FROM match_rule_clearing_citizenship AS k
+                          WHERE k.match_rule = gate.id)
+        FROM   match_rule AS gate
+        WHERE  gate.id = r.match_rule)
+       AND CASE WHEN live.citizenships_recorded THEN
            ARRAY(SELECT a.citizenship
                  FROM   match_rule_answer_citizenship AS a
                  WHERE  a.answer = r.answer

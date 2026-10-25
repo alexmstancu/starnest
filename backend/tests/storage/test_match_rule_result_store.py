@@ -566,3 +566,41 @@ class TestAProposalRecordsTheCitizenshipsItWasAskedAbout:
                 " WHERE version.beside_answer IS NOT NULL"
             )
             assert await cursor.fetchall() == [("country.romania",)]
+
+
+class TestOnlyAGateACitizenshipCanChangeIsRechecked:
+    """Q239. A manual exclusion is not about nationality: no citizenship clears it and none
+    decides it, so a household edit never flags it -- and re-recording it to clear a flag would
+    re-date an audited exclusion."""
+
+    async def test_an_exclusion_is_never_flagged_by_a_change_of_citizenship(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        await hold_citizenships(pool, "country.romania")
+        excluded = an_answer("manual", MatchResult.NOT_MATCHING, OFFICIAL_PAGE, at=NOON).model_copy(
+            update={"match_rule": "not_manually_excluded"}
+        )
+        await answers.record(excluded)
+
+        await hold_citizenships(pool, "country.united_kingdom")
+
+        (stored,) = await answers.read_results(
+            candidate=UNITED_KINGDOM, match_rule="not_manually_excluded"
+        )
+        assert stored.needs_recheck is False
+
+    async def test_nor_one_recorded_before_citizenships_were_kept(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        excluded = an_answer("manual", MatchResult.NOT_MATCHING, OFFICIAL_PAGE, at=NOON).model_copy(
+            update={"match_rule": "not_manually_excluded"}
+        )
+        await answers.record(excluded)
+        async with pool.connection() as connection:
+            await connection.execute("UPDATE match_rule_answer SET citizenships_recorded = false")
+        await hold_citizenships(pool, "country.romania")
+
+        (stored,) = await answers.read_results(
+            candidate=UNITED_KINGDOM, match_rule="not_manually_excluded"
+        )
+        assert (stored.assumed_citizenships, stored.needs_recheck) == (None, False)

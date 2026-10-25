@@ -2133,16 +2133,20 @@ function rebalancePillarWeights(
 /**
  * An answer as the server serves it (Q239): flagged for a re-check when the household's
  * citizenships differ from those it assumed, or when it assumed none on record while the
- * household holds any.
+ * household holds any -- and only on a gate a citizenship can change, one some citizenship
+ * clears or one the citizenships decide.
  */
 function withRecheck(answer: MatchRuleResult): MatchRuleResult {
   const assumed = answer.assumed_citizenships ?? null;
   const held = household.citizenships;
+  const gate = MATCH_RULES.find((rule) => rule.id === answer.match_rule);
+  const aboutNationality =
+    gate !== undefined && (gate.decided_by_citizenship || gate.cleared_by.length > 0);
   const differs =
     assumed === null
       ? held.length > 0
       : assumed.length !== held.length || assumed.some((each) => !held.includes(each));
-  return { ...answer, assumed_citizenships: assumed, needs_recheck: differs };
+  return { ...answer, assumed_citizenships: assumed, needs_recheck: aboutNationality && differs };
 }
 
 /** What the gates read besides the set, as stored now: the household and the answers. */
