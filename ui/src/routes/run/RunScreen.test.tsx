@@ -3599,17 +3599,10 @@ describe("which run the card shows", () => {
     expect(screen.queryByRole("region", { name: /acquisition 7/i })).toBeNull();
   });
 
-  // PL-116 changed this one: it pressed Yes while a Refresh was reading, and the start won. A
-  // Refresh now puts the confirmation away, since it may redraw the items the scope came from,
-  // so there is no Yes left to press and the read it overtook simply lands.
-  it("puts a confirmation away when a refresh overtakes it, and starts nothing", async () => {
-    const started: unknown[] = [];
-    mockServer.use(
-      http.post(`${BASE}/data-acquisition-runs`, async ({ request }) => {
-        started.push(await request.json());
-        return HttpResponse.json({ id: 8 }, { status: 202 });
-      }),
-    );
+  // The review undid PL-116's version: a Refresh moves no gap, so the confirmation stays, and
+  // Yes pressed while the Refresh reads starts the retry, whose run wins the card.
+  it("keeps a confirmation through a refresh, and the start it confirms wins the card", async () => {
+    const started = recordRetries(8);
     renderShell("/acquire");
     await screen.findByRole("region", { name: /acquisition 7/i });
     await openFromHistory("6");
@@ -3624,14 +3617,15 @@ describe("which run the card shows", () => {
     const read = holdTheNextReadOf(6);
     await userEvent.click(card.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(read.arrived()).toBe(true));
-    expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /yes, start it/i }));
     read.release();
     await everyActHasEnded();
 
+    expect(started).toHaveLength(1);
     expect(
-      screen.getByRole("region", { name: /acquisition 6/i }),
+      await screen.findByRole("region", { name: /acquisition 8/i }),
     ).toBeInTheDocument();
-    expect(started).toEqual([]);
+    expect(screen.queryByRole("region", { name: /acquisition 6/i })).toBeNull();
   });
 });
 
@@ -5246,7 +5240,7 @@ describe("an armed start whose scope changes", () => {
         await everyActHasEnded();
       },
     ],
-  ])("is disarmed when the card's run changes: %s", async (_, change) => {
+  ])("stays armed when the card's run changes, which moves no gap: %s", async (_, change) => {
     const started = recordStarts();
     renderShell("/acquire");
     await screen.findByRole("region", { name: /acquisition 7/i });
@@ -5257,11 +5251,30 @@ describe("an armed start whose scope changes", () => {
 
     await change();
 
-    expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();
+    // The remedy's scope is the database's gaps, never the run on the card (review, PL-116).
+    expect(screen.getByRole("button", { name: /yes, start it/i })).toBeInTheDocument();
     expect(started).toEqual([]);
   });
 
-  it("is disarmed when the run on the card is stopped", async () => {
+  it("is disarmed when the gaps it was drawn from change", async () => {
+    renderShell("/acquire");
+    const card = within(await screen.findByRole("region", { name: /acquisition 7/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /^Retry 1 failed$/ }));
+    await screen.findByRole("alert");
+    serveGaps({
+      failed: failedGapsOf([
+        { data_source: "eurostat", candidate: "country.malta", attribute: "country.homicide_rate", error_message: "late" },
+      ]),
+    });
+
+    // Refresh reads the holdings again, and the failed gaps have moved meanwhile.
+    await userEvent.click(card.getByRole("button", { name: "Refresh" }));
+    await everyActHasEnded();
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull());
+  });
+
+  it("stays armed when the run on the card is stopped", async () => {
     aRunWhoseStopIsHeld().release();
     renderShell("/acquire");
     const card = within(
@@ -5277,15 +5290,36 @@ describe("an armed start whose scope changes", () => {
     );
     await everyActHasEnded();
 
-    expect(screen.queryByRole("button", { name: /yes, start it/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /yes, start it/i })).toBeInTheDocument();
   });
 
-  it("names the run it was armed on and how many it starts", async () => {
+  /** Review: the gaps span many runs, so the strip names none of them -- least of all the card's. */
+  it("says how many it starts and names no acquisition", async () => {
     await armTheSelection();
 
     expect(screen.getByRole("alert")).toHaveTextContent(
-      /^This starts a new acquisition over 1 values from acquisition 7\./,
+      /^This starts a new acquisition over 1 values\./,
     );
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/from acquisition/);
+  });
+
+  /** Review: a pair two sources failed on is one item, picked and counted once. */
+  it("counts a pair two sources failed on once, beside the card's own count", async () => {
+    serveSourceNames({ oecd: "OECD", eurostat_estimate: "Eurostat estimate" });
+    serveGaps({
+      failed: failedGapsOf([
+        { data_source: "oecd", ...TAX_PAIR, error_message: "challenge" },
+        { data_source: "eurostat_estimate", ...TAX_PAIR, error_message: "out of range" },
+        { data_source: "oecd", candidate: "country.malta", attribute: "country.homicide_rate", error_message: "challenge" },
+      ]),
+    });
+    renderShell("/acquire");
+    const group = within(await screen.findByRole("region", { name: /which sources broke/i }));
+    expect(await screen.findByRole("heading", { name: /^2\s*failed$/ })).toBeInTheDocument();
+
+    await userEvent.click(group.getByRole("button", { name: "Select all" }));
+
+    expect(screen.getByRole("button", { name: "Retry 2 selected" })).toBeInTheDocument();
   });
 
   it("sends exactly the pairs it named", async () => {

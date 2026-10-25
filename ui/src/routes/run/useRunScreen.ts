@@ -73,13 +73,22 @@ export interface ArmedRun {
   commitment: Commitment;
   origin: GapKind;
   /**
-   * The run on the card when it was armed. **Another run on the card disarms it** (PL-116), and
-   * so does every act the reader takes on the card -- Refresh, Stop, opening a run -- because
-   * each may redraw the items the scope was drawn from. A read the screen takes on its own, such
-   * as handing the card back after a refused start, leaves it armed: nothing the reader chose
-   * has changed.
+   * The gaps of its card as they were read when it was armed, or null where none were read.
+   * **The scope is drawn from the database's gaps, never from the run on the card**, so opening,
+   * refreshing, stopping or dismissing a run leaves it armed; the gaps changing under it
+   * disarms it, as a change of selection or of level does (PL-116).
    */
-  armedOn: number | null;
+  drawnFrom: string | null;
+}
+
+/** The gaps a remedy card draws its scope from, as one comparable string. */
+function stillDrawnFrom(armed: ArmedRun, gaps: string | null): boolean {
+  return armed.drawnFrom === null || gaps === null || armed.drawnFrom === gaps;
+}
+
+function gapsOf(holdings: Read<Holdings> | Idle, origin: GapKind): string | null {
+  if (holdings.state !== "ready" || origin === "everything") return null;
+  return JSON.stringify(holdings.data.gaps[origin]);
 }
 
 export type OpeningRead = Exclude<Read<RunDetail>, { state: "ready" }>;
@@ -217,15 +226,6 @@ export function useRunScreen(
   const [busy, setBusy] = useState<RunAct | null>(null);
   const [failure, setFailure] = useState<Failure | null>(null);
   const [armedState, setArmed] = useState<ArmedRun | null>(null);
-  // **Derived, not cleared by an effect** (PL-116): an effect runs after the paint, and a "Yes"
-  // pressed in between would still start the scope the card has just left. Dismiss is covered
-  // here, since it empties the card.
-  const armed =
-    armedState !== null &&
-    armedState.armedOn === (current?.id ?? null) &&
-    levelOf(armedState.proposal) === levelId
-      ? armedState
-      : null;
   // Bumped by every change of selection, so an estimate read for the selection before it arms
   // nothing.
   const selectionVersion = useRef(0);
@@ -295,6 +295,14 @@ export function useRunScreen(
     { enabled: levelId !== null, freshness },
   );
   const reloadHoldings = holdings.reload;
+  // **Derived, not cleared by an effect** (PL-116): an effect runs after the paint, and a "Yes"
+  // pressed in between would still start a scope whose gaps have just moved.
+  const armed =
+    armedState !== null &&
+    levelOf(armedState.proposal) === levelId &&
+    stillDrawnFrom(armedState, gapsOf(holdings.read, armedState.origin))
+      ? armedState
+      : null;
 
   const reloadHistory = history.reload;
   const act = useCallback(
@@ -452,7 +460,6 @@ export function useRunScreen(
    */
   function readBack(runId: number, { focus = false }: { focus?: boolean } = {}): Promise<void> {
     const ticket = claim(runId);
-    setArmed(null);
     return act(
       "opening",
       async () => {
@@ -524,7 +531,7 @@ export function useRunScreen(
     propose: (proposal, origin) => {
       const version = selectionVersion.current;
       const stillAsked = () => version === selectionVersion.current;
-      const armedOn = current?.id ?? null;
+      const drawnFrom = gapsOf(holdings.read, origin);
       void estimateFor(origin, stillAsked, async () => {
         setArmed(null);
         setPlan(null);
@@ -547,9 +554,8 @@ export function useRunScreen(
           proposal,
           plan: planned,
           origin,
-          armedOn,
+          drawnFrom,
           commitment: describeCommitment({
-            fromRun: armedOn,
             itemsTotal: planned.items_total,
             llmCallCount: planned.llm_call_count,
             estimatedCostEur: planned.estimated_cost_eur,
@@ -600,7 +606,6 @@ export function useRunScreen(
       if (!current) return;
       const runId = current.id;
       const ticket = claim(runId);
-      setArmed(null);
       setStopsAsked((runs) => new Set(runs).add(runId));
       void act("stopping", async () => {
         // The 202 carries the run back, so `stop_requested_at` is on screen immediately
