@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useId, useRef } from "react";
 import {
+  type Holdings,
   type Run,
   type RunDetail,
   type RunPlan,
@@ -18,7 +19,7 @@ import { useSelection } from "../../shell/SelectionContext";
 import { AcquisitionDiffPanel } from "./AcquisitionDiffPanel";
 import { DatabaseHoldsPanel } from "./DatabaseHoldsPanel";
 import { describeGaps, describeScope } from "./databaseHolds";
-import { describeFailures, failedItemCount } from "./failureGroups";
+import { describeFailures, failuresIn } from "./failureGroups";
 import { HeldButton } from "./HeldButton";
 import { ItemGroups } from "./ItemGroups";
 import { OpenToHandEntry } from "./OpenToHandEntry";
@@ -143,125 +144,43 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
       />
 
       {/* ── What you can do about the gaps ───────────────────────────────────────────
-          **Three cards, side by side, and the same shape each.** A failure, an item nobody
-          answered and a wholesale refresh are three different problems with three different
-          remedies, and a reader arriving at this screen is choosing between them. Stacked
-          in a column they read as a sequence of steps, which they are not. */}
+          **The cards side by side, and the same shape each.** A failure, an item nobody
+          answered and a wholesale refresh are different problems with different remedies, and
+          a reader arriving at this screen is choosing between them. Stacked in a column they
+          read as a sequence of steps, which they are not.
+
+          **The database's gaps, by their latest outcome** (PL-054, C04-N2): read from the
+          holdings, never from the run on the card, so opening, dismissing or refreshing a run
+          moves none of them, and with values stored they add up to every value at the level. */}
       <section className="section" aria-labelledby="gaps">
         <header className="section__head">
           <h2 id="gaps" ref={gapsHeading} tabIndex={-1} className="section__heading">
             What you can do about the gaps
           </h2>
-          <p className="section__lead">{describeGaps(run.current)}</p>
+          <p className="section__lead">
+            {describeGaps(run.holdings.state === "ready" ? run.holdings.data : null)}
+          </p>
         </header>
 
         <div className="gap-cards">
-          {/* **Counted from the failures it lists, not from `items_failed`**, which leaves out
-              every item some other source answered -- so the card read "0 failed" over its own
-              list whenever OECD failed beside the estimate, or a figure failed its credible
-              range (BE-08). The run's own counts stay in the panel above. */}
-          {run.current && (run.current.failures ?? []).length > 0 && (
-            <GapCard
-              tone="danger"
-              count={formatCount(failedItemCount(run.current.failures))}
-              what="failed"
-              lead="A source broke. Worth retrying."
+          {levelId !== null && run.holdings.state !== "idle" && (
+            <LoadedRegion
+              read={run.holdings}
+              what="The gaps"
+              skeleton="lines"
+              prominence="region"
+              onRetry={run.reloadHoldings}
             >
-              {/* **The count that answers the complaint, in one line.** "32 failed" reads as
-                  thirty-two problems; "1 distinct message" says it is one problem with a wide
-                  blast radius, which is the thing a reader can act on. The design has no slot
-                  for this -- it is the only thing here the prototype does not describe, kept
-                  because a list of 32 identical messages is what sent this screen back. */}
-              <p className="gap-card__note">
-                {describeFailures(run.current.failures)}
-              </p>
-              {levelId !== null && (
-                <ItemGroups
-                  // Its picks belong to this run, so another run starts them again.
-                  key={run.current.id}
-                  items={run.current.failures ?? []}
-                  groupedBy="data_source"
-                  caption="Which sources broke"
-                  level={levelId}
-                  detailKind="failed"
-                  act="Retry"
-                  busy={run.busy === "planning"}
-                  onSelectionChange={run.disarm}
-                  onPropose={(scope, describedAs) =>
-                    propose(scope, describedAs, "failed")
-                  }
+              {({ gaps }) => (
+                <GapRemedies
+                  gaps={gaps}
+                  levelId={levelId}
+                  run={run}
+                  propose={propose}
+                  onCancel={cancel}
                 />
               )}
-              {/* **"Retry 12 failed", the design's fixed copy.** The count in the label is
-                  not decoration: three cards stand side by side and each has an action at its
-                  foot, so a label that says only "Retry everything that failed" leaves the
-                  reader to look back up at the heading for the size of what they are about to
-                  start. Held while any act is in flight, never disabled (NEW-44). */}
-              <HeldButton
-                className="button button--primary"
-                held={run.busy !== null}
-                disabled={levelId === null}
-                onClick={() =>
-                  levelId !== null &&
-                  propose(
-                    scopeFor(levelId, run.current?.failures ?? []),
-                    "Retry everything that failed",
-                    "failed",
-                  )
-                }
-              >
-                {`Retry ${formatCount(failedItemCount(run.current.failures))} failed`}
-              </HeldButton>
-              <GapEstimate kind="failed" run={run} onCancel={cancel} />
-            </GapCard>
-          )}
-
-          {run.current && (run.current.unanswered ?? []).length > 0 && (
-            <GapCard
-              tone="warning"
-              count={formatCount(run.current.progress?.items_unanswered)}
-              what="unanswered"
-              lead="Every source answered, and none had a row. Retrying the same sources changes nothing."
-            >
-              {levelId !== null && (
-                <ItemGroups
-                  // Its picks belong to this run, so another run starts them again.
-                  key={run.current.id}
-                  items={run.current.unanswered ?? []}
-                  groupedBy="attribute"
-                  caption="Which values went unanswered"
-                  level={levelId}
-                  detailKind="unanswered"
-                  act="Retry"
-                  busy={run.busy === "planning"}
-                  onSelectionChange={run.disarm}
-                  onPropose={(scope, describedAs) =>
-                    propose(scope, describedAs, "unanswered")
-                  }
-                />
-              )}
-              {/* **"Retry 62 unanswered", and the verb is the design's, not ours.** This read
-                  "Ask again about all of them", which drew a distinction the card's own lead
-                  already draws -- retrying the same sources changes nothing, so this asks the
-                  ones that had no row. The design uses one verb for both buckets and puts the
-                  difference in the noun, which is the shorter way to say it. */}
-              <HeldButton
-                className="button"
-                held={run.busy !== null}
-                disabled={levelId === null}
-                onClick={() =>
-                  levelId !== null &&
-                  propose(
-                    scopeFor(levelId, run.current?.unanswered ?? []),
-                    "Ask again about everything unanswered",
-                    "unanswered",
-                  )
-                }
-              >
-                {`Retry ${formatCount(run.current.progress?.items_unanswered)} unanswered`}
-              </HeldButton>
-              <GapEstimate kind="unanswered" run={run} onCancel={cancel} />
-            </GapCard>
+            </LoadedRegion>
           )}
 
           {levelId === null ? (
@@ -327,6 +246,192 @@ export function RunScreen({ route }: { route: RouteDefinition }) {
         </LoadedRegion>
       </section>
     </section>
+  );
+}
+
+/**
+ * The failed, unanswered and not-reached cards, from the database's gaps.
+ *
+ * **Always drawn once the gaps are read** (PL-059): a card with nothing in it reads nought and
+ * its action is inert -- "Nothing is failing", as the design has it -- rather than leaving the
+ * row with a hole a reader cannot tell from a card still loading. The not-reached card is the
+ * one exception (C04-N7): it is drawn only when some pair has never been asked about.
+ */
+function GapRemedies({
+  gaps,
+  levelId,
+  run,
+  propose,
+  onCancel,
+}: {
+  gaps: Holdings["gaps"];
+  levelId: string;
+  run: RunScreenState;
+  propose: RunScreenState["propose"];
+  onCancel: () => void;
+}) {
+  const failures = failuresIn(gaps.failed);
+  return (
+    <>
+      <GapCard
+        tone={gaps.failed.length > 0 ? "danger" : undefined}
+        count={formatCount(gaps.failed.length)}
+        what="failed"
+        lead={
+          gaps.failed.length > 0
+            ? "A source broke. Worth retrying."
+            : "No value is missing because a source broke."
+        }
+      >
+        {gaps.failed.length > 0 && (
+          <>
+            {/* **The count that answers the complaint, in one line.** "32 failed" reads as
+                thirty-two problems; "1 distinct message" says it is one problem with a wide
+                blast radius, which is the thing a reader can act on. */}
+            <p className="gap-card__note">{describeFailures(failures)}</p>
+            <ItemGroups
+              // Its picks belong to this level's gaps, so another level starts them again.
+              key={levelId}
+              items={failures}
+              groupedBy="data_source"
+              caption="Which sources broke"
+              level={levelId}
+              detailKind="failed"
+              act="Retry"
+              busy={run.busy === "planning"}
+              onSelectionChange={run.disarm}
+              onPropose={(scope, describedAs) => propose(scope, describedAs, "failed")}
+            />
+          </>
+        )}
+        {/* **"Retry 12 failed", the design's fixed copy**, with the count in the label: the
+            cards stand side by side and each has its action at its foot. Held while any act is
+            in flight, never disabled (NEW-44); with nothing failing it is inert, since there
+            is nothing to wait for. */}
+        <RemedyButton
+          primary
+          count={gaps.failed.length}
+          label={`Retry ${formatCount(gaps.failed.length)} failed`}
+          empty="Nothing is failing"
+          held={run.busy !== null}
+          onClick={() =>
+            propose(scopeFor(levelId, gaps.failed), "Retry everything that failed", "failed")
+          }
+        />
+        <GapEstimate kind="failed" run={run} onCancel={onCancel} />
+      </GapCard>
+
+      <GapCard
+        tone={gaps.unanswered.length > 0 ? "warning" : undefined}
+        count={formatCount(gaps.unanswered.length)}
+        what="unanswered"
+        lead={
+          gaps.unanswered.length > 0
+            ? "Every source answered, and none had a row. Retrying the same sources changes nothing."
+            : "No value is missing because every source lacked a row."
+        }
+      >
+        {gaps.unanswered.length > 0 && (
+          <ItemGroups
+            key={levelId}
+            items={gaps.unanswered}
+            groupedBy="attribute"
+            caption="Which values went unanswered"
+            level={levelId}
+            detailKind="unanswered"
+            act="Retry"
+            busy={run.busy === "planning"}
+            onSelectionChange={run.disarm}
+            onPropose={(scope, describedAs) => propose(scope, describedAs, "unanswered")}
+          />
+        )}
+        {/* "Retry 62 unanswered": the design uses one verb for both buckets and puts the
+            difference in the noun. */}
+        <RemedyButton
+          count={gaps.unanswered.length}
+          label={`Retry ${formatCount(gaps.unanswered.length)} unanswered`}
+          empty="Nothing went unanswered"
+          held={run.busy !== null}
+          onClick={() =>
+            propose(
+              scopeFor(levelId, gaps.unanswered),
+              "Ask again about everything unanswered",
+              "unanswered",
+            )
+          }
+        />
+        <GapEstimate kind="unanswered" run={run} onCancel={onCancel} />
+      </GapCard>
+
+      {gaps.not_reached.length > 0 && (
+        <GapCard
+          count={formatCount(gaps.not_reached.length)}
+          what="not reached"
+          lead="No source was asked yet. Worth asking."
+        >
+          <ItemGroups
+            key={levelId}
+            items={gaps.not_reached}
+            groupedBy="attribute"
+            caption="Which values were not reached"
+            level={levelId}
+            detailKind="not_reached"
+            act="Ask"
+            busy={run.busy === "planning"}
+            onSelectionChange={run.disarm}
+            onPropose={(scope, describedAs) => propose(scope, describedAs, "not_reached")}
+          />
+          <RemedyButton
+            count={gaps.not_reached.length}
+            label={`Ask ${formatCount(gaps.not_reached.length)} not reached`}
+            empty=""
+            held={run.busy !== null}
+            onClick={() =>
+              propose(
+                scopeFor(levelId, gaps.not_reached),
+                "Ask about everything not reached",
+                "not_reached",
+              )
+            }
+          />
+          <GapEstimate kind="not_reached" run={run} onCancel={onCancel} />
+        </GapCard>
+      )}
+    </>
+  );
+}
+
+/** A card's action: held while an act is in flight, inert and saying so when there is none. */
+function RemedyButton({
+  count,
+  label,
+  empty,
+  held,
+  primary = false,
+  onClick,
+}: {
+  count: number;
+  label: string;
+  empty: string;
+  held: boolean;
+  primary?: boolean;
+  onClick: () => void;
+}) {
+  if (count === 0) {
+    return (
+      <button type="button" className="button" disabled>
+        {empty}
+      </button>
+    );
+  }
+  return (
+    <HeldButton
+      className={primary ? "button button--primary" : "button"}
+      held={held}
+      onClick={onClick}
+    >
+      {label}
+    </HeldButton>
   );
 }
 

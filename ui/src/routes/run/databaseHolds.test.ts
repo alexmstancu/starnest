@@ -176,27 +176,21 @@ describe("how big a pass was", () => {
   });
 });
 
-describe("the line over the three remedies", () => {
-  it("names the acquisition the three counts belong to", () => {
-    // "62 unanswered" is 62 items *that acquisition* asked about and nobody answered, not a
-    // standing property of the corpus. A lead that does not say which run leaves them adrift.
-    expect(describeGaps({ id: 142, progress: { items_total: 1312 } })).toMatch(
-      /All 1312 values acquisition 142 asked for/,
+describe("the line over the remedies", () => {
+  it("says the counts are of every value at the level, by its latest outcome", () => {
+    // The cards are the database's gaps (PL-054), not one acquisition's accounting.
+    expect(describeGaps({ level: "country", pairs_total: 1312 })).toMatch(
+      /^All 1,312 values at country level, by their latest outcome\./,
     );
   });
 
-  it("falls back to the standing sentence when no run is open", () => {
+  it("falls back to the standing sentence while the holdings are not read", () => {
     expect(describeGaps(null)).toBe(
       "Each of these starts a new acquisition. Nothing is fetched or charged until you agree to an estimate.",
     );
-    expect(describeGaps(undefined)).toBe(describeGaps(null));
   });
 
-  it("does not claim a run asked for nothing", () => {
-    // A total of zero is a run whose scope never resolved, not a run with nothing to do.
-    expect(describeGaps({ id: 3, progress: { items_total: 0 } })).toBe(
-      describeGaps(null),
-    );
-    expect(describeGaps({ id: 3 })).toBe(describeGaps(null));
+  it("does not claim a level with no pairs holds values", () => {
+    expect(describeGaps({ level: "city", pairs_total: 0 })).toBe(describeGaps(null));
   });
 });

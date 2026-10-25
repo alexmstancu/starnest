@@ -365,143 +365,217 @@ describe("running and retrying", () => {
       await screen.findByRole("region", { name: /acquisition 12/i }),
     ).toBeInTheDocument();
   });
-
-  it("offers no retry when nothing failed", async () => {
-    mockServer.use(
-      http.get(`${BASE}/data-acquisition-runs/:runId`, () =>
-        HttpResponse.json({
-          id: 8,
-          run_status: "completed",
-          triggered_by: "user",
-          started_at: "2026-09-12T09:00:00Z",
-          progress: { items_total: 96, items_completed: 96, items_failed: 0 },
-          failures: [],
-        }),
-      ),
-    );
-    renderShell("/acquire");
-    await estimate();
-
-    await userEvent.click(
-      screen.getByRole("button", { name: /start this acquisition/i }),
-    );
-
-    // **The whole card goes, not just its button.** A remedy for a problem the run does not
-    // have is a control that can only disappoint, and the card leads with a count that would
-    // be a nought.
-    await screen.findByRole("region", { name: /acquisition 8/i });
-    expect(screen.queryByRole("region", { name: /which sources broke/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /failed$/i })).toBeNull();
-  });
 });
 
-/**
- * BE-08 follow-up. **The failed card counts the list it shows.** The run's `items_failed` counts
- * only the pairs no source answered, so a failure on an item another source did answer -- OECD's,
- * where the estimate stepped in -- or a figure stored and then rejected by its credible range,
- * which still counts as completed, read "0 failed" over a "Retry 0 failed" button, beside a list
- * of failures that was not empty.
- */
-describe("how many the failed card counts", () => {
-  function aRunThatReports(failures: unknown, itemsFailed: number): void {
-    mockServer.use(
-      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
-        HttpResponse.json({
-          ...STARTED_RUN_DETAIL,
-          id: Number(params["runId"]),
-          unanswered: [],
-          progress: {
-            items_total: 96,
-            items_completed: 96 - itemsFailed,
-            items_failed: itemsFailed,
-            items_unanswered: 0,
-          },
-          failures,
-        }),
+/** Serves `gaps` as what the database holds at country level, values stored made to close. */
+function serveGaps(gaps: Partial<Holdings["gaps"]>): void {
+  mockServer.use(
+    http.get(`${BASE}/holdings`, () =>
+      HttpResponse.json(
+        holdingsServed({ gaps: { failed: [], unanswered: [], not_reached: [], ...gaps } }),
       ),
-    );
+    ),
+  );
+}
+
+/** The failures a run reports, as the gaps they leave: one per pair, each source's message on it. */
+function failedGapsOf(
+  failures: readonly { data_source: string; candidate: string; attribute: string; error_message: string }[],
+): Holdings["gaps"]["failed"] {
+  const gaps = new Map<string, Holdings["gaps"]["failed"][number]>();
+  for (const { data_source, candidate, attribute, error_message } of failures) {
+    const key = `${candidate}|${attribute}`;
+    const gap = gaps.get(key) ?? { candidate, attribute, data_acquisition_run: 7, failures: [] };
+    gap.failures.push({ data_source, error_message });
+    gaps.set(key, gap);
+  }
+  return [...gaps.values()];
+}
+
+/**
+ * PL-053, PL-054 (C04-N2). **The cards are the database's gaps, by their latest outcome**: a pair
+ * with no value in use, failed where a source broke on it last. So a figure rejected by its
+ * credible range leaves a gap and is offered again (BE-08's intent kept), while an OECD failure on
+ * an item the estimate answered is no gap and is not offered -- whatever the run on the card says.
+ */
+describe("the remedy cards", () => {
+  const TAX_RATE = "country.total_tax_rate_effective";
+  const CHALLENGE = "the oecd's cloudflare front answered with a browser challenge";
+
+  async function theGaps(): Promise<HTMLElement> {
     renderShell("/acquire");
+    const gaps = await screen.findByRole("region", { name: /what you can do about the gaps/i });
+    await within(gaps).findByRole("heading", { name: /^\d[\d,]*\s*unanswered$/ });
+    return gaps;
   }
 
-  const TAX_RATE = "country.total_tax_rate_effective";
-
-  it("counts a figure rejected by its credible range, though the run counts the item complete", async () => {
-    aRunThatReports(
-      [
+  it("count a figure rejected by its credible range, which leaves a gap", async () => {
+    serveGaps({
+      failed: failedGapsOf([
         {
           data_source: "eurostat",
           candidate: "country.malta",
           attribute: "country.homicide_rate",
           error_message: "41.2 is outside the credible range 0 to 30",
         },
-      ],
-      0,
-    );
+      ]),
+    });
+    const gaps = within(await theGaps());
 
-    expect(
-      await screen.findByRole("heading", { name: /^1\s*failed$/ }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Retry 1 failed" }),
-    ).toBeInTheDocument();
+    expect(gaps.getByRole("heading", { name: /^1\s*failed$/ })).toBeInTheDocument();
+    expect(gaps.getByRole("button", { name: "Retry 1 failed" })).toBeInTheDocument();
   });
 
-  it("counts an item two sources failed on once", async () => {
-    // OECD was challenged, and the estimate's figure was stored and then rejected: two
-    // failures, one item, and the run counts that item complete.
-    aRunThatReports(
-      [
-        {
-          data_source: "oecd",
-          candidate: "country.liechtenstein",
-          attribute: TAX_RATE,
-          error_message: "the oecd's cloudflare front answered with a browser challenge",
-        },
+  it("do not offer a failure on an item another source answered", async () => {
+    // The run on the card still reports OECD's failure; the database has the estimate's figure.
+    serveGaps({});
+    const gaps = within(await theGaps());
+
+    expect(gaps.getByRole("heading", { name: /^0\s*failed$/ })).toBeInTheDocument();
+    expect(gaps.queryByRole("region", { name: /which sources broke/i })).toBeNull();
+    expect(gaps.queryByRole("button", { name: /^Retry \d+ failed$/ })).toBeNull();
+  });
+
+  it("count an item two sources failed on once", async () => {
+    serveGaps({
+      failed: failedGapsOf([
+        { data_source: "oecd", candidate: "country.liechtenstein", attribute: TAX_RATE, error_message: CHALLENGE },
         {
           data_source: "eurostat_estimate",
           candidate: "country.liechtenstein",
           attribute: TAX_RATE,
           error_message: "71.0 is outside the credible range 10 to 60",
         },
-      ],
-      0,
+      ]),
+    });
+    const gaps = within(await theGaps());
+
+    expect(gaps.getByRole("heading", { name: /^1\s*failed$/ })).toBeInTheDocument();
+    expect(gaps.getByRole("button", { name: "Retry 1 failed" })).toBeInTheDocument();
+  });
+
+  /** PL-059. The design's inert state: the card stays, reads nought, and its action does nothing. */
+  it("read Nothing is failing, and do nothing, when nothing failed", async () => {
+    let planned = 0;
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/plan`, () => {
+        planned += 1;
+        return HttpResponse.json(RUN_PLAN);
+      }),
     );
+    serveGaps({ unanswered: HOLDINGS_GAPS.unanswered });
+    const gaps = within(await theGaps());
+    const inert = gaps.getByRole("button", { name: "Nothing is failing" });
+
+    expect(inert).toBeDisabled();
+    await userEvent.click(inert);
+    expect(planned).toBe(0);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("read Nothing went unanswered when every pair was answered or failed", async () => {
+    serveGaps({ failed: HOLDINGS_GAPS.failed });
+    const gaps = within(await theGaps());
+
+    expect(gaps.getByRole("heading", { name: /^0\s*unanswered$/ })).toBeInTheDocument();
+    expect(gaps.getByRole("button", { name: "Nothing went unanswered" })).toBeDisabled();
+    expect(gaps.queryByRole("region", { name: /which values went unanswered/i })).toBeNull();
+  });
+
+  it("say what their counts are of: every value at the level, by its latest outcome", async () => {
+    const gaps = within(await theGaps());
 
     expect(
-      await screen.findByRole("heading", { name: /^1\s*failed$/ }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Retry 1 failed" }),
+      gaps.getByText(/^All 1,312 values at country level, by their latest outcome\./),
     ).toBeInTheDocument();
   });
 
-  it("counts an OECD failure on an item the estimate answered", async () => {
-    aRunThatReports(
-      [
-        {
-          data_source: "oecd",
-          candidate: "country.romania",
-          attribute: TAX_RATE,
-          error_message: "the oecd's cloudflare front answered with a browser challenge",
-        },
-      ],
-      0,
-    );
+  it("stay when the acquisition card is dismissed", async () => {
+    renderShell("/acquire");
+    const card = await screen.findByRole("region", { name: /^acquisition 7$/i });
+    await userEvent.click(within(card).getByRole("button", { name: "Dismiss" }));
 
-    expect(
-      await screen.findByRole("heading", { name: /^1\s*failed$/ }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Retry 1 failed" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Retry 1 failed" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry 2 unanswered" })).toBeInTheDocument();
   });
 
-  it("shows no failed card for a run that reports no failures", async () => {
-    aRunThatReports(undefined, 0);
+  it("do not change when an older acquisition is opened", async () => {
+    mockServer.use(
+      http.get(`${BASE}/data-acquisition-runs/6`, () =>
+        HttpResponse.json({ ...STARTED_RUN_DETAIL, id: 6, failures: [], unanswered: [] }),
+      ),
+    );
+    renderShell("/acquire");
+    await screen.findByRole("button", { name: "Retry 1 failed" });
+    const six = await screen.findByRole("rowheader", { name: "6" });
 
-    await screen.findByRole("region", { name: /acquisition 7/i });
-    expect(screen.queryByRole("heading", { name: /failed$/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /failed$/ })).toBeNull();
+    await userEvent.click(within(six).getByRole("button", { name: "6" }));
+    await screen.findByRole("region", { name: /^acquisition 6$/i });
+
+    expect(screen.getByRole("button", { name: "Retry 1 failed" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry 2 unanswered" })).toBeInTheDocument();
+  });
+
+  /** The 2.3 guard on screen: values stored and the three gap counts close on the pairs total. */
+  it("add up with the values stored to every value at the level", async () => {
+    serveGaps({
+      ...HOLDINGS_GAPS,
+      not_reached: [
+        { candidate: "country.spain", attribute: TAX_RATE, data_acquisition_run: 7 },
+        { candidate: "country.estonia", attribute: TAX_RATE, data_acquisition_run: null },
+      ],
+    });
+    const gaps = within(await theGaps());
+    const panel = within(screen.getByRole("region", { name: /what the database holds/i }));
+    const count = (text: string) => Number(text.replace(/[^\d]/g, ""));
+    const stored = count((await panel.findByText("Values stored")).nextElementSibling!.textContent);
+    const heads = [/^\d+\s*failed$/, /^\d+\s*unanswered$/, /^\d+\s*not reached$/].map((name) =>
+      count(gaps.getByRole("heading", { name }).querySelector(".gap-card__count")!.textContent),
+    );
+
+    expect(stored + heads.reduce((total, each) => total + each, 0)).toBe(HOLDINGS_PAIRS_TOTAL);
+  });
+});
+
+/**
+ * C04-N7. **A pair no source was asked about yet is neither failed nor unanswered**: a stopped
+ * run's never-reached items, and pairs no run has included, get a card of their own, drawn only
+ * when there are any, whose remedy goes through the same estimate and confirmation.
+ */
+describe("what no source was asked about yet", () => {
+  const TAX_RATE = "country.total_tax_rate_effective";
+
+  it("is not drawn when every pair was asked", async () => {
+    renderShell("/acquire");
+    await screen.findByRole("button", { name: "Retry 1 failed" });
+
+    expect(screen.queryByRole("region", { name: /not reached$/ })).toBeNull();
+  });
+
+  it("is asked about through an estimate and a confirmation, over exactly its pairs", async () => {
+    const planned: unknown[] = [];
+    mockServer.use(
+      http.post(`${BASE}/data-acquisition-runs/plan`, async ({ request }) => {
+        planned.push(await request.json());
+        return HttpResponse.json(RUN_PLAN);
+      }),
+    );
+    serveGaps({
+      not_reached: [
+        { candidate: "country.spain", attribute: TAX_RATE, data_acquisition_run: 7 },
+        { candidate: "country.estonia", attribute: TAX_RATE, data_acquisition_run: null },
+      ],
+    });
+    renderShell("/acquire");
+    const card = within(await screen.findByRole("region", { name: /^2\s*not reached$/ }));
+    expect(card.getByText(/no source was asked yet/i)).toBeInTheDocument();
+
+    await userEvent.click(card.getByRole("button", { name: "Ask 2 not reached" }));
+
+    expect(await card.findByRole("alert")).toBeInTheDocument();
+    expect(planned).toEqual([
+      { level: "country", candidates: ["country.estonia", "country.spain"], attributes: [TAX_RATE] },
+    ]);
   });
 });
 
@@ -595,33 +669,6 @@ describe("what nobody answered", () => {
     expect(
       await screen.findByRole("region", { name: /acquisition 14/i }),
     ).toBeInTheDocument();
-  });
-
-  it("offers nothing to ask again when every item was answered or failed", async () => {
-    mockServer.use(
-      http.get(`${BASE}/data-acquisition-runs/:runId`, () =>
-        HttpResponse.json({
-          id: 8,
-          run_status: "completed",
-          triggered_by: "user",
-          started_at: "2026-09-12T09:00:00Z",
-          progress: {
-            items_total: 96,
-            items_completed: 96,
-            items_failed: 0,
-            items_unanswered: 0,
-          },
-          failures: [],
-          unanswered: [],
-        }),
-      ),
-    );
-    await openTheRun();
-
-    expect(screen.queryByRole("button", { name: /^Retry 2 unanswered$/i })).toBeNull();
-    expect(
-      screen.queryByRole("region", { name: /which values went unanswered/i }),
-    ).toBeNull();
   });
 
   // (The old "nothing to ask about" test exercised POST /{runId}/retry's 409; the whole-bucket
@@ -2162,7 +2209,7 @@ describe("the acquisition card the design asks for", () => {
     // in here, which is the move that gave the reader the screen back.
     expect(card.queryByText(/cloudflare/i)).toBeNull();
     expect(
-      screen.getByRole("region", { name: /which sources broke/i }),
+      await screen.findByRole("region", { name: /which sources broke/i }),
     ).toBeInTheDocument();
   });
 
@@ -2236,7 +2283,9 @@ describe("a wall of identical failures", () => {
     error_message: CREDIT,
   }));
 
-  async function aRunThatFailed(failures: unknown) {
+  async function aRunThatFailed(failures: typeof outOfCredit) {
+    // The database's failed gaps are what the card lists (PL-054); the run says the same.
+    serveGaps({ failed: failedGapsOf(failures) });
     mockServer.use(
       http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
         HttpResponse.json({
@@ -2283,7 +2332,7 @@ describe("a wall of identical failures", () => {
     expect(screen.queryByText(/for Austria/)).toBeNull();
   });
 
-  it("names every candidate and its reason once opened", async () => {
+  it("names every candidate once opened", async () => {
     const broke = await aRunThatFailed(outOfCredit);
 
     await userEvent.click(
@@ -2299,10 +2348,46 @@ describe("a wall of identical failures", () => {
       broke.getByRole("checkbox", { name: "Pension portability for Denmark" }),
     ).toBeInTheDocument();
     expect(broke.queryByText(/country\./)).toBeNull();
-    // The reason reads as a sentence, not as the serialised payload it arrived in.
-    expect(
-      broke.getAllByText("Your credit balance is too low to access the Anthropic API."),
-    ).toHaveLength(COUNTRIES.length);
+  });
+
+  /**
+   * PL-058. **The card says each message is listed once, so it is**: a message shared by five
+   * items reads once, as a sentence rather than the serialised payload it arrived in, with the
+   * five under it -- not five times, once per row.
+   */
+  it("lists a message shared by five items once, with its items under it", async () => {
+    const broke = await aRunThatFailed(outOfCredit);
+
+    await userEvent.click(
+      await broke.findByRole("button", { name: "LLM with web search 5 items" }),
+    );
+
+    const message = broke.getAllByText(
+      "Your credit balance is too low to access the Anthropic API.",
+    );
+    expect(message).toHaveLength(1);
+    const under = within(message[0]!.closest("li")!);
+    expect(under.getAllByRole("checkbox")).toHaveLength(COUNTRIES.length);
+  });
+
+  it("keeps a message only one item had beside that item", async () => {
+    const broke = await aRunThatFailed([
+      ...outOfCredit.slice(0, 2),
+      {
+        data_source: "llm",
+        candidate: "country.estonia",
+        attribute: "country.pension_portability",
+        error_message: "the model read no page that answered",
+      },
+    ]);
+
+    await userEvent.click(
+      await broke.findByRole("button", { name: "LLM with web search 3 items" }),
+    );
+
+    const alone = broke.getByRole("checkbox", { name: "Pension portability for Estonia" });
+    expect(alone.closest("label")).toHaveTextContent("the model read no page that answered");
+    expect(broke.getAllByText(/credit balance is too low/)).toHaveLength(1);
   });
 
   it("counts two different messages from one source as two problems", async () => {
@@ -2319,28 +2404,6 @@ describe("a wall of identical failures", () => {
     expect(
       await screen.findByText(/3 failures from 1 source, 2 distinct messages/),
     ).toBeInTheDocument();
-  });
-
-  it("offers no remedy when the run reports no failures at all", async () => {
-    // `failures` is optional in the contract, so an absent array is not an empty one -- and a
-    // screen that read `.length` off it would have thrown rather than said so.
-    mockServer.use(
-      http.get(`${BASE}/data-acquisition-runs/:runId`, ({ params }) =>
-        HttpResponse.json({
-          id: Number(params["runId"]),
-          run_status: "completed",
-          triggered_by: "user",
-          started_at: "2026-09-12T09:00:00Z",
-          progress: { items_total: 4, items_completed: 4 },
-        }),
-      ),
-    );
-    renderShell("/acquire");
-
-    await screen.findByRole("region", { name: /acquisition 7/i });
-    expect(
-      screen.queryByRole("region", { name: /which sources broke/i }),
-    ).toBeNull();
   });
 
   /**
@@ -4023,16 +4086,17 @@ describe("acting from the keyboard", () => {
     await waitFor(() => expect(stops.requests.sent).toBe(2));
   });
 
-  it("still disables a retry outright where there is no level to plan it in", async () => {
+  /** The gaps are a level's, so with no level there is nothing to retry and no card offers to. */
+  it("offers no retry where there is no level to plan it in", async () => {
     mockServer.use(
       http.get(`${BASE}/levels`, () => HttpResponse.json({ items: [] })),
     );
     renderShell("/acquire");
 
-    const retry = await screen.findByRole("button", { name: "Retry 1 failed" });
-
-    expect(retry).toBeDisabled();
-    expectNotHeld(retry);
+    expect(
+      await screen.findByText(/choose a level to see what the database holds/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Retry \d+ failed$/ })).toBeNull();
   });
 
   /**
@@ -4526,8 +4590,12 @@ describe("which card says it is estimating", () => {
  * lists kept their picks when another acquisition took the card, so "Retry 1 selected" offered
  * items the new run never failed on.
  */
+/**
+ * PL-054. **The lists are the database's gaps, not the card's run**, so opening another
+ * acquisition leaves what was picked from them as it was.
+ */
 describe("picks across a switch to another acquisition", () => {
-  it("drops the picks in both lists when another acquisition is opened", async () => {
+  it("keeps the picks in both lists when another acquisition is opened", async () => {
     renderShell("/acquire");
     await screen.findByRole("region", { name: /acquisition 7/i });
     const failed = within(
@@ -4544,7 +4612,8 @@ describe("picks across a switch to another acquisition", () => {
     await openFromHistory("6");
     await screen.findByRole("region", { name: /acquisition 6/i });
 
-    expect(screen.getAllByRole("button", { name: "Retry 0 selected" })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Retry 1 selected" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry 2 selected" })).toBeInTheDocument();
   });
 });
 

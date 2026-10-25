@@ -4,11 +4,13 @@ import { useCandidateNames } from "../../api/useCandidateNames";
 import { useSourceNames } from "../../api/useSourceNames";
 import { formatCount } from "../../format/display";
 import { HeldButton } from "./HeldButton";
-import { groupLabel, groupMeta, itemDetail, itemPhrase } from "./itemNames";
+import { failureGroups } from "./failureGroups";
+import { groupLabel, groupMeta, itemDetail, itemPhrase, type ItemNames } from "./itemNames";
 import { type Item, groupBy, keyOf, questionsIn, scopeFor } from "./runScope";
 
 /**
- * The items a run could not answer, grouped and selectable, with a scoped re-ask.
+ * The database's gaps of one kind -- failed, unanswered or not reached -- grouped and
+ * selectable, with a scoped re-ask.
  *
  * **Grouped by what the question actually is.** A failure is a source refusing, so failures
  * group by source: "what did OECD refuse?". Nothing refused an unanswered item -- no source
@@ -34,8 +36,8 @@ export function ItemGroups({
   groupedBy: "data_source" | "attribute";
   caption: string;
   level: string;
-  /** Which of the two details each row carries -- see `itemDetail`. */
-  detailKind: "failed" | "unanswered";
+  /** Which detail each row carries -- see `itemDetail`. */
+  detailKind: "failed" | "unanswered" | "not_reached";
   /** What the button will be called, e.g. "Retry". */
   act: string;
   /** An estimate is being read, so the button is held until it answers (NEW-44). */
@@ -155,31 +157,47 @@ export function ItemGroups({
 
               {expanded && (
                 <ul className="group__items">
-                  {group.items.map((item) => {
-                    const key = keyOf(item);
-                    return (
-                      <li key={key}>
-                        <label className="toggle toggle--item">
-                          <input
-                            type="checkbox"
-                            aria-label={itemPhrase(names, item)}
-                            checked={selected.has(key)}
-                            onChange={(event) =>
-                              toggle([key], event.target.checked)
-                            }
+                  {detailKind === "failed"
+                    ? failureGroups(group.items).map((problem) =>
+                        problem.items.length === 1 ? (
+                          <ItemRow
+                            key={problem.key}
+                            item={{ ...problem.items[0]!, data_source: problem.source }}
+                            names={names}
+                            detail={problem.headline}
+                            selected={selected}
+                            onToggle={toggle}
                           />
-                          <span aria-hidden="true">
-                            {itemPhrase(names, item)}
-                          </span>
-                          {/* The design gives every row a right-hand detail: why this one
-                              failed, or that nothing anywhere had a row. */}
-                          <span className="toggle__detail">
-                            {itemDetail(item, detailKind)}
-                          </span>
-                        </label>
-                      </li>
-                    );
-                  })}
+                        ) : (
+                          // **A message several items share is one problem, written once**
+                          // (PL-058), with the items it hit under it.
+                          <li key={problem.key} className="group__message">
+                            <p className="group__message-text">{problem.headline}</p>
+                            <ul className="group__items">
+                              {problem.items.map((item) => (
+                                <ItemRow
+                                  key={keyOf({ ...item, data_source: problem.source })}
+                                  item={{ ...item, data_source: problem.source }}
+                                  names={names}
+                                  detail={null}
+                                  selected={selected}
+                                  onToggle={toggle}
+                                />
+                              ))}
+                            </ul>
+                          </li>
+                        ),
+                      )
+                    : group.items.map((item) => (
+                        <ItemRow
+                          key={keyOf(item)}
+                          item={item}
+                          names={names}
+                          detail={itemDetail(item, detailKind)}
+                          selected={selected}
+                          onToggle={toggle}
+                        />
+                      ))}
                 </ul>
               )}
             </li>
@@ -212,5 +230,39 @@ export function ItemGroups({
         {act} {formatCount(chosen.length)} selected
       </HeldButton>
     </section>
+  );
+}
+
+/** One pickable pair, with its right-hand detail where it has one of its own. */
+function ItemRow({
+  item,
+  names,
+  detail,
+  selected,
+  onToggle,
+}: {
+  item: Item;
+  names: ItemNames;
+  /** Null where the message is written once above the items it hit. */
+  detail: string | null;
+  selected: ReadonlySet<string>;
+  onToggle: (keys: readonly string[], on: boolean) => void;
+}) {
+  const key = keyOf(item);
+  return (
+    <li>
+      <label className="toggle toggle--item">
+        <input
+          type="checkbox"
+          aria-label={itemPhrase(names, item)}
+          checked={selected.has(key)}
+          onChange={(event) => onToggle([key], event.target.checked)}
+        />
+        <span aria-hidden="true">{itemPhrase(names, item)}</span>
+        {/* The design gives every row a right-hand detail: why this one failed, or that
+            nothing anywhere had a row. */}
+        {detail !== null && <span className="toggle__detail">{detail}</span>}
+      </label>
+    </li>
   );
 }

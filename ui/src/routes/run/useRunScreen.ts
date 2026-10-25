@@ -47,14 +47,14 @@ export type RunAct = "planning" | "running" | "opening" | "stopping";
  */
 
 /**
- * Which of the screen's three remedies raised an estimate.
+ * Which of the screen's remedies raised an estimate: a gap card's, or the whole level's.
  *
  * **The estimate belongs to the card that asked for it.** Three remedies stand side by side,
  * and a single panel underneath them saying "this would cost €0.32" cannot say which of the
  * three it is about -- a reader who clicked *Retry* reads the figure for *Ask again* and has
  * no way to tell.
  */
-export type GapKind = "failed" | "unanswered" | "everything";
+export type GapKind = "failed" | "unanswered" | "not_reached" | "everything";
 
 /**
  * A run that has been estimated and is waiting to be agreed to.

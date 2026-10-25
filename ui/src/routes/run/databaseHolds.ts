@@ -174,24 +174,18 @@ export function describeScope(run: RunReach): string {
 }
 
 /**
- * The line over the three remedies, naming the acquisition they are about.
+ * The line over the remedies, saying what their counts are of.
  *
- * **The three cards account for one run, not for the database.** "62 unanswered" is 62 items
- * *that acquisition* asked about and nobody answered -- not a standing property of the corpus
- * -- and a lead that does not say which run it means leaves the three counts unanchored.
+ * **Every value at the level, by its latest outcome** (PL-054): the cards are the database's
+ * gaps, so with values stored they add up to the pairs total -- and a lead that did not say so
+ * would leave "62 unanswered" reading as one acquisition's accounting, which it no longer is.
  */
-export interface AskedAbout {
-  id: number;
-  progress?: { items_total?: number | null } | null;
-}
-
-export function describeGaps(run: AskedAbout | null | undefined): string {
-  const asked = run?.progress?.items_total ?? 0;
-  if (run === null || run === undefined || asked <= 0) {
+export function describeGaps(holdings: { level: string; pairs_total: number } | null): string {
+  if (holdings === null || holdings.pairs_total <= 0) {
     return "Each of these starts a new acquisition. Nothing is fetched or charged until you agree to an estimate.";
   }
   return (
-    `All ${String(asked)} values acquisition ${String(run.id)} asked for, by outcome. ` +
+    `All ${formatCount(holdings.pairs_total)} values at ${holdings.level} level, by their latest outcome. ` +
     "Each action starts a new acquisition, and nothing is fetched or charged until you agree to an estimate."
   );
 }

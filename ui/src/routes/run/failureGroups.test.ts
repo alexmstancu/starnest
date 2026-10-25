@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   describeFailures,
-  failedItemCount,
+  failuresIn,
   failureGroups,
 } from "./failureGroups";
 
@@ -374,75 +374,41 @@ describe("the line above the failure list", () => {
 });
 
 /**
- * BE-08 follow-up. **How many items failed, counted from the list itself.** A run's
- * `items_failed` leaves out every item some other source answered, so it cannot head a card
- * whose list -- and whose retry -- includes them.
+ * PL-053, PL-054. **A failed gap is one pair, with every source that broke on it**: the card
+ * counts the gaps, while the list groups each source's failure under that source.
  */
-describe("how many items failed", () => {
-  const OECD = {
-    data_source: "oecd",
-    candidate: "country.liechtenstein",
-    attribute: "country.total_tax_rate_effective",
-    error_message: "the oecd's cloudflare front answered with a browser challenge",
-  };
+describe("the failures behind the failed gaps", () => {
+  const TAX_RATE = "country.total_tax_rate_effective";
 
-  it("counts nothing when nothing failed", () => {
-    expect(failedItemCount([])).toBe(0);
-  });
-
-  /** `failures` is optional in the contract, so an absent array is not an empty one. */
-  it("counts nothing when the run reports no failures at all", () => {
-    expect(failedItemCount(null)).toBe(0);
-    expect(failedItemCount(undefined)).toBe(0);
-  });
-
-  it("counts an item two sources failed on once", () => {
+  it("lists one failure per source on each pair", () => {
     expect(
-      failedItemCount([
-        OECD,
-        { ...OECD, data_source: "eurostat_estimate", error_message: "out of range" },
+      failuresIn([
+        {
+          candidate: "country.liechtenstein",
+          attribute: TAX_RATE,
+          failures: [
+            { data_source: "oecd", error_message: "challenged" },
+            { data_source: "eurostat_estimate", error_message: "out of range" },
+          ],
+        },
       ]),
-    ).toBe(1);
+    ).toEqual([
+      {
+        data_source: "oecd",
+        candidate: "country.liechtenstein",
+        attribute: TAX_RATE,
+        error_message: "challenged",
+      },
+      {
+        data_source: "eurostat_estimate",
+        candidate: "country.liechtenstein",
+        attribute: TAX_RATE,
+        error_message: "out of range",
+      },
+    ]);
   });
 
-  it("counts two attributes of one candidate as two items", () => {
-    expect(
-      failedItemCount([OECD, { ...OECD, attribute: "country.child_benefit" }]),
-    ).toBe(2);
-  });
-
-  it("counts one attribute of two candidates as two items", () => {
-    expect(
-      failedItemCount([OECD, { ...OECD, candidate: "country.switzerland" }]),
-    ).toBe(2);
-  });
-
-  /** "a" with "bc" and "ab" with "c" read the same run together, and are two different items. */
-  it("never mistakes two items whose names run together for one", () => {
-    expect(
-      failedItemCount([
-        { ...OECD, candidate: "a", attribute: "bc" },
-        { ...OECD, candidate: "ab", attribute: "c" },
-      ]),
-    ).toBe(2);
-  });
-
-  /** Shown as an unnamed item rather than dropped, so it is counted rather than dropped. */
-  it("counts a failure the run described incompletely", () => {
-    expect(failedItemCount([{ data_source: "oecd" }])).toBe(1);
-    expect(
-      failedItemCount([
-        { data_source: "oecd", candidate: "country.malta" },
-        { data_source: "oecd", attribute: "country.homicide_rate" },
-      ]),
-    ).toBe(2);
-  });
-
-  it("counts every item behind one repeated message, not the message once", () => {
-    expect(
-      failedItemCount(
-        creditFailures(["country.austria", "country.belgium", "country.croatia"]),
-      ),
-    ).toBe(3);
+  it("is nothing when nothing failed", () => {
+    expect(failuresIn([])).toEqual([]);
   });
 });

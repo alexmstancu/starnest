@@ -4926,3 +4926,27 @@ select.field__control {
   border-color: var(--colour-invalid-border);
   background: var(--colour-invalid-surface);
 }
+
+/* ── Acquire's remedy cards, read from the database's gaps (PL-054, PL-058) ─────────────────
+   The holdings read's region stands between the grid and its cards; it takes no box of its
+   own, so the cards it draws sit in the row beside the refresh card, as the design has them. */
+.gap-cards > div[aria-busy] {
+  display: contents;
+}
+
+/* A message several failed items share, written once with the items it hit under it. */
+.group__message {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.group__message-text {
+  margin: 0;
+  color: var(--colour-text-muted);
+  font-size: var(--font-size-small);
+}
+
+.group__message > .group__items {
+  padding-bottom: 4px;
+}

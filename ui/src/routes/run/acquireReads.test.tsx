@@ -60,6 +60,7 @@ interface ScreenRead {
 }
 
 const HOLDS = /what the database holds/i;
+const GAPS = /what you can do about the gaps/i;
 const UNSOURCED = /attributes with no data source at all/i;
 const LAST_ACQUISITION = /^the last acquisition$/i;
 const HAND_ENTRY = /figures you can enter by hand/i;
@@ -86,9 +87,16 @@ const READS: ScreenRead[] = [
     what: "what the database holds",
     path: `${BASE}/holdings`,
     refusal: UNKNOWN_LEVEL,
-    owners: [HOLDS],
-    facts: [],
-    drawnFromIt: [/values stored/i, /past their allowed age/i, /spent this month/i],
+    owners: [HOLDS, GAPS],
+    // An empty card is a fact about the database, so it waits for the read like a count does.
+    facts: [/nothing is failing/i, /nothing went unanswered/i],
+    drawnFromIt: [
+      /values stored/i,
+      /past their allowed age/i,
+      /spent this month/i,
+      /retry \d+ (failed|unanswered)/i,
+      /by their latest outcome/i,
+    ],
   },
   {
     what: "the ranking",

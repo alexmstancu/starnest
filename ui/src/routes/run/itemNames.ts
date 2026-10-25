@@ -79,9 +79,10 @@ const DETAIL_LIMIT = 120;
  */
 export function itemDetail(
   item: { error_message?: string | null },
-  kind: "failed" | "unanswered",
+  kind: "failed" | "unanswered" | "not_reached",
 ): string {
   if (kind === "unanswered") return "no row anywhere";
+  if (kind === "not_reached") return "no source asked yet";
   const message = oneLine(item.error_message);
   return message === "" ? "no reason given" : readableMessage(message);
 }
