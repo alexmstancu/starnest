@@ -676,8 +676,20 @@ class RunAlreadyInFlightError(ValueError):
     That is what made the 2.70 EUR mistake possible. Starting a run answers 202 and then blocks
     for the whole run, so a client timeout is indistinguishable from a failure -- and the
     obvious response to a failure is to try again, which started a second paid run beside the
-    first. A state conflict, so the API answers 409 and names the run to poll instead.
+    first. A state conflict, so the API answers 409 and names the run to poll instead, in
+    `details.run` -- the number a client words, since it never shows this sentence (PL-003).
     """
+
+    def __init__(self, in_flight: int | None) -> None:
+        """`in_flight` is None where the database refused the second run and did not say which
+        run holds the slot."""
+        running = "another run" if in_flight is None else f"run {in_flight}"
+        poll = "the run that is going" if in_flight is None else f"run {in_flight}"
+        super().__init__(
+            f"{running} is still going, and one household runs one pass at a time. "
+            f"Poll {poll} rather than starting another."
+        )
+        self.details = None if in_flight is None else {"run": in_flight}
 
 
 class NothingToRetryError(ValueError):

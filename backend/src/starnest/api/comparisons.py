@@ -121,9 +121,9 @@ async def get_comparison(
             detail={
                 "code": "comparator_limit_not_set",
                 "message": (
-                    "comparator_limit is not set, so there is no bound on how many comparators "
-                    "a comparison may hold. Set it in Settings; it is provisional by design and "
-                    "has no default."
+                    "the comparator limit is not set, so there is no bound on how many "
+                    "comparators a comparison may hold. Set it under Configure; it is "
+                    "provisional by design and has no default."
                 ),
             },
         )

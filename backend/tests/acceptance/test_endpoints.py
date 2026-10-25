@@ -803,7 +803,7 @@ class TestGetRanking:
             )
 
         assert response.status_code == 409
-        assert "score_scale_max" in response.text
+        assert response.json()["code"] == "score_scale_not_set"
 
 
 class TestEveryScoreCarriesItsScale:

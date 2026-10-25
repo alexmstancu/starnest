@@ -193,7 +193,6 @@ class TestARefusalTheStopRuleRequires:
         # for either of the two error shapes P14 exists to keep apart, which is the one thing
         # it was written to distinguish.
         assert response.json()["code"] == "score_scale_not_set"
-        assert "score_scale_max" in response.json()["message"]
 
     @pytest.mark.parametrize(
         ("operation", "method", "path", "sent"),

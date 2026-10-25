@@ -109,9 +109,9 @@ def _refuse_a_range_below(score_scale_max: int, highest: HighestAnchor | None) -
         detail={
             "code": "score_scale_below_anchors",
             "message": (
-                f"score_scale_max cannot be {score_scale_max}: {highest.criteria_set} anchors "
-                f"{highest.attribute} to a score of {highest.score}, so it has to be at least "
-                f"{highest.score}"
+                f"the top of the score range cannot be {score_scale_max}: "
+                f"{highest.criteria_set} anchors {highest.attribute} to a score of "
+                f"{highest.score}, so it has to be at least {highest.score}"
             ),
             "details": {
                 "minimum": highest.score,

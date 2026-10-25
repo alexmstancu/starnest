@@ -1693,6 +1693,8 @@ class TestOnlyOneRunAtATime:
         assert refused.status_code == 409
         assert refused.json()["code"] == "run_already_in_flight"
         # Naming it is the point: the client's next move is to poll that run, not to try again.
+        # In `details`, because a client words the refusal and never shows the sentence (PL-003).
+        assert refused.json()["details"] == {"run": in_flight}
         assert str(in_flight) in refused.json()["message"]
 
     async def test_a_retry_is_refused_while_a_run_is_in_flight(
@@ -1706,7 +1708,7 @@ class TestOnlyOneRunAtATime:
 
         assert refused.status_code == 409
         assert refused.json()["code"] == "run_already_in_flight"
-        assert str(in_flight) in refused.json()["message"]
+        assert refused.json()["details"] == {"run": in_flight}
 
     async def test_nothing_is_fetched_by_the_refused_request(
         self, api: httpx.AsyncClient, database_url: str

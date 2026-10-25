@@ -10,15 +10,19 @@ and it holds the seeded catalog. Values are written by the tests that need them 
 afterwards, exactly as the storage suite does.
 """
 
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
 
 import httpx
+import psycopg
+import psycopg.errors
 import pytest
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.api import build_app
+from starnest.api.settings import SettingsBody
 from starnest.criteria import UnknownCriteriaSetError
 from starnest.data_acquisition import SourceAdapter
 from starnest.storage import (
@@ -142,6 +146,43 @@ async def _held_to_the_designed_error(response: httpx.Response) -> None:
     body = response.json()
     if isinstance(body, dict) and "code" in body:
         validate_refusal(body)
+        _held_to_the_sentence_rule(body)
+
+
+def _held_to_the_sentence_rule(body: dict) -> None:
+    """Every refusal's sentences carry no driver text, no document reference, no settings key.
+
+    A sentence is for a person reading the API (P1-07): the interface words `code` and
+    `details` and never shows it, and an API reader is not helped by a psycopg class, a
+    `reqs.md` section or `score_scale_max` where "the top of the score range" was meant (PL-003).
+    Checked on every refusal any acceptance test meets, as the design's `Error` is.
+    """
+    problems = (body.get("details") or {}).get("errors") or []
+    sentences = [body["message"], *(problem.get("problem", "") for problem in problems)]
+    for sentence in sentences:
+        found = _UNFIT_FOR_A_SENTENCE.findall(sentence)
+        assert not found, f"{body['code']}'s sentence carries {found}: {sentence!r}"
+
+
+_DRIVER_WORDS = sorted(
+    name
+    for name, kind in vars(psycopg.errors).items()
+    if isinstance(kind, type) and issubclass(kind, psycopg.DatabaseError)
+)
+_UNFIT_FOR_A_SENTENCE = re.compile(
+    r"\b(?:"
+    + "|".join(
+        [
+            *map(re.escape, _DRIVER_WORDS),
+            *map(re.escape, SettingsBody.model_fields),
+            r"psycopg",
+            r"SQLSTATE",
+            r"[A-Za-z_-]+\.md",
+        ]
+    )
+    + r")\b"
+)
+"""What no refusal's sentence may contain: a psycopg error class, a settings key, a document."""
 
 
 @pytest.fixture

@@ -23,6 +23,7 @@ from pathlib import Path
 from fastapi import HTTPException
 from psycopg_pool import AsyncConnectionPool
 
+from starnest.api.errors import refusal_for
 from starnest.api.rankings import TheRanking, the_ranking
 from starnest.data import ConfidenceLevel
 from starnest.evaluation import in_display_order
@@ -59,15 +60,29 @@ async def main(criteria_set: str) -> int:
                 PostgresCatalogStore(pool),
                 PostgresMatchRuleResultStore(pool),
             )
-        except HTTPException as refusal:
+        except Exception as error:
             # Refused rather than assumed, as the API refuses: a scale nobody chose would make
             # every score this prints a number on a scale nobody chose (`CLAUDE.md`).
-            print(refusal.detail["message"] if isinstance(refusal.detail, dict) else refusal.detail)
+            refusal = what_was_refused(error)
+            if refusal is None:
+                raise
+            print(refusal)
             return 1
         settings = await households.get_settings()
     for line in lines_of(ranking, settings):
         print(line)
     return 0
+
+
+def what_was_refused(error: Exception) -> str | None:
+    """The sentence the API answers with for a refusal, or None for a fault, which stays loud.
+
+    The API's sentences, so `make rank` and the API never word the same refusal two ways.
+    """
+    if isinstance(error, HTTPException):
+        detail = error.detail
+        return str(detail["message"]) if isinstance(detail, dict) else str(detail)
+    return str(error) if refusal_for(error) is not None else None
 
 
 def lines_of(ranking: TheRanking, settings: Settings) -> Iterator[str]:

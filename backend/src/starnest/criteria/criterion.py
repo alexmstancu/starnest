@@ -285,8 +285,8 @@ class Criterion(BaseModel):
         permitted = ", ".join(sorted(method.value for method in legal))
         raise CriterionDeclarationError(
             f"{self.attribute} is a {self.value_type} and normalises "
-            f"`{self.normalisation_method}`, which `reqs.md` 3.3a does not permit for that "
-            f"type; the legal methods for a {self.value_type} are: {permitted}",
+            f"`{self.normalisation_method}`, which that type does not permit; the legal methods "
+            f"for a {self.value_type} are: {permitted}",
             fields=("normalisation_method",),
         )
 

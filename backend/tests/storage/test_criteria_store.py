@@ -429,7 +429,9 @@ class TestWritingASet:
         Deleting such a set is no longer refused at all -- it is kept, and its rankings with it.
         """
         held = "held_by_an_evaluation"
-        await criteria.create_criteria_set(_a_set(held, weight="100"))
+        await criteria.create_criteria_set(
+            _a_set(held, weight="100").model_copy(update={"name": "Kept For A Ranking"})
+        )
         evaluations = PostgresEvaluationStore(pool)
         await evaluations.save(
             criteria=await criteria.read_criteria_set(held, level=COUNTRY),
@@ -440,8 +442,9 @@ class TestWritingASet:
         )
 
         try:
-            with pytest.raises(CriteriaSetInUseError, match=held) as refused:
+            with pytest.raises(CriteriaSetInUseError, match="Kept For A Ranking") as refused:
                 await criteria.purge_criteria_set(held)
+            assert held not in str(refused.value), "named by its name, not its id (PL-003)"
             for driver_text in ("violates", "foreign key", "evaluation_criteria_set", "DETAIL"):
                 assert driver_text not in str(refused.value)
             assert await criteria.read_criteria_set(held, level=COUNTRY) is not None

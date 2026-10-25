@@ -83,10 +83,7 @@ class PostgresRunStore(RunStore):
                 # index allows (ST-01). The caller's own `run_in_flight` check may have passed --
                 # the point of the index is that it does not have to -- so this is the same
                 # refusal, raised where the database made it certain.
-                raise RunAlreadyInFlightError(
-                    "another run is already in flight, and one household runs one pass at a "
-                    "time (reqs.md 10). Poll the running run rather than starting another."
-                ) from clash
+                raise RunAlreadyInFlightError(None) from clash
             await self._queries.insert_run_candidates(
                 connection, data_acquisition_run=row.id, candidates=list(scope.candidates)
             )

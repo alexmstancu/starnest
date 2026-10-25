@@ -895,9 +895,9 @@ paths:
             uncapped run; nothing invents a ceiling on the household's behalf (`reqs.md` 6.3).
 
             `run_already_in_flight` — a run is already going, and one household runs one pass
-            at a time (`reqs.md` 10). The message names the run: poll it rather than starting
-            another. This is what stops a client timeout, which is indistinguishable from a
-            failure, from being retried into a second concurrent run.
+            at a time (`reqs.md` 10). `details.run` names the run, where the database said which
+            one: poll it rather than starting another. This is what stops a client timeout, which
+            is indistinguishable from a failure, from being retried into a second concurrent run.
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
@@ -1329,7 +1329,7 @@ components:
       required: [code, message]
       properties:
         code: { $ref: "#/components/schemas/ErrorCode", description: "Stable and machine-readable. Branch on this, never on the message." }
-        message: { type: string }
+        message: { type: string, description: "For a person reading the API; an interface words `code` and `details` and never shows this. It names things rather than printing their ids where a name is known, and carries no driver or SQL text." }
         details: { type: object, additionalProperties: true }
       examples:
         - { code: weights_all_locked, message: "Every other weight in this pillar is locked.", details: { reason: others_all_locked, locked: ["country.total_tax_rate_effective"] } }

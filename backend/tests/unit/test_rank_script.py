@@ -104,3 +104,24 @@ def test_it_prints_in_the_order_every_ranking_is_shown(rank_script: ModuleType) 
         if "country." in line and ":" not in line
     ]
     assert rows == ["country.portugal", "country.cyprus", "country.austria", "country.greece"]
+
+
+def test_a_refusal_prints_the_sentence_the_api_answers_with(rank_script: ModuleType) -> None:
+    """PL-003: an unknown set is a refusal to word, not a traceback to read."""
+    from starnest.criteria import UnknownCriteriaSetError
+
+    refused = UnknownCriteriaSetError("there is no criteria set called 'nobody_made_this'")
+
+    assert rank_script.what_was_refused(refused) == str(refused)
+
+
+def test_an_endpoint_refusal_prints_its_message(rank_script: ModuleType) -> None:
+    from fastapi import HTTPException
+
+    refused = HTTPException(409, detail={"code": "score_scale_not_set", "message": "unset"})
+
+    assert rank_script.what_was_refused(refused) == "unset"
+
+
+def test_a_fault_is_not_dressed_as_a_refusal(rank_script: ModuleType) -> None:
+    assert rank_script.what_was_refused(RuntimeError("a bug")) is None

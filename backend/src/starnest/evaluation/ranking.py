@@ -104,7 +104,7 @@ def rank_candidates(
     scored_criteria = _criteria_to_score(criteria, level)
     if not scored_criteria:
         raise RankingError(
-            f"{criteria.id} scores nothing at level {level}, so there is no ranking to produce",
+            f"{criteria.name!r} scores nothing at level {level}, so there is no ranking to produce",
             details={"reason": "scores_nothing"},
         )
     criteria.refuse_unless_its_anchors_fit(score_scale_max)
@@ -209,9 +209,9 @@ def _refuse_a_pillar_nothing_scores_into(criteria: CriteriaSet, level: str) -> N
     ]
     if empty:
         raise RankingError(
-            f"{criteria.id} gives weight at level {level} to {sorted(empty)}, which no criterion "
-            "scores into, so the level would score out of less than 100. Give the pillar a "
-            "criterion or give it no weight.",
+            f"{criteria.name!r} gives weight at level {level} to {sorted(empty)}, which no "
+            "criterion scores into, so the level would score out of less than 100. Give the "
+            "pillar a criterion or give it no weight.",
             details={
                 "reason": "pillar_without_criteria",
                 "pillars": [str(pillar) for pillar in sorted(empty)],
@@ -342,9 +342,9 @@ def _renormalised_within_each_pillar(
             weightless.append(pillar)
     if weightless:
         raise RankingError(
-            f"{criteria.id} cannot be ranked at level {level}: the criteria still scored under "
-            f"{weightless} carry no weight between them. Give one of them weight, or score one "
-            "that has it.",
+            f"{criteria.name!r} cannot be ranked at level {level}: the criteria still scored "
+            f"under {weightless} carry no weight between them. Give one of them weight, or "
+            "score one that has it.",
             details={"reason": "criteria_without_weight", "pillars": weightless},
         )
     return renormalised
@@ -363,7 +363,7 @@ def _renormalised_across_pillars(
     except WeightingError as degenerate:
         scoring = sorted(pillar_weights)
         raise RankingError(
-            f"{criteria.id} cannot be ranked at level {level}: the pillars still scored, "
+            f"{criteria.name!r} cannot be ranked at level {level}: the pillars still scored, "
             f"{scoring}, carry no weight between them. Give one of them weight, or score a "
             "criterion in a pillar that has it.",
             details={"reason": "pillars_without_weight", "pillars": scoring},

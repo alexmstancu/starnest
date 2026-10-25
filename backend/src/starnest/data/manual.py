@@ -55,7 +55,7 @@ def a_manual_value(
     if not attribute.manual_entry:
         raise ManualEntryNotPermittedError(
             f"{attribute.id} does not permit manual entry: its values come from sources, and a "
-            "typed one would be a number with no measurement behind it (reqs.md 6.5)"
+            "typed one would be a number with no measurement behind it"
         )
     if attribute.is_retired:
         raise InvalidManualValueError(f"{attribute.id} is retired and takes no new values")

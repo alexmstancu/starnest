@@ -103,7 +103,7 @@ def refuse_unless_capped(
     if not costs_money or cap_eur is not None or uncapped_is_accepted:
         return
     raise SpendCapNotSetError(
-        "this run would ask a source that charges, and no spend cap is set. Set "
-        "`run_spend_cap_eur` in Settings, or accept an uncapped run in this request -- nothing "
-        "here invents a ceiling on your behalf (reqs.md 6.3)."
+        "this run would ask a source that charges, and no spend cap is set. Set the spend cap "
+        "under Configure, or accept an uncapped run in this request -- nothing here invents a "
+        "ceiling on your behalf."
     )

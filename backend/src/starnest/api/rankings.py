@@ -222,8 +222,8 @@ async def the_ranking(
             detail={
                 "code": "score_scale_not_set",
                 "message": (
-                    "score_scale_max is not set, so there is no scale to score onto. Set it in "
-                    "Settings; it is provisional by design and has no default."
+                    "the top of the score range is not set, so there is no scale to score onto. "
+                    "Set it under Configure; it is provisional by design and has no default."
                 ),
             },
         )

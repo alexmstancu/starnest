@@ -313,10 +313,7 @@ async def start_run(
     # second tab, a double click or a retried request asks for another.
     in_flight = await runs.run_in_flight()
     if in_flight is not None:
-        raise RunAlreadyInFlightError(
-            f"run {in_flight} is still going, and one household runs one pass at a time "
-            f"(reqs.md 10). Poll run {in_flight} rather than starting another."
-        )
+        raise RunAlreadyInFlightError(in_flight)
     # **A source switched off is not asked** (`reqs.md` 2, Q232). The same switch keeps its
     # stored values out of the active-value comparison, so asking it again would fetch figures
     # that cannot score -- and would pay for them where the source charges.
@@ -417,10 +414,7 @@ async def retry(
     # twice.
     in_flight = await runs.run_in_flight()
     if in_flight is not None:
-        raise RunAlreadyInFlightError(
-            f"run {in_flight} is still going, and one household runs one pass at a time "
-            f"(reqs.md 10). Poll run {in_flight} rather than starting another."
-        )
+        raise RunAlreadyInFlightError(in_flight)
 
     async def open_and_dispatch(**asked: object) -> object:
         """Open the retry (where every refusal is made), then hand the fetch to the background

@@ -103,7 +103,7 @@ class TestWhenARunIsRefused:
         with pytest.raises(SpendCapNotSetError) as refusal:
             refuse_unless_capped(costs_money=True, cap_eur=None, uncapped_is_accepted=False)
 
-        assert "run_spend_cap_eur" in str(refusal.value)
+        assert "Set the spend cap" in str(refusal.value)
         assert "accept an uncapped run" in str(refusal.value)
 
     def test_a_paid_run_with_a_cap_proceeds(self) -> None:

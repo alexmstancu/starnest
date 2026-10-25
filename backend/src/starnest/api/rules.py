@@ -157,7 +157,7 @@ async def _refuse_while_the_llm_source_is_off(catalog: Catalog) -> None:
     ):
         raise NoResearcherConfiguredError(
             "the llm source is switched off, so no gate can be researched -- it is the paid LLM "
-            "path, and a switched-off source is not asked (reqs.md 2, Q232). Switch it on in "
+            "path, and a switched-off source is not asked. Switch it on in "
             "Configure to research gates."
         )
 
@@ -320,7 +320,7 @@ async def plan_match_rule_research(
     if researcher is None:
         raise NoResearcherConfiguredError(
             "no model is configured, so there is nothing to estimate: set ANTHROPIC_API_KEY and "
-            "the LLM prices (reqs.md 6.10)"
+            "the LLM prices"
         )
     await _refuse_while_the_llm_source_is_off(catalog)
 
@@ -370,7 +370,7 @@ async def research_match_rules(
     if researcher is None:
         raise NoResearcherConfiguredError(
             "no model is configured, so no gate can be researched: set ANTHROPIC_API_KEY and "
-            "the three LLM prices (reqs.md 6.10)"
+            "the three LLM prices"
         )
     await _refuse_while_the_llm_source_is_off(catalog)
 
