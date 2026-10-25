@@ -1325,6 +1325,8 @@ export const EXTERNAL_SCORES: ExternalScore[] = [
   {
     candidate: "country.portugal",
     data_source: "numbeo",
+    series: "Safety Index",
+    is_current: true,
     published_value: 72.4,
     published_scale: "0-100, higher is safer",
     reference_period: { start: "2026-01-01", end: "2026-06-30" },

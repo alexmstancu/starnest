@@ -234,6 +234,12 @@ export interface paths {
          *     an early estimate is captured so a real dataset can supersede it later without deleting
          *     anything.
          *
+         *     A non-euro amount carries the rate it was converted at, as `fx_rate` (`FxRate`): the
+         *     number, the day and the source that published it. That rate must be one its publisher
+         *     published for that day -- read from the rates on record, or asked of the publisher (the
+         *     ECB) once and recorded -- or the request is refused with `409 invalid_value`, and nothing
+         *     is stored.
+         *
          *     Rejected with `409 manual_entry_not_permitted` when the attribute does not allow it; with
          *     `409 manual_entry_switched_off` while the `manual` source is switched off, because a
          *     switched-off source is left out of scoring (`reqs.md` Q232), so a figure stored then
@@ -927,6 +933,13 @@ export interface paths {
         /**
          * Published scores from outside indices
          * @description Displayed **beside** the score, never fed into it (`reqs.md` 3.5a).
+         *
+         *     Every edition is served, in one order: by candidate, publisher and series, then the
+         *     latest period end first, then the latest period start. **Exactly one edition per
+         *     candidate, publisher and series is current** -- the first in that order -- and the
+         *     rest are history. A re-read of one edition (the same period, read again) is one
+         *     edition, served once as its latest read. A switched-off publisher's editions are all
+         *     history.
          */
         get: operations["listExternalScores"];
         put?: never;
@@ -993,10 +1006,15 @@ export interface components {
             /** Format: date */
             end: string;
         };
+        /** @description The published rate a converted amount used: one unit of the amount's currency is `rate` euro, on `rate_date`, as `data_source` published it (reqs.md 5.5). Absent for an amount issued in euro, which was never converted. */
         FxRate: {
             rate: number;
-            /** Format: date */
+            /**
+             * Format: date
+             * @description The day the rate was published for; a weekend amount carries the last working day's.
+             */
             rate_date: string;
+            /** @description Who published the rate -- the ECB for every rate this application fetches. */
             data_source: string;
         };
         Level: {
@@ -1730,6 +1748,10 @@ export interface components {
         ExternalScore: {
             candidate: string;
             data_source: string;
+            /** @description Which of the publisher's indices this is an edition of -- "Crime Index", "Quality of Life Index" -- so two indices from one publisher are never read as one's history. */
+            series: string;
+            /** @description Derived, not stored: whether this is the edition that stands for its candidate, publisher and series. False marks an earlier edition, kept and shown as history (reqs.md 3.5a). */
+            is_current: boolean;
             published_value?: number | null;
             published_scale: string;
             published_rank?: number | null;
@@ -2191,7 +2213,7 @@ export interface operations {
                     "application/json": components["schemas"]["Value"];
                 };
             };
-            /** @description `manual_entry_not_permitted`: the attribute does not permit manual entry. `manual_entry_switched_off`: the manual source is switched off. `invalid_value`: the value is not one the attribute can hold. `conflicting_observation`: another figure is already on record for the same observation, with that observation's id and natural key in `details`. */
+            /** @description `manual_entry_not_permitted`: the attribute does not permit manual entry. `manual_entry_switched_off`: the manual source is switched off. `invalid_value`: the value is not one the attribute can hold -- a converted amount whose rate its publisher did not publish for that day included. `conflicting_observation`: another figure is already on record for the same observation, with that observation's id and natural key in `details`. */
             409: {
                 headers: {
                     [name: string]: unknown;
