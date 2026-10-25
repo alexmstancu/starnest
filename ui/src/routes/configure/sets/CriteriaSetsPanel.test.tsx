@@ -1048,41 +1048,71 @@ describe("an entry and the set it targets", () => {
     fireEvent.pointerUp(slider);
   }
 
+  /** PL-139 (D39): a change whose set is gone cannot be undone, so it goes, and the rail says so. */
   it.each([
     { what: "a pillar's lock", lock: PILLAR_LOCK },
     { what: "a criterion's lock", lock: CRITERION_LOCK },
-  ])("holds $what whose set was deleted elsewhere, says why, and frees it once the set is back", async ({
+  ])("drops $what whose set was deleted elsewhere, says how many, and frees the older undo", async ({
     lock,
   }) => {
     const user = userEvent.setup();
     renderShell("/configure");
     await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
-    await lock.press(user);
-    const history = await historyPanel();
-    await history.findByText(lock.entry);
-    await user.click((await row("Remote only")).getByRole("button", { name: "Use" }));
-    await waitFor(() => expect(sidebarSets()).toHaveValue("remote_only"));
-    const renameRemoteOnly = async (from: string, to: string) => {
+    const rename = async (from: string, to: string) => {
       await user.click((await row(from)).getByRole("button", { name: "Rename" }));
       await user.keyboard(`{Control>}a{/Control}${to}{Enter}`);
       await row(to);
     };
+    await rename("Remote only", "Remote");
+    await lock.press(user);
+    const history = await historyPanel();
+    await history.findByText(lock.entry);
 
     // Another tab deletes it; the next set action reads the list that says so.
     await deleteCriteriaSet("default");
-    await renameRemoteOnly("Remote only", "Remote");
+    await rename("Remote", "Far");
     await waitFor(() => expect(screen.queryByRole("listitem", { name: "Default" })).toBeNull());
 
-    const entry = history.getByText(lock.entry).closest("li")!;
-    expect(within(entry).getByText("Its set was deleted: restore it to undo this.")).toBeTruthy();
-    expectHeld(within(entry).getByRole("button"));
-    expectNotHeld(history.getByRole("button", { name: "Undo this" }));
+    await waitFor(() => expect(history.queryByText(lock.entry)).toBeNull());
+    expect(
+      history.getByText("1 change was dropped: its set was deleted, so it cannot be undone."),
+    ).toBeInTheDocument();
+    writes = recordWrites();
+    await user.click(history.getByRole("button", { name: "Back to where I started" }));
 
-    await restoreCriteriaSet("default");
-    await renameRemoteOnly("Remote", "Remote only");
-    await row("Default");
-    await waitFor(() => expectNotHeld(within(entry).getByRole("button")));
-    expect(within(entry).queryByText(/Its set was deleted/)).toBeNull();
+    expect(await row("Remote only")).toBeTruthy();
+    expect(writes.every((write) => !write.includes("/default"))).toBe(true);
+    expect(history.getByText("No changes yet.")).toBeInTheDocument();
+  });
+
+  /** PL-139 (D43): what a half-finished undo did undo is no longer in force, so it is not listed. */
+  it("lists only what is still in force after an undo that stops half way", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await waitFor(() => expect(sidebarSets()).toHaveValue("default"));
+    await screen.findByRole("slider", { name: "Economy weight" });
+    movePillar("Economy", "50");
+    const history = await historyPanel();
+    await history.findByText(/Pillar weight for Economy/);
+    await CRITERION_LOCK.press(user);
+    await history.findByText(CRITERION_LOCK.entry);
+    mockServer.use(
+      http.put(
+        PILLAR_LOCK.path,
+        () =>
+          HttpResponse.json(
+            { code: "weights_all_locked", message: "refused", details: { reason: "test" } },
+            { status: 409 },
+          ),
+        { once: true },
+      ),
+    );
+
+    await user.click(history.getByRole("button", { name: "Back to where I started" }));
+
+    await waitFor(() => expect(history.queryByText(CRITERION_LOCK.entry)).toBeNull());
+    expect(history.getByText(/Pillar weight for Economy/)).toBeInTheDocument();
+    expect(history.getByText("1 in this session")).toBeInTheDocument();
   });
 
   /** Single flight: one write at a time across the screen, and every other one held, saying why. */

@@ -521,7 +521,7 @@ describe("the pillar weights panel while a pointer is down", () => {
           id: "default",
           name: "Default",
           pillar_weights: [
-            { pillar: "economics", weight: 100, weight_locked: false },
+            { pillar: "economics", level: "country", weight: 100, weight_locked: false },
           ],
           criteria: [],
           enforced_match_rules: [],
@@ -576,9 +576,9 @@ describe("the pillar weights panel while a pointer is down", () => {
         () =>
           HttpResponse.json({
             items: [
-              { pillar: "economics", weight: 55, weight_locked: false },
-              { pillar: "housing", weight: 10, weight_locked: false },
-              { pillar: "safety", weight: 35, weight_locked: false },
+              { pillar: "economics", level: "country", weight: 55, weight_locked: false },
+              { pillar: "housing", level: "country", weight: 10, weight_locked: false },
+              { pillar: "safety", level: "country", weight: 35, weight_locked: false },
             ],
           }),
       ),

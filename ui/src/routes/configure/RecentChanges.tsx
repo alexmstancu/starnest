@@ -41,16 +41,24 @@ export function RecentChanges({
   // button the moment it is disabled, so an undo pressed from the keyboard put the reader back
   // on the page. Held, a button keeps focus and says so, and pressing it does nothing.
   const held = history.busy || busy;
-  // **An entry never outlives its set** (PL-033): one whose undo would find its set deleted is
-  // held and says why, and so is everything its undo would have to pass through, until the set
-  // is restored.
+  // **An entry never outlives its set** (PL-033, PL-139 D39): one whose undo would find its set
+  // deleted, with nothing above it to bring the set back, cannot be undone -- so it is dropped,
+  // and the rail says how many went. Only once nothing is in flight and the list of sets has
+  // settled: an undo bringing a set back is above the changes it frees until it lands.
   const deleted = new Set(
     history.changes.flatMap(({ undoes }) =>
       undoes !== undefined && isDeleted(undoes.criteriaSetId) ? [undoes.criteriaSetId] : [],
     ),
   );
   const strandedIds = stranded(history.changes, deleted);
-  const reasonIdOf = (id: number) => `${headingId}-stranded-${String(id)}`;
+  const strandedKey = [...strandedIds].join(",");
+  const { drop } = history;
+  useEffect(() => {
+    if (held || strandedKey === "") return;
+    drop(new Set(strandedKey.split(",").map(Number)));
+    // `strandedKey` says everything `strandedIds` does, and stays the same across renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [held, strandedKey]);
   const unconfirmedIdOf = (id: number) => `${headingId}-unconfirmed-${String(id)}`;
   // Nor is anything undone through a change nobody knows took effect (PL-033).
   const blocked = (reach: readonly RecordedChange[]) =>
@@ -147,6 +155,14 @@ export function RecentChanges({
         </p>
       )}
 
+      {history.dropped > 0 && (
+        <p className="panel__hint" role="note">
+          {history.dropped === 1
+            ? "1 change was dropped: its set was deleted, so it cannot be undone."
+            : `${String(history.dropped)} changes were dropped: their set was deleted, so they cannot be undone.`}
+        </p>
+      )}
+
       {/* Outside the collapse: a refusal to undo is about what the server holds now, and
           hiding it behind a caret would let the screen and the database disagree unnoticed. */}
       <ActRefusal act="Going back" error={history.failure} />
@@ -167,7 +183,6 @@ export function RecentChanges({
                 ...reaching
                   .filter((each) => each.caveat !== undefined)
                   .map((each) => caveatIdOf(each.id)),
-                ...reaching.filter((each) => strandedIds.has(each.id)).map((each) => reasonIdOf(each.id)),
                 ...reaching
                   .filter((each) => each.unconfirmed !== undefined)
                   .map((each) => unconfirmedIdOf(each.id)),
@@ -192,11 +207,6 @@ export function RecentChanges({
                       role="note"
                     >
                       {change.caveat}
-                    </span>
-                  )}
-                  {strandedIds.has(change.id) && (
-                    <span id={reasonIdOf(change.id)} className="panel__hint" role="note">
-                      Its set was deleted: restore it to undo this.
                     </span>
                   )}
                   {change.unconfirmed !== undefined && (

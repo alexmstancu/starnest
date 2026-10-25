@@ -119,8 +119,9 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                 prominence="screen"
               />
             ) : (
-              // Keyed by the set, because the panel holds the set's pillar weights as state
-              // it then edits: switching sets starts that state again from the new set.
+              // Keyed by the set, so a panel starts from the set it shows: switching sets reads
+              // the new set's pillar weights afresh. Answers reach it through the session, by
+              // set, never through the mount that sent the write (PL-033).
               // **Criteria inside the weights, not beside them**: a criterion's weight is a
               // share of its pillar's, so opening a pillar reveals the attributes under it.
               <PillarWeightsPanel

@@ -65,8 +65,8 @@ export interface SetUndo {
  * The changes whose undo would find their set deleted, given the sets deleted now (PL-033).
  *
  * Walked newest first, as an undo runs, so a restore above a change brings its set back in time
- * and a deletion above it -- undoing a creation -- takes it away. A change here would answer 404;
- * restoring its set is what makes it undoable again.
+ * and a deletion above it -- undoing a creation -- takes it away. A change here would answer 404,
+ * so it is dropped, and the rail says how many were (PL-139, D39).
  */
 export function stranded(
   history: readonly Change[],

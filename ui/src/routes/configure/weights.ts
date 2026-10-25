@@ -111,6 +111,21 @@ export function weightedPillars(
   }));
 }
 
+/**
+ * A pillar write's answer merged into the weights shown (PL-139): it holds the one level the
+ * write rebalanced, so it replaces that level's pillars and leaves every other level's alone.
+ */
+export function mergePillarAnswer<Weight extends { pillar: string; level: string }>(
+  shown: readonly Weight[],
+  answer: readonly Weight[],
+): Weight[] {
+  const keyOf = (weight: Weight) => `${weight.level}\u0000${weight.pillar}`;
+  const answered = new Map(answer.map((weight) => [keyOf(weight), weight]));
+  const merged = shown.map((weight) => answered.get(keyOf(weight)) ?? weight);
+  const shownKeys = new Set(shown.map(keyOf));
+  return [...merged, ...answer.filter((weight) => !shownKeys.has(keyOf(weight)))];
+}
+
 /** What a pillar's criteria look like to a rebalance. */
 export function weightedCriteria(
   criteria: readonly {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  mergePillarAnswer,
   comesToAHundred,
   previewRebalance,
   previewedCriteria,
@@ -621,5 +622,42 @@ describe("the unsourced share of each pillar", () => {
   it("words the pillar's line with the share, and without it when there is none", () => {
     expect(describePillarCount(6, 44.4)).toBe("6 attributes, 44% of the weight unsourced");
     expect(describePillarCount(1, undefined)).toBe("1 attribute");
+  });
+});
+
+/** PL-139 (S6): a pillar's answer holds one level, and every other level keeps its weights. */
+describe("merging a pillar write's answer", () => {
+  const weight = (pillar: string, level: string, value: number) => ({
+    pillar,
+    level,
+    weight: value,
+    weight_locked: false,
+  });
+
+  it("replaces the pillars of the level it answers and keeps every other level's", () => {
+    const shown = [
+      weight("economics", "country", 40),
+      weight("housing", "country", 60),
+      weight("economics", "city", 30),
+      weight("housing", "city", 70),
+    ];
+
+    const merged = mergePillarAnswer(shown, [
+      weight("economics", "city", 50),
+      weight("housing", "city", 50),
+    ]);
+
+    expect(merged).toEqual([
+      weight("economics", "country", 40),
+      weight("housing", "country", 60),
+      weight("economics", "city", 50),
+      weight("housing", "city", 50),
+    ]);
+  });
+
+  it("adds a pillar the answer names that was not shown", () => {
+    expect(mergePillarAnswer([], [weight("economics", "country", 100)])).toEqual([
+      weight("economics", "country", 100),
+    ]);
   });
 });

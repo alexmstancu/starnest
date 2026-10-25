@@ -29,7 +29,9 @@ import {
 } from "./weights";
 
 /**
- * One criteria set, and the one write the Configure screen makes.
+ * One criteria set's criteria, and the three writes to them: a weight, a lock and a rule. The
+ * set's other writes -- its pillars, its rules, the set itself -- have writers of their own, and
+ * all of them take Configure's one write in flight (PL-033).
  *
  * **The weights it holds are the server's answers, never a local calculation.** A weight change
  * rebalances the criterion's siblings, and which siblings absorb it depends on which are locked

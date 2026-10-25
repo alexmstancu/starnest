@@ -26,6 +26,7 @@ import {
   lockTitle,
   describePillarCount,
   LOCKED_SLIDER_TITLE,
+  mergePillarAnswer,
   refusedUnder,
   standingFailure,
   type Refused,
@@ -107,13 +108,19 @@ export function PillarWeightsPanel({
     undoing ||
     history?.busy === true ||
     history?.waitsFor(criteriaSet.id) === true;
-  useEffect(() => answers?.listen(criteriaSet.id, setWeights), [answers, criteriaSet.id]);
+  // An answer holds one level, so it is merged by pillar and level, never put in place of every
+  // level's weights (PL-139).
+  const showHere = useCallback(
+    (answer: PillarWeight[]) => setWeights((shown) => mergePillarAnswer(shown, answer)),
+    [],
+  );
+  useEffect(() => answers?.listen(criteriaSet.id, showHere), [answers, criteriaSet.id, showHere]);
   const showAnswer = useCallback(
     (setId: string, answer: PillarWeight[]) => {
       if (answers !== undefined) answers.deliver(setId, answer);
-      else if (setId === criteriaSet.id) setWeights(answer);
+      else if (setId === criteriaSet.id) showHere(answer);
     },
-    [answers, criteriaSet.id],
+    [answers, criteriaSet.id, showHere],
   );
   const note = useNotePillarChange(criteriaSet, names, showAnswer, history);
 

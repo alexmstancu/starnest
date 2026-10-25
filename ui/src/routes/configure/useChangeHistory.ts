@@ -56,6 +56,13 @@ export interface ChangeHistory {
   confirm: (id: number) => void;
   /** Undo everything this session did, oldest last. */
   reset: () => void;
+  /**
+   * Let go of changes that can no longer be undone, because their set was deleted where this
+   * history cannot bring it back (PL-139, D39). Refused while a write or an undo is in flight.
+   */
+  drop: (ids: ReadonlySet<number>) => void;
+  /** How many changes were let go since the history last changed otherwise, to say so. */
+  dropped: number;
   undoing: boolean;
   failure: unknown;
 }
@@ -64,6 +71,7 @@ export function useChangeHistory(): ChangeHistory {
   const [changes, setChanges] = useState<RecordedChange[]>([]);
   const [undoing, setUndoing] = useState(false);
   const [failure, setFailure] = useState<unknown>(null);
+  const [dropped, setDropped] = useState(0);
   // A ref, not state: an id must be unique across renders and never re-used, and nothing on
   // screen depends on its value.
   const nextId = useRef(1);
@@ -106,6 +114,7 @@ export function useChangeHistory(): ChangeHistory {
   const note = useCallback(
     (entry: Omit<RecordedChange, "id" | "at">) => {
       const id = nextId.current++;
+      setDropped(0);
       setChanges(
         (history) => record(history, { ...entry, id, at: new Date() }) as RecordedChange[],
       );
@@ -175,19 +184,22 @@ export function useChangeHistory(): ChangeHistory {
     inFlight.current = true;
     setUndoing(true);
     setFailure(null);
+    setDropped(0);
+    const undone: RecordedChange[] = [];
     try {
       // **Newest first.** The changes are reversed in the order that returns the
       // configuration through the states it actually passed through; going the other way
       // would write an older value and then a newer one over it.
       for (const change of reach) {
         await change.reverse(change.before);
+        undone.push(change);
       }
-      setChanges((history) => without(history, reach) as RecordedChange[]);
     } catch (error) {
-      // Whatever was undone stays undone and stays listed: the history must keep matching
-      // what the server holds, and a half-finished undo is a real state.
+      // **A half-finished undo is a real state** (PL-139, D43): what it undid is no longer in
+      // force, so it leaves the list, and the change it stopped at stays with everything older.
       setFailure(error);
     } finally {
+      setChanges((history) => without(history, undone) as RecordedChange[]);
       inFlight.current = false;
       setUndoing(false);
       resolveSettled();
@@ -207,6 +219,14 @@ export function useChangeHistory(): ChangeHistory {
       if (change !== undefined) void check(change, false);
     },
     reset: () => void undo([...changes]),
+    drop: (ids) => {
+      if (inFlight.current || ids.size === 0) return;
+      const present = changes.filter((change) => ids.has(change.id)).length;
+      if (present === 0) return;
+      setChanges((history) => history.filter((change) => !ids.has(change.id)));
+      setDropped((count) => count + present);
+    },
+    dropped,
     undoing,
     failure,
   };
