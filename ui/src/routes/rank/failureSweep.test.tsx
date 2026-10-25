@@ -100,6 +100,7 @@ const NEVER_INFERRED = [
   "Kept without a note",
   "No figure was scored for this candidate",
   "No criteria sets",
+  "No criteria set yet",
   "0 sets",
   "Loading…",
 ];
