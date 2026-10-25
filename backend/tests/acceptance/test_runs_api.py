@@ -8,6 +8,7 @@ where Eurostat lives, against captured responses.
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import ClassVar
 
 import httpx
 import pytest
@@ -1322,6 +1323,183 @@ class TestRetryingARun:
         response = await api.post("/v1/data-acquisition-runs/999999/retry")
 
         assert response.status_code == 404
+
+
+class TestRetryingASelection:
+    """PL-124 (D32). A retry took no selection, so "Retry 2 selected" asked every failure -- and
+    could not be estimated, so a retry reaching a paid source spent before anyone saw a figure.
+    The plan and the retry now take exact pairs: the estimate counts the selected items, each
+    asked only of the sources that failed on it, and the retry asks exactly those."""
+
+    ONE: ClassVar = {"pairs": [{"candidate": THE_STUB_DECLINES_FOR, "attribute": OVERBURDEN}]}
+
+    @staticmethod
+    async def a_sweep(api: httpx.AsyncClient, **scope: object) -> int:
+        started = await api.post("/v1/data-acquisition-runs", json={"level": COUNTRY, **scope})
+        assert started.status_code == 202, started.text
+        return int(started.json()["id"])
+
+    async def test_the_estimate_and_the_retry_cover_only_the_selected_pair(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        first = await self.a_sweep(api)
+
+        planned = await api.post(f"/v1/data-acquisition-runs/{first}/retry/plan", json=self.ONE)
+        retried = await api.post(f"/v1/data-acquisition-runs/{first}/retry", json=self.ONE)
+        detail = (await api.get(f"/v1/data-acquisition-runs/{retried.json()['id']}")).json()
+
+        assert planned.status_code == 200, planned.text
+        validate("planRetry", planned.json())
+        assert planned.json()["items_total"] == detail["progress"]["items_total"] == 1
+        assert planned.json()["by_source"] == [{"data_source": "eurostat", "items": 1}]
+        assert detail["scope"]["attributes"] == [OVERBURDEN]
+
+    async def test_a_paid_source_is_priced_and_asked_only_for_the_selected_pair(
+        self, database_url: str
+    ) -> None:
+        async with an_api(database_url, (a_stub_source(charges=True),)) as api:
+            await api.put("/v1/settings", json={"run_spend_cap_eur": 100})
+            first = await self.a_sweep(api, attributes=[OVERBURDEN, OVERCROWDING])
+
+            everything = (await api.post(f"/v1/data-acquisition-runs/{first}/retry/plan")).json()
+            selected = (
+                await api.post(f"/v1/data-acquisition-runs/{first}/retry/plan", json=self.ONE)
+            ).json()
+            retried = (
+                await api.post(f"/v1/data-acquisition-runs/{first}/retry", json=self.ONE)
+            ).json()
+            failures = (await api.get(f"/v1/data-acquisition-runs/{retried['id']}")).json()[
+                "failures"
+            ]
+
+        assert (everything["items_total"], selected["items_total"]) == (2, 1)
+        assert selected["estimated_cost_eur"] == pytest.approx(0.05)
+        assert [(f["candidate"], f["attribute"]) for f in failures] == [
+            (THE_STUB_DECLINES_FOR, OVERBURDEN)
+        ], "the paid source was asked about the selected pair and nothing else"
+
+    async def test_a_pair_the_run_never_failed_on_is_refused_whole(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        first = await self.a_sweep(api)
+        stray = {"candidate": "country.spain", "attribute": OVERBURDEN}
+        selection = {"pairs": [*self.ONE["pairs"], stray]}
+
+        planned = await api.post(f"/v1/data-acquisition-runs/{first}/retry/plan", json=selection)
+        retried = await api.post(f"/v1/data-acquisition-runs/{first}/retry", json=selection)
+        runs = (await api.get("/v1/data-acquisition-runs")).json()["total"]
+
+        assert (planned.status_code, retried.status_code) == (409, 409)
+        assert planned.json()["code"] == retried.json()["code"] == "selection_not_in_run"
+        assert planned.json()["details"] == {"items": "failed", "pairs": [stray]}
+        assert "country.spain" not in planned.json()["message"]
+        assert runs == 1
+
+    async def test_an_estimate_is_refused_while_a_run_is_in_flight(
+        self, api: httpx.AsyncClient, database_url: str
+    ) -> None:
+        in_flight = await TestOnlyOneRunAtATime.a_run_left_in_flight(database_url)
+
+        planned = await api.post(f"/v1/data-acquisition-runs/{in_flight}/retry/plan")
+
+        assert planned.status_code == 409
+        assert planned.json()["code"] == "run_already_in_flight"
+        assert planned.json()["details"] == {"run": in_flight}
+
+    @pytest.mark.parametrize(
+        ("pair", "code"),
+        [
+            ({"candidate": THE_STUB_DECLINES_FOR}, "invalid_request"),
+            (
+                {"candidate": THE_STUB_DECLINES_FOR, "attribute": OVERBURDEN, "x": 1},
+                "invalid_request",
+            ),
+            ({"candidate": "country.atlantis", "attribute": OVERBURDEN}, "unknown_scope"),
+            ({"candidate": THE_STUB_DECLINES_FOR, "attribute": "country.nothing"}, "unknown_scope"),
+        ],
+        ids=["no attribute", "a field nobody declared", "unknown candidate", "unknown attribute"],
+    )
+    async def test_a_malformed_or_unknown_pair_is_refused(
+        self, api: httpx.AsyncClient, pair: dict[str, object], code: str
+    ) -> None:
+        first = await self.a_sweep(api)
+
+        for path in ("retry/plan", "retry"):
+            refused = await api.post(
+                f"/v1/data-acquisition-runs/{first}/{path}", json={"pairs": [pair]}
+            )
+            assert (refused.status_code, refused.json()["code"]) == (422, code), path
+
+    async def test_an_empty_selection_is_refused_as_empty(self, api: httpx.AsyncClient) -> None:
+        first = await self.a_sweep(api)
+
+        planned = await api.post(
+            f"/v1/data-acquisition-runs/{first}/retry/plan", json={"pairs": []}
+        )
+
+        assert planned.status_code == 409
+        assert planned.json()["details"] == {"reason": "empty_scope"}
+
+    async def test_asking_again_takes_a_selection_of_its_own_items(self, database_url: str) -> None:
+        nobody_has_greece = (a_stub_source(silent_about=(), no_row_for=("country.greece",)),)
+        greece = {"candidate": "country.greece", "attribute": OVERBURDEN}
+        answered = {"candidate": "country.spain", "attribute": OVERBURDEN}
+        async with an_api(database_url, nobody_has_greece) as api:
+            first = await self.a_sweep(api)
+            path = f"/v1/data-acquisition-runs/{first}/retry/plan"
+
+            planned = await api.post(path, json={"items": "unanswered", "pairs": [greece]})
+            refused = await api.post(path, json={"items": "unanswered", "pairs": [answered]})
+
+        assert planned.json()["items_total"] == 1
+        assert refused.json()["code"] == "selection_not_in_run"
+        assert refused.json()["details"] == {"items": "unanswered", "pairs": [answered]}
+
+
+class TestAScopeOfExactPairs:
+    """PL-124 (D32): a plan and a start take exact pairs, so a picker can estimate and start one
+    candidate's attribute without the rectangle its two lists would span."""
+
+    PAIRS: ClassVar = [
+        {"candidate": "country.greece", "attribute": OVERBURDEN},
+        {"candidate": "country.spain", "attribute": OVERCROWDING},
+        {"candidate": "country.spain", "attribute": OVERCROWDING},
+    ]
+
+    async def test_the_plan_and_the_run_count_the_pairs_named_once_each(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        scope = {"level": COUNTRY, "pairs": self.PAIRS}
+
+        planned = (await api.post("/v1/data-acquisition-runs/plan", json=scope)).json()
+        started = (await api.post("/v1/data-acquisition-runs", json=scope)).json()
+        detail = (await api.get(f"/v1/data-acquisition-runs/{started['id']}")).json()
+
+        validate("planRun", planned)
+        assert planned["items_total"] == detail["progress"]["items_total"] == 2
+        assert detail["scope"]["candidates"] == ["country.greece", "country.spain"]
+
+    async def test_pairs_beside_the_lists_are_refused_as_malformed(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        scope = {"level": COUNTRY, "candidates": ["country.greece"], "pairs": self.PAIRS}
+
+        refused = await api.post("/v1/data-acquisition-runs/plan", json=scope)
+
+        assert (refused.status_code, refused.json()["code"]) == (422, "invalid_request")
+
+    async def test_a_pair_naming_an_unknown_candidate_is_refused(
+        self, api: httpx.AsyncClient
+    ) -> None:
+        scope = {
+            "level": COUNTRY,
+            "pairs": [{"candidate": "country.atlantis", "attribute": OVERBURDEN}],
+        }
+
+        refused = await api.post("/v1/data-acquisition-runs", json=scope)
+
+        assert refused.status_code == 422
+        assert refused.json()["details"]["unknown_candidates"] == ["country.atlantis"]
 
 
 class TestARetryBorrowsOnlyForItsOwnPairs:

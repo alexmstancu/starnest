@@ -373,6 +373,12 @@ async def open_run(
         now=now,
     )
     answerable, in_scope, scope_pairs = settled.answerable, settled.in_scope, settled.scope.pairs
+    if scope_pairs is not None:
+        # **A run naming its pairs asks every source about those pairs only** (PL-124), as a
+        # retry narrows each source to its own failures: a source handed the candidate list
+        # would otherwise answer the rectangle it spans, items the run never named.
+        named = _FailedOn(pairs=frozenset((AttributeId(a), c) for c, a in scope_pairs))
+        adapters = [_AskedOnlyAbout(adapter, named) for adapter in adapters]
     refuse_unless_capped(
         costs_money=_a_paid_source_would_be_asked(adapters, answerable),
         cap_eur=spend_cap_eur,
@@ -634,6 +640,34 @@ async def execute_run(**asked: object) -> Run:
     return await continue_run(await open_run(**asked))  # type: ignore[arg-type]
 
 
+async def settle_without_opening(**asked: object) -> SettledScope:
+    """What `open_run` would settle for these same arguments, opening nothing.
+
+    The `execute` a retry or an ask-again is estimated through (PL-124): they narrow their scope
+    and their sources exactly as they will when run, then hand the result here instead of to
+    `open_run`, so the estimate is of the run that would happen -- the same pairs, the same
+    sources narrowed to what each failed on -- and the refusals are the run's own.
+    """
+    settled = {key: value for key, value in asked.items() if key in _SETTLED_BY}
+    return await settle_scope(**settled)  # type: ignore[arg-type]
+
+
+_SETTLED_BY = frozenset(
+    {
+        "adapters",
+        "attributes",
+        "candidates",
+        "runs",
+        "level",
+        "stand_ins",
+        "may_borrow_alone",
+        "pairs",
+        "refetch_older_than",
+        "now",
+    }
+)
+
+
 def _item_by_item(
     failures: Sequence[AcquisitionFailure], candidates: Sequence[Candidate]
 ) -> list[AcquisitionFailure]:
@@ -783,12 +817,58 @@ class RunAlreadyInFlightError(ValueError):
         self.details = None if in_flight is None else {"run": in_flight}
 
 
+class SelectionNotInRunError(ValueError):
+    """A retry or an ask-again selecting an item the run does not hold as that kind (PL-124).
+
+    Refused whole rather than narrowed: dropping the stray pairs would run, and where a source
+    charges pay for, a different selection from the one confirmed. The pairs go in `details`.
+    """
+
+    def __init__(self, items: str, outside: Sequence[tuple[str, str]]) -> None:
+        kind = "failed on" if items == "failed" else "left unanswered or did not reach"
+        super().__init__(
+            f"the selection names {len(outside)} item(s) this run {kind}, so it is not retried; "
+            "select only the run's own items"
+        )
+        self.details = {
+            "items": items,
+            "pairs": [{"candidate": c, "attribute": a} for c, a in outside],
+        }
+
+
+def _the_selected[Held](
+    held_items: Sequence[Held],
+    selected: Sequence[tuple[str, str]] | None,
+    *,
+    held: Callable[[Held], tuple[str, str]],
+    items: str,
+) -> tuple[Held, ...]:
+    """The run's own items of one kind that a selection names, all of them for no selection.
+
+    Refuses an empty selection (nothing to ask) and one naming a pair the run does not hold as
+    that kind, rather than quietly running less than was confirmed.
+    """
+    if selected is None:
+        return tuple(held_items)
+    if not selected:
+        raise NothingToFetchError(
+            "the selection names no item, so there is nothing to ask",
+            reason=NothingToFetchReason.EMPTY_SCOPE,
+        )
+    wanted = set(selected)
+    holds = {held(item) for item in held_items}
+    outside = [pair for pair in dict.fromkeys(selected) if pair not in holds]
+    if outside:
+        raise SelectionNotInRunError(items, outside)
+    return tuple(item for item in held_items if held(item) in wanted)
+
+
 class NothingToRetryError(ValueError):
     """A retry of a run that failed on nothing. A new run over an empty scope would be a no-op
     recorded as though it were work."""
 
 
-async def retry_run(
+async def retry_run[Outcome](
     *,
     failed: Run,
     adapters: Sequence[SourceAdapter],
@@ -800,8 +880,9 @@ async def retry_run(
     triggered_by: str = MANUAL,
     spend_cap_eur: Decimal | None = None,
     uncapped_is_accepted: bool = False,
-    execute: "Callable[..., Awaitable[Run]]" = execute_run,
-) -> Run:
+    selected: Sequence[tuple[str, str]] | None = None,
+    execute: "Callable[..., Awaitable[Outcome]]" = execute_run,  # type: ignore[assignment]
+) -> Outcome:
     """A new run asking only the sources that failed, only about what they failed on.
 
     **`execute` opens and runs the narrowed scope** (default: `execute_run`, which waits for the
@@ -832,12 +913,23 @@ async def retry_run(
     Declared stand-ins run afterwards for the retry's own pairs only (FU-A1), so a substitute's
     figure that arrives in the retry is lent on in the same pass to a pair the retry asks about;
     any other borrow is refreshed by the next run that covers it.
+
+    **`selected` narrows it to the (candidate, attribute) pairs somebody ticked** (PL-124, D32),
+    each of which must be one the run failed on; `None` retries every failure. A source is still
+    asked only about the selected pairs *it* failed on, so a paid source is never asked about an
+    item it answered.
     """
     if not failed.failures or failed.scope is None:
         raise NothingToRetryError(
             f"run {failed.id} failed on nothing, so there is nothing to retry"
         )
-    reachable = _failures_a_retry_can_reach(failed.failures, adapters, stand_ins)
+    failures = _the_selected(
+        failed.failures,
+        selected,
+        held=lambda failure: (str(failure.candidate), str(failure.attribute)),
+        items="failed",
+    )
+    reachable = _failures_a_retry_can_reach(failures, adapters, stand_ins)
     if not reachable:
         raise NothingToFetchError(
             f"every source run {failed.id} failed on is now switched off or can no longer answer "
@@ -1033,7 +1125,11 @@ class _AskedOnlyAbout(SourceAdapter):
     def candidates_asked_about(
         self, attribute: Attribute, candidates: Sequence[Candidate]
     ) -> Sequence[Candidate]:
-        return self._candidates_it_failed_on(attribute, candidates)
+        # Through the wrapped source's own answer, so a narrowing wrapped in another -- a
+        # retry's, inside a run held to its pairs (PL-124) -- keeps the tighter of the two.
+        return self._candidates_it_failed_on(
+            attribute, self._adapter.candidates_asked_about(attribute, candidates)
+        )
 
     @property
     def attributes(self) -> tuple[AttributeId, ...]:
@@ -1066,7 +1162,7 @@ class NothingToAskAgainError(ValueError):
     reached to ask about, and a new run over an empty scope would be a no-op recorded as work."""
 
 
-async def ask_again(
+async def ask_again[Outcome](
     *,
     run: Run,
     adapters: Sequence[SourceAdapter],
@@ -1078,8 +1174,9 @@ async def ask_again(
     triggered_by: str = MANUAL,
     spend_cap_eur: Decimal | None = None,
     uncapped_is_accepted: bool = False,
-    execute: "Callable[..., Awaitable[Run]]" = execute_run,
-) -> Run:
+    selected: Sequence[tuple[str, str]] | None = None,
+    execute: "Callable[..., Awaitable[Outcome]]" = execute_run,  # type: ignore[assignment]
+) -> Outcome:
     """A new run asking again about the items nobody answered or the run never reached (Q217).
 
     **Both, because both are what a run left empty** (C04-N6). A stopped run's never-asked items
@@ -1097,6 +1194,9 @@ async def ask_again(
 
     **The old run is untouched**, as it is for a retry: it keeps its account of what it asked and
     what came back.
+
+    **`selected` narrows it to the pairs somebody ticked** (PL-124), each of which must be one of
+    the run's unanswered or not-reached items; `None` asks again about all of them.
     """
     empty = (*run.unanswered, *run.not_reached)
     if not empty or run.scope is None:
@@ -1104,6 +1204,9 @@ async def ask_again(
             f"run {run.id} has no unanswered or not-reached items, so there is nothing to ask "
             "again about"
         )
+    empty = _the_selected(
+        empty, selected, held=lambda item: (item.candidate, item.attribute), items="unanswered"
+    )
 
     wanted_candidates = {item.candidate for item in empty}
     wanted_attributes = {item.attribute for item in empty}

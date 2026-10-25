@@ -63,6 +63,7 @@ from starnest.data_acquisition import (
     NothingToFetchError,
     NothingToRetryError,
     RunAlreadyInFlightError,
+    SelectionNotInRunError,
     SpendCapNotSetError,
     UnknownRunError,
 )
@@ -90,6 +91,7 @@ class ErrorCode(StrEnum):
     SPEND_CAP_NOT_SET = "spend_cap_not_set"
     NOTHING_TO_FETCH = "nothing_to_fetch"
     RUN_ALREADY_IN_FLIGHT = "run_already_in_flight"
+    SELECTION_NOT_IN_RUN = "selection_not_in_run"
     LLM_NOT_CONFIGURED = "llm_not_configured"
     MANUAL_ENTRY_NOT_PERMITTED = "manual_entry_not_permitted"
     MANUAL_ENTRY_SWITCHED_OFF = "manual_entry_switched_off"
@@ -153,6 +155,7 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     SpendCapNotSetError: _refusal(409, "spend_cap_not_set"),
     NothingToFetchError: _refusal(409, "nothing_to_fetch"),
     RunAlreadyInFlightError: _refusal(409, "run_already_in_flight"),
+    SelectionNotInRunError: _refusal(409, "selection_not_in_run"),
     NoResearcherConfiguredError: _refusal(501, "llm_not_configured"),
     ManualEntryNotPermittedError: _refusal(409, "manual_entry_not_permitted"),
     ManualEntrySwitchedOffError: _refusal(409, "manual_entry_switched_off"),

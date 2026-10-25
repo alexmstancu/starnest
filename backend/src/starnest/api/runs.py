@@ -12,12 +12,13 @@ step: the estimate exists so that a source which does cost money cannot be start
 and attributes are bounded by the catalog and come back whole (`arch.md` 7.6).
 """
 
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Query
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from starnest.api.bodies import ContractBody
 from starnest.api.dependencies import (
@@ -34,6 +35,7 @@ from starnest.data_acquisition import (
     Run,
     RunAlreadyInFlightError,
     RunStatus,
+    SettledScope,
     ask_again,
     asked_this_run,
     continue_run,
@@ -41,6 +43,7 @@ from starnest.data_acquisition import (
     priced,
     retry_run,
     settle_scope,
+    settle_without_opening,
     stand_ins_if_enabled,
     switched_on,
 )
@@ -63,7 +66,42 @@ class RunScopeBody(BaseModel):
     attributes: tuple[str, ...] | None = None
 
 
-class RunRequestBody(RunScopeBody):
+class RunPairBody(BaseModel):
+    """One item: a candidate and an attribute, as a selection names it (PL-124, D32)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    candidate: str
+    attribute: str
+
+
+def _as_pairs(pairs: tuple[RunPairBody, ...] | None) -> tuple[tuple[str, str], ...] | None:
+    """The selection as (candidate, attribute) tuples, each named once, in the order sent."""
+    if pairs is None:
+        return None
+    return tuple(dict.fromkeys((pair.candidate, pair.attribute) for pair in pairs))
+
+
+class RunScopeRequestBody(RunScopeBody):
+    """A scope as a plan or a start is asked for it: two lists, or the exact pairs.
+
+    **Pairs, or lists, never both** (PL-124). A scope naming both would leave a reader to guess
+    whether the lists narrow the pairs or the pairs the lists, so it is refused as malformed.
+    """
+
+    pairs: tuple[RunPairBody, ...] | None = None
+
+    @model_validator(mode="after")
+    def _pairs_or_lists(self) -> "RunScopeRequestBody":
+        if self.pairs is not None and (self.candidates is not None or self.attributes is not None):
+            raise ValueError(
+                "a scope names its items either as pairs or as candidates and attributes, "
+                "never both"
+            )
+        return self
+
+
+class RunRequestBody(RunScopeRequestBody):
     """A scope, and whether an uncapped run is accepted (`reqs.md` 6.3).
 
     **Per request, never stored.** A cap is a setting; accepting the absence of one is a
@@ -149,6 +187,9 @@ class RetryBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: Literal["failed", "unanswered"] = "failed"
+    pairs: tuple[RunPairBody, ...] | None = None
+    """The items selected, each one the run holds as the kind `items` names (PL-124, D32).
+    Absent means all of them."""
     accept_uncapped_spend: bool = False
     """Agreement to a retry that can spend with no ceiling, for this request only (Q220).
 
@@ -205,7 +246,7 @@ class RunsBody(BaseModel):
 
 @router.post("/data-acquisition-runs/plan", operation_id="planRun", response_model=RunPlanBody)
 async def plan_run(
-    scope: RunScopeBody,
+    scope: RunScopeRequestBody,
     adapters: Adapters,
     candidates: Candidates,
     catalog: Catalog,
@@ -227,7 +268,7 @@ async def plan_run(
     two sources answer the same attribute their entries sum to more than `items_total`, which is
     the truth: the tax rate for Germany is one item, asked of OECD and of the estimate.
     """
-    roster, wanted = await _scope_targets(scope, candidates, catalog)
+    roster, wanted, pairs = await _scope_targets(scope, candidates, catalog)
 
     # The plan counts the same sources the run would ask, so an estimate for an unscoped run
     # does not promise paid work that would not happen -- and a source switched off is not
@@ -237,24 +278,30 @@ async def plan_run(
     settled = await settle_scope(
         adapters=asked_this_run(
             switched_on(adapters, await catalog.read_data_sources()),
-            attributes_named=scope.attributes is not None,
+            attributes_named=_names_attributes(scope),
         ),
         attributes=wanted,
         candidates=roster,
         runs=runs,
         level=scope.level,
+        pairs=pairs,
         refetch_older_than=_refetch_age((await households.get_settings()).refetch_older_than_days),
     )
+    return _plan_body(settled)
 
-    # **Counted and priced as a started run records its plan and ceiling** (BE-25, D17): each
-    # adapter prices its own share, because each is the only thing that knows what it charges --
-    # and a free one prices nothing, which is every structured source.
+
+def _plan_body(settled: SettledScope) -> RunPlanBody:
+    """An estimate as `RunPlan` words it, for a run or for a retry.
+
+    **Counted and priced as a started run records its plan and ceiling** (BE-25, D17): each
+    adapter prices its own share, because each is the only thing that knows what it charges --
+    and a free one prices nothing, which is every structured source.
+    """
     items_by_source: dict[str, int] = {}
     for source in settled.sources:
         name = str(source.adapter.data_source)
         items_by_source[name] = items_by_source.get(name, 0) + source.items
     estimate = priced(settled.sources)
-
     return RunPlanBody(
         items_total=settled.items_total,
         llm_call_count=estimate.calls,
@@ -265,6 +312,11 @@ async def plan_run(
         ),
         estimate_basis=estimate.basis or None,
     )
+
+
+def _names_attributes(scope: RunScopeRequestBody) -> bool:
+    """Whether the scope names what it wants, which is when a paid source may be asked."""
+    return scope.attributes is not None or scope.pairs is not None
 
 
 @router.post(
@@ -302,7 +354,7 @@ async def start_run(
     The run row exists before any figure is fetched, so a process that dies mid-run leaves a
     visibly unfinished run rather than nothing at all.
     """
-    roster, wanted = await _scope_targets(scope, candidates, catalog)
+    roster, wanted, pairs = await _scope_targets(scope, candidates, catalog)
     # A source that charges is asked only when the run names the attributes it wants: a sweep
     # over a level asks the free sources for whole indicators, and asking a paid one the same
     # way would be hundreds of calls nobody chose (`asked_this_run`).
@@ -318,7 +370,7 @@ async def start_run(
     # that cannot score -- and would pay for them where the source charges.
     data_sources = await catalog.read_data_sources()
     consulted = switched_on(adapters, data_sources)
-    asked = asked_this_run(consulted, attributes_named=scope.attributes is not None)
+    asked = asked_this_run(consulted, attributes_named=_names_attributes(scope))
     # The cap is a setting the household edits (`reqs.md` 3.10) and is read per run, so a cap
     # set after a refusal takes effect on the next request rather than at the next restart.
     settings = await households.get_settings()
@@ -339,6 +391,7 @@ async def start_run(
         ),
         spend_cap_eur=cap,
         uncapped_is_accepted=scope.accept_uncapped_spend,
+        pairs=pairs,
         # Read per run like the cap, so a threshold set after a refusal takes effect on the
         # next request rather than at the next restart.
         refetch_older_than=_refetch_age(settings.refetch_older_than_days),
@@ -375,6 +428,53 @@ async def stop(run_id: int, runs: Runs) -> RunBody:
     return _run_body(await runs.read_run(run_id) if read.status is RunStatus.RUNNING else read)
 
 
+class RetryPlanBody(BaseModel):
+    """What a retry would go back to, estimated before it spends (PL-124)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: Literal["failed", "unanswered"] = "failed"
+    pairs: tuple[RunPairBody, ...] | None = None
+
+
+@router.post(
+    "/data-acquisition-runs/{run_id}/retry/plan",
+    operation_id="planRetry",
+    response_model=RunPlanBody,
+)
+async def plan_retry(
+    run_id: int,
+    adapters: Adapters,
+    candidates: Candidates,
+    catalog: Catalog,
+    values: Values,
+    runs: Runs,
+    households: Households,
+    body: RetryPlanBody | None = None,
+) -> RunPlanBody:
+    """What a retry with this body would ask, and what it may cost, without asking anything.
+
+    **The retry's own narrowing, stopped before the run opens** (PL-124, D32): the same selected
+    pairs, the same sources narrowed to what each failed on, and the same refusals -- so the
+    estimate a household confirms is of the retry that happens.
+    """
+    asked_for = body or RetryPlanBody()
+    settled = await _go_back(
+        run_id,
+        items=asked_for.items,
+        selected=asked_for.pairs,
+        uncapped_is_accepted=False,
+        adapters=adapters,
+        candidates=candidates,
+        catalog=catalog,
+        values=values,
+        runs=runs,
+        households=households,
+        execute=settle_without_opening,
+    )
+    return _plan_body(settled)
+
+
 @router.post(
     "/data-acquisition-runs/{run_id}/retry",
     operation_id="retryRun",
@@ -403,17 +503,12 @@ async def retry(
       There is no source to narrow to -- none failed -- so every source that can answer those
       attributes is asked.
 
+    **`pairs` narrows either to the items selected** (PL-124, D32), each of which must be one of
+    the run's own of that kind. `planRetry` estimates the same body first.
+
     A run with nothing of the kind asked for is refused with 409: a run over an empty scope
     would be a no-op recorded as though it were work.
     """
-    earlier = await runs.read_run(run_id)
-    # **One run at a time, here as in `start`** (P35, BE-12). A retry is a run and spends like
-    # one, so a second pass while one is already going is refused rather than overlapping it --
-    # which, without this, two tabs or a timeout-and-retry could start, running paid sources
-    # twice.
-    in_flight = await runs.run_in_flight()
-    if in_flight is not None:
-        raise RunAlreadyInFlightError(in_flight)
 
     async def open_and_dispatch(**asked: object) -> object:
         """Open the retry (where every refusal is made), then hand the fetch to the background
@@ -422,12 +517,68 @@ async def retry(
         background.add_task(continue_run, opened)
         return await runs.read_run(opened.id)
 
+    asked_for = body or RetryBody()
+    retried = await _go_back(
+        run_id,
+        items=asked_for.items,
+        selected=asked_for.pairs,
+        uncapped_is_accepted=asked_for.accept_uncapped_spend,
+        adapters=adapters,
+        candidates=candidates,
+        catalog=catalog,
+        values=values,
+        runs=runs,
+        households=households,
+        execute=open_and_dispatch,
+    )
+    return _run_body(retried)
+
+
+async def _go_back[Outcome](
+    run_id: int,
+    *,
+    items: Literal["failed", "unanswered"],
+    selected: tuple[RunPairBody, ...] | None,
+    uncapped_is_accepted: bool,
+    adapters: Adapters,
+    candidates: Candidates,
+    catalog: Catalog,
+    values: Values,
+    runs: Runs,
+    households: Households,
+    execute: "Callable[..., Awaitable[Outcome]]",
+) -> Outcome:
+    """A retry or an ask-again of one run, handed to `execute`: to open it, or to estimate it.
+
+    One path for both, so the estimate and the retry cannot narrow differently.
+    """
+    earlier = await runs.read_run(run_id)
+    # **One run at a time, here as in `start`** (P35, BE-12). A retry is a run and spends like
+    # one, so a second pass while one is already going is refused rather than overlapping it --
+    # which, without this, two tabs or a timeout-and-retry could start, running paid sources
+    # twice. Its estimate is refused the same way, so no confirmation is offered for a retry
+    # that would be refused -- of a run still going above all, whose failures are not final.
+    in_flight = await runs.run_in_flight()
+    if in_flight is not None:
+        raise RunAlreadyInFlightError(in_flight)
+
     level = earlier.scope.level if earlier.scope else None
     attributes = await catalog.read_attributes(level=level)
     roster = await candidates.read_candidates(level=level)
+    pairs = _as_pairs(selected)
+    if pairs is not None and level is not None:
+        # A pair naming a candidate or an attribute that exists nowhere is a malformed selection,
+        # refused as a scope naming one is (BE-24), before it is compared with the run.
+        _reject_unknown_scope(
+            level,
+            await catalog.read_levels(),
+            roster,
+            attributes,
+            [c for c, _ in pairs],
+            [a for _, a in pairs],
+        )
     data_sources = await catalog.read_data_sources()
     stand_ins = stand_ins_if_enabled(await catalog.read_stand_ins(level=level), data_sources)
-    asked_for = body or RetryBody()
     # Read here, as `start` reads it, and for the same reason: the cap is a setting the
     # household edits, so a cap set after a refusal takes effect on the next request. This
     # endpoint used to read nothing, and both acts below ran with `spend_cap_eur=None` (P42).
@@ -436,38 +587,23 @@ async def retry(
     # consult only the switched-on sources; this endpoint passed the raw registry, so a source
     # the household had switched off was asked again -- and its figures stored where
     # `active_value` then discards them by `source_is_enabled`, which is work nobody wanted and,
-    # for a source that charges, work paid for. `switched_on` existed and had exactly two
-    # callers, both of them the endpoints that already did this.
+    # for a source that charges, work paid for.
     consulted = switched_on(adapters, data_sources)
-
-    if asked_for.items == "unanswered":
-        asked = await ask_again(
-            run=earlier,
-            adapters=consulted,
-            attributes=attributes,
-            candidates=roster,
-            values=values,
-            runs=runs,
-            stand_ins=stand_ins,
-            spend_cap_eur=cap,
-            uncapped_is_accepted=asked_for.accept_uncapped_spend,
-            execute=open_and_dispatch,
-        )
-        return _run_body(asked)
-
-    retried = await retry_run(
-        failed=earlier,
-        adapters=consulted,
-        attributes=attributes,
-        candidates=roster,
-        values=values,
-        runs=runs,
-        stand_ins=stand_ins,
-        spend_cap_eur=cap,
-        uncapped_is_accepted=asked_for.accept_uncapped_spend,
-        execute=open_and_dispatch,
-    )
-    return _run_body(retried)
+    common = {
+        "adapters": consulted,
+        "attributes": attributes,
+        "candidates": roster,
+        "values": values,
+        "runs": runs,
+        "stand_ins": stand_ins,
+        "spend_cap_eur": cap,
+        "uncapped_is_accepted": uncapped_is_accepted,
+        "selected": pairs,
+        "execute": execute,
+    }
+    if items == "unanswered":
+        return await ask_again(run=earlier, **common)  # type: ignore[arg-type]
+    return await retry_run(failed=earlier, **common)  # type: ignore[arg-type]
 
 
 @router.get("/data-acquisition-runs", operation_id="listRuns", response_model=RunsBody)
@@ -558,8 +694,8 @@ def _euros(amount: Decimal | None) -> float | None:
 
 
 async def _scope_targets(
-    scope: RunScopeBody, candidates: Candidates, catalog: Catalog
-) -> tuple[list, list]:
+    scope: RunScopeRequestBody, candidates: Candidates, catalog: Catalog
+) -> tuple[list, list, tuple[tuple[str, str], ...] | None]:
     """The candidates and attributes a scope names, after refusing any it does not.
 
     Shared by `plan` and `start` so the estimate and the run read the scope the same way. Null
@@ -571,18 +707,23 @@ async def _scope_targets(
     out and the run proceeded on the rest -- fetching, and where a source charges, spending, for
     less than was asked while concealing the drop. **The level is one of those ids** (NEW-40): a
     level that does not exist planned nothing with a 200 while starting it was refused.
+
+    **Exact pairs name their candidates and attributes** (PL-124): those are checked the same
+    way, and the lists returned are the pairs' own members.
     """
+    pairs = _as_pairs(scope.pairs)
+    named_candidates = scope.candidates if pairs is None else [c for c, _ in pairs]
+    named_attributes = scope.attributes if pairs is None else [a for _, a in pairs]
     levels = await catalog.read_levels()
     roster = await candidates.read_candidates(level=scope.level)
     catalogued = await catalog.read_attributes(level=scope.level)
-    _reject_unknown_scope(scope, levels, roster, catalogued)
-    return (
-        _named(roster, scope.candidates),
-        _named(catalogued, scope.attributes),
+    _reject_unknown_scope(
+        scope.level, levels, roster, catalogued, named_candidates, named_attributes
     )
+    return _named(roster, named_candidates), _named(catalogued, named_attributes), pairs
 
 
-def _named(rows: list, wanted: list[str] | None) -> list:
+def _named(rows: list, wanted: Sequence[str] | None) -> list:
     """The rows a scope names, or all of them when it names none."""
     if wanted is None:
         return list(rows)
@@ -591,19 +732,26 @@ def _named(rows: list, wanted: list[str] | None) -> list:
 
 
 def _reject_unknown_scope(
-    scope: RunScopeBody, levels: LevelHierarchy, roster: list, catalogued: list
+    level: str,
+    levels: LevelHierarchy,
+    roster: list,
+    catalogued: list,
+    named_candidates: Sequence[str] | None,
+    named_attributes: Sequence[str] | None,
 ) -> None:
     """Refuse a scope naming a level, candidate or attribute no row answers to.
 
     Every named id is checked and the refusal lists all of them at once, across every dimension,
     so a client sees every mistake in one pass rather than fixing them one 422 at a time.
     """
-    unknown_levels = [] if scope.level in levels else [scope.level]
-    unknown_candidates = absent(scope.candidates, {str(row.id) for row in roster})
-    unknown_attributes = absent(scope.attributes, {str(row.id) for row in catalogued})
+    unknown_levels = [] if level in levels else [level]
+    unknown_candidates = list(dict.fromkeys(absent(named_candidates, {str(r.id) for r in roster})))
+    unknown_attributes = list(
+        dict.fromkeys(absent(named_attributes, {str(r.id) for r in catalogued}))
+    )
     if unknown_levels or unknown_candidates or unknown_attributes:
         raise unknown_scope_refusal(
-            scope.level,
+            level,
             unknown_levels=unknown_levels,
             unknown_candidates=unknown_candidates,
             unknown_attributes=unknown_attributes,

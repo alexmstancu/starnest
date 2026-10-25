@@ -1058,6 +1058,15 @@ paths:
                   type: string
                   enum: [failed, unanswered]
                   default: failed
+                pairs:
+                  type: array
+                  items: { $ref: "#/components/schemas/RunPair" }
+                  description: >-
+                    The items selected, exactly. Each must be one the run holds as the kind
+                    `items` names -- a failure for `failed`, an unanswered or not-reached item
+                    for `unanswered` -- and the retry asks only about these, and only the sources
+                    that failed on each. Absent means every item of that kind. Estimate the same
+                    body with `planRetry` first.
                 accept_uncapped_spend:
                   type: boolean
                   default: false
@@ -1087,8 +1096,53 @@ paths:
             `run_already_in_flight` — a run is already going; `details.run` is its id, as for
             `startRun`. Poll it rather than starting another.
 
+            `selection_not_in_run` — `pairs` names an item the run does not hold as that kind
+            (a pair it never failed on, say). Refused whole rather than narrowed, so nothing
+            runs that was not confirmed; `details.items` is the kind and `details.pairs` the
+            items outside it.
+
             `spend_cap_not_set` — the retry would reach a source that charges and no spend cap
             is set.
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "422": { $ref: "#/components/responses/InvalidRequest" }
+
+  /data-acquisition-runs/{runId}/retry/plan:
+    post:
+      tags: [data acquisition]
+      summary: Estimate a retry without executing it
+      description: |
+        The dry run of `retryRun` for the same body (`reqs.md` 6.3, 6.4): the items it would ask
+        about, what each source would be asked -- only the sources that failed, only about the
+        selected pairs each failed on -- and what it may cost. Narrowed and refused exactly as
+        the retry is, so the estimate confirmed is of the retry that happens. Has no side effects.
+      operationId: planRetry
+      parameters: [ { name: runId, in: path, required: true, schema: { type: integer } } ]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                items: { type: string, enum: [failed, unanswered], default: failed }
+                pairs:
+                  type: array
+                  items: { $ref: "#/components/schemas/RunPair" }
+                  description: As for `retryRun`.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/RunPlan" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            The refusals `retryRun` would make, by the same `code` and `details`:
+            `nothing_to_retry`, `nothing_to_ask_again`, `nothing_to_fetch`,
+            `selection_not_in_run`, and `run_already_in_flight` -- an estimate is not offered for
+            a retry that would be refused, and a run still going has failures that are not final.
           content:
             application/json: { schema: { $ref: "#/components/schemas/Error" } }
         "422": { $ref: "#/components/responses/InvalidRequest" }
@@ -1462,6 +1516,7 @@ components:
         - spend_cap_not_set
         - nothing_to_fetch
         - run_already_in_flight
+        - selection_not_in_run
         - llm_not_configured
         - manual_entry_not_permitted
         - manual_entry_switched_off
@@ -2190,6 +2245,24 @@ components:
         level: { type: string }
         candidates: { type: [array, "null"], items: { type: string }, description: Null means every candidate at the level. }
         attributes: { type: [array, "null"], items: { type: string }, description: Null means every attribute at the level. }
+        pairs:
+          type: [array, "null"]
+          items: { $ref: "#/components/schemas/RunPair" }
+          description: >-
+            In a request only: the exact items to plan or start, instead of the rectangle the
+            two lists span. Sent with `candidates` or `attributes` it is refused as malformed
+            (422); a pair naming an id that exists at no row is `unknown_scope`. Names its
+            attributes, so a source that charges may be asked. A run read back states its items
+            through `items_total`, and leaves this out.
+
+    RunPair:
+      type: object
+      required: [candidate, attribute]
+      additionalProperties: false
+      description: One item, a candidate and an attribute, as a selection names it.
+      properties:
+        candidate: { type: string }
+        attribute: { type: string }
 
     NothingToFetchDetails:
       type: object
