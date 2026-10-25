@@ -7,7 +7,9 @@ import {
   describeMaxAge,
   describeReach,
   howItAnswers,
+  onlySourceOf,
   soleSourceOf,
+  type ReachedAttribute,
 } from "./sourceReading";
 import { sourceName } from "../../../format/display";
 import type { AttributeCatalogRead } from "../useAttributeCatalog";
@@ -42,8 +44,11 @@ export function DataSourcesPanel({
 }: {
   /** What each source can answer, and which attributes name their own order (PL-134, 135). */
   catalog?: AttributeCatalogRead;
-  /** The attributes the set on screen requires: scored, and blocking when missing. */
-  required?: ReadonlySet<string>;
+  /**
+   * The attributes the set on screen requires: scored, and blocking when missing. `null` while
+   * the set is not read -- pending, failed or switching -- which is not a set requiring nothing.
+   */
+  required?: ReadonlySet<string> | null;
 }) {
   const sources = useDataSources();
   // Only from a catalog that was read: a count from nothing would say "answers nothing yet".
@@ -213,13 +218,9 @@ export function DataSourcesPanel({
                     <span aria-hidden="true">▼</span>
                   </button>
                 </span>
-                <SwitchingOffCosts
-                  only={
-                    attributes === null || position === null
-                      ? []
-                      : soleSourceOf(source.id, attributes, required)
-                  }
-                />
+                {attributes !== null && position !== null && (
+                  <SwitchingOffCosts sourceId={source.id} attributes={attributes} required={required} />
+                )}
               </li>
             );
           })}
@@ -240,8 +241,33 @@ export function DataSourcesPanel({
 
 const NONE_REQUIRED: ReadonlySet<string> = new Set();
 
-/** What switching a source off costs, where it is the only one that can fetch a required figure. */
-function SwitchingOffCosts({ only }: { only: readonly string[] }) {
+/**
+ * What switching a source off costs, where it is the only one that can fetch a required figure.
+ *
+ * **While the set is not read, the cost is not known**, and saying nothing would say it is
+ * nothing: a source that is the only one for any attribute says so, and that whether any of
+ * them is required waits for the set.
+ */
+function SwitchingOffCosts({
+  sourceId,
+  attributes,
+  required,
+}: {
+  sourceId: string;
+  attributes: readonly ReachedAttribute[];
+  required: ReadonlySet<string> | null;
+}) {
+  if (required === null) {
+    const only = onlySourceOf(sourceId, attributes);
+    if (only.length === 0) return null;
+    return (
+      <span className="source-row__cost">
+        Only source of {only.join(", ")}; what switching it off costs cannot be known until
+        the criteria set is read.
+      </span>
+    );
+  }
+  const only = soleSourceOf(sourceId, attributes, required);
   if (only.length === 0) return null;
   const named = only.join(", ");
   const it = only.length === 1 ? "that figure" : "those figures";

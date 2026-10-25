@@ -345,9 +345,17 @@ export function requiredAttributes(
   );
 }
 
-/** The line under a pillar's name: how many attributes, and how much of it is unsourced. */
-export function describePillarCount(count: number, unsourcedShare?: number): string {
+/**
+ * The line under a pillar's name: how many attributes, and how much of it is unsourced.
+ *
+ * `"unknown"` while the catalog is not read: saying nothing would read as "nothing unsourced".
+ */
+export function describePillarCount(
+  count: number,
+  unsourcedShare?: number | "unknown",
+): string {
   const attributes = count === 1 ? "1 attribute" : `${String(count)} attributes`;
+  if (unsourcedShare === "unknown") return `${attributes}; unsourced share not yet known`;
   return unsourcedShare === undefined
     ? attributes
     : `${attributes}, ${String(Math.round(unsourcedShare))}% of the weight unsourced`;

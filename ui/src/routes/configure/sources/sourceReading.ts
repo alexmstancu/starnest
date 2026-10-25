@@ -94,12 +94,18 @@ export function soleSourceOf(
   attributes: readonly ReachedAttribute[],
   required: ReadonlySet<string>,
 ): string[] {
+  return onlySourceOf(sourceId, attributes.filter((attribute) => required.has(attribute.id)));
+}
+
+/** Every attribute nothing but this source can fetch, by name, required or not. */
+export function onlySourceOf(
+  sourceId: string,
+  attributes: readonly ReachedAttribute[],
+): string[] {
   return attributes
     .filter(
       (attribute) =>
-        required.has(attribute.id) &&
-        attribute.answerable_by.length === 1 &&
-        attribute.answerable_by[0] === sourceId,
+        attribute.answerable_by.length === 1 && attribute.answerable_by[0] === sourceId,
     )
     .map((attribute) => attribute.name);
 }

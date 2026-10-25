@@ -2442,6 +2442,32 @@ describe("the unsourced share of a pillar", () => {
 });
 
 /**
+ * From review. **While the catalog is being read, the share unsourced is not yet known**, and a
+ * pillar line saying nothing about it read as "nothing unsourced".
+ */
+describe("the unsourced share while the catalog is being read", () => {
+  it("says the share is not known yet, rather than nothing", async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    onTestFinished(() => release());
+    mockServer.use(
+      http.get("/v1/attributes", async () => {
+        await held;
+        return HttpResponse.json({ code: "internal_error", message: "late" }, { status: 500 });
+      }),
+    );
+    renderShell("/configure");
+
+    const economy = await screen.findByRole("group", { name: "Economy" });
+    await waitFor(() =>
+      expect(economy).toHaveTextContent(/attributes?; unsourced share not yet known/),
+    );
+  });
+});
+
+/**
  * PL-138a, from review. **A pillar's undo answers the panel on screen now**, not the one that
  * recorded the change: switching sets remounts the pillar weights, and the answer went to a
  * panel long gone while the screen kept the changed weight.

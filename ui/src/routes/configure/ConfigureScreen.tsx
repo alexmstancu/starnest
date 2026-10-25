@@ -116,7 +116,11 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                 key={editor.criteriaSet.id}
                 criteriaSet={editor.criteriaSet}
                 criteriaCounts={countByPillar(editor.criteria)}
-                unsourcedShares={unsourcedShareByPillar(editor.criteria, catalog.catalog)}
+                unsourcedShares={
+                  catalog.read.state === "ready"
+                    ? unsourcedShareByPillar(editor.criteria, catalog.catalog)
+                    : "unknown"
+                }
                 history={history}
                 onSaving={setPillarSaving}
                 answers={pillarAnswers}
@@ -169,7 +173,12 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
             )}
           </Stage>
 
-          <DataSourcesPanel catalog={catalog} required={requiredAttributes(editor.criteria)} />
+          {/* Null while the set is unread: its criteria are then [], which is not a set that
+              requires nothing. */}
+          <DataSourcesPanel
+            catalog={catalog}
+            required={editor.criteriaSet === null ? null : requiredAttributes(editor.criteria)}
+          />
           <SettingsPanel />
         </div>
 

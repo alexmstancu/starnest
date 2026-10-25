@@ -67,8 +67,11 @@ export function PillarWeightsPanel({
   onSaving?: (saving: boolean) => void;
   /** How many criteria each pillar holds, for the line under its name. */
   criteriaCounts?: ReadonlyMap<string, number>;
-  /** How much of each pillar's weight no source can fetch, where any is (PL-113). */
-  unsourcedShares?: ReadonlyMap<string, number>;
+  /**
+   * How much of each pillar's weight no source can fetch, where any is (PL-113); `"unknown"`
+   * while the catalog that answers it is not read.
+   */
+  unsourcedShares?: ReadonlyMap<string, number> | "unknown";
   /**
    * The attributes inside one pillar, rendered under it when it is opened.
    *
@@ -206,7 +209,9 @@ export function PillarWeightsPanel({
               ceiling={ceiling}
               saving={held}
               count={criteriaCounts?.get(weight.pillar)}
-              unsourcedShare={unsourcedShares?.get(weight.pillar)}
+              unsourcedShare={
+                unsourcedShares === "unknown" ? "unknown" : unsourcedShares?.get(weight.pillar)
+              }
               open={open === weight.pillar}
               onOpen={
                 criteriaFor === undefined
@@ -255,7 +260,7 @@ function PillarRow({
   /** A pillar write is in flight, so this row may start none of its own. */
   saving: boolean;
   count?: number;
-  unsourcedShare?: number;
+  unsourcedShare?: number | "unknown";
   open: boolean;
   onOpen?: () => void;
   /** The pointer has moved this weight, to the value the slider now holds. */

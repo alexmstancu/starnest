@@ -91,6 +91,17 @@ describe("the chips on a row", () => {
     });
   });
 
+  /** A criterion that is not scored carries no weight, so there is none to redistribute. */
+  it("says no weight is redistributed for an unsourced criterion that is not scored", () => {
+    const keys = chipsFor(criterion({ is_scored: false }), nothingCanFetch).map(
+      (chip) => chip.key,
+    );
+
+    expect(keys).toContain("not-scored");
+    expect(keys).toContain("no-source");
+    expect(keys).not.toContain("redistributed");
+  });
+
   it("says no weight is redistributed for an attribute a source can fetch", () => {
     expect(chipsFor(criterion(), eurostatCanFetch).map((chip) => chip.key)).not.toContain(
       "redistributed",

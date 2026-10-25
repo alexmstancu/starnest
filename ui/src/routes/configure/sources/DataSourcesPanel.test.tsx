@@ -1,7 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { mockServer } from "../../../mocks/server";
 import {
   expectHeld,
@@ -1054,6 +1054,56 @@ describe("what each source row says it answers", () => {
         /Only source of Cost of living index, which is required: switched off, a candidate without that figure gets no score/,
       ),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * From review. **What switching a source off costs depends on the set, and an unread set is not
+ * a set that requires nothing.** The rows dropped their warning while the set was pending,
+ * failed or switching, so switching off seemed to cost nothing.
+ */
+describe("what switching off costs, while the criteria set is not read", () => {
+  const UNKNOWN =
+    /Only source of Cost of living index; what switching it off costs cannot be known until the criteria set is read/;
+
+  it("says the cost cannot be known yet while the set is being read", async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    onTestFinished(() => release());
+    mockServer.use(
+      http.get("/v1/criteria-sets/:id", async () => {
+        await held;
+        return HttpResponse.json({ code: "internal_error", message: "late" }, { status: 500 });
+      }),
+    );
+    renderShell("/configure");
+
+    expect(await within(await row("Eurostat")).findByText(UNKNOWN)).toBeInTheDocument();
+  });
+
+  it("says the cost cannot be known when the set could not be read", async () => {
+    mockServer.use(
+      http.get("/v1/criteria-sets/:id", () =>
+        HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 }),
+      ),
+    );
+    renderShell("/configure");
+
+    expect(await within(await row("Eurostat")).findByText(UNKNOWN)).toBeInTheDocument();
+  });
+
+  it("says nothing about a source that is the only one for no attribute", async () => {
+    mockServer.use(
+      http.get("/v1/criteria-sets/:id", () =>
+        HttpResponse.json({ code: "internal_error", message: "x" }, { status: 500 }),
+      ),
+    );
+    renderShell("/configure");
+    await within(await row("Eurostat")).findByText(UNKNOWN);
+
+    expect(within(await row("Manual entry")).queryByText(/Only source of/)).toBeNull();
   });
 });
 
