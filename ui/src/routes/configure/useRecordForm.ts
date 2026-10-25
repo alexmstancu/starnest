@@ -14,6 +14,7 @@ import type { NumberRule } from "../../format/typedNumber";
 import { isRecord } from "../../shell/sessionState";
 import { useDraftSlot } from "../../shell/SessionProvider";
 import { describeRecordChange, undoUnsets, type RecordWording } from "./recordChange";
+import { pendingEntry, settled, UnconfirmedWrite } from "./unknownOutcome";
 import { sameDrafts, saveStatusOf, type SaveStatus } from "./saveState";
 import { useConfigurationSession } from "./useConfigurationSession";
 
@@ -39,8 +40,12 @@ export interface RecordFormSpec<R, D extends Draft<D>> {
   invalid: (draft: D) => readonly (keyof D)[];
   /** Each field's range in words, for a server refusal whose kind the form does not know. */
   ranges: Readonly<Record<string, string>>;
-  /** Stores the draft, and answers with the record stored. */
-  send: (draft: D) => Promise<R>;
+  /** The record a draft describes, ready to send. Only for a draft with nothing invalid. */
+  recordOf: (draft: D) => R;
+  /** Stores a record, and answers with the record stored. */
+  write: (record: R) => Promise<R>;
+  /** Reads the record as stored: what a save whose answer was lost is read back by (PL-033). */
+  read: (signal: AbortSignal) => Promise<R>;
   /** How a save is listed in Recent changes (PL-138): its stage, its words, what undoing stops. */
   recorded: {
     stage: string;
@@ -64,7 +69,10 @@ export interface RecordForm<R, D extends Draft<D>> {
   dirty: boolean;
   /** A save is in flight, so another may not start. */
   saving: boolean;
-  /** A save may not start now: this form's, or any other Configure write or undo, is in flight. */
+  /**
+   * A save may not start now: this form's, or any other Configure write or undo, is in flight,
+   * or this form's last save is unconfirmed and has to be checked first.
+   */
   held: boolean;
   /** The stored record changed under an unsaved draft: an undo, another tab. */
   staleBase: boolean;
@@ -100,6 +108,12 @@ export function useRecordForm<R, D extends Draft<D>>(spec: RecordFormSpec<R, D>)
   // **Bumped by every keystroke** (UI-06).
   const revision = useRef(0);
   const invalid = spec.invalid(draft);
+  // **A save nobody can confirm holds the next** (PL-033): changed again meanwhile, the record
+  // could no longer say whether the first ever landed. Read from the history, so it holds
+  // whichever form is mounted when it is checked.
+  const unconfirmed = history.changes.some(
+    (change) => change.target === key && change.unconfirmed !== undefined,
+  );
 
   // A record read again can make the draft say what is stored, or no longer say it.
   useEffect(() => {
@@ -123,7 +137,7 @@ export function useRecordForm<R, D extends Draft<D>>(spec: RecordFormSpec<R, D>)
   }
 
   async function send(): Promise<void> {
-    if (inFlight.current || invalid.length > 0) return;
+    if (inFlight.current || invalid.length > 0 || unconfirmed) return;
     // **Configure's one write in flight** (PL-138): a save waits for any other write or undo.
     const done = history.begin();
     if (done === null) return;
@@ -136,18 +150,35 @@ export function useRecordForm<R, D extends Draft<D>>(spec: RecordFormSpec<R, D>)
     setFailure(null);
     setProblems({});
     setSavedSinceEdit(false);
+    // **An answer lost on the way is read back** (PL-033): the record as stored saying what was
+    // sent means it was stored, and one that cannot be read leaves the save unconfirmed.
+    const wanted = draftOf(spec.recordOf(sent));
+    const entry = {
+      target: key,
+      stage: recorded.stage,
+      describe: ({ before, after }: { before: unknown; after: unknown }) =>
+        describeRecordChange(draftOf(before as R), draftOf(after as R), recorded.wording),
+      before: was,
+      reverse: async (back: unknown) => {
+        await spec.write(back as R);
+        noteRankingInputsChanged();
+        noteRecordsChanged();
+      },
+    };
     try {
-      const record = await spec.send(sent);
+      const record = await settled(
+        () => spec.write(spec.recordOf(sent)),
+        async (signal) => {
+          const stored = await spec.read(signal);
+          return sameDrafts(draftOf(stored), wanted, rules) ? stored : null;
+        },
+      );
       noteRankingInputsChanged();
       const recordDraft = draftOf(record);
       // **Listed with the request that reverses it**: the record as it was, sent again, and the
       // form read again wherever it is shown then.
       history.note({
-        target: key,
-        stage: recorded.stage,
-        describe: ({ before, after }) =>
-          describeRecordChange(draftOf(before as R), draftOf(after as R), recorded.wording),
-        before: was,
+        ...entry,
         after: record,
         caveat: undoUnsets(
           draftOf(was),
@@ -155,11 +186,6 @@ export function useRecordForm<R, D extends Draft<D>>(spec: RecordFormSpec<R, D>)
           recorded.wording.labels,
           recorded.consequences ?? NO_CONSEQUENCES,
         ),
-        reverse: async (back) => {
-          await spec.send(draftOf(back as R));
-          noteRankingInputsChanged();
-          noteRecordsChanged();
-        },
       });
       setAnswered({ to: against, record });
       // Through the store, so it lands even when the form has gone meanwhile (T25-10).
@@ -174,6 +200,19 @@ export function useRecordForm<R, D extends Draft<D>>(spec: RecordFormSpec<R, D>)
       );
       if (revision.current === sentAt) setSavedSinceEdit(true);
     } catch (error) {
+      // Neither saved nor refused: listed unconfirmed with Check again, and the draft kept.
+      // Confirmed, the form reads the record again wherever it is shown then.
+      if (error instanceof UnconfirmedWrite) {
+        history.note({
+          ...entry,
+          after: spec.recordOf(sent),
+          ...pendingEntry(error, () => {
+            noteRankingInputsChanged();
+            noteRecordsChanged();
+          }),
+        });
+        return;
+      }
       const named = Object.fromEntries(
         [...fieldProblems(error, spec.ranges)].filter(([field]) => field in sent),
       ) as Partial<Record<keyof D, string>>;
@@ -193,10 +232,10 @@ export function useRecordForm<R, D extends Draft<D>>(spec: RecordFormSpec<R, D>)
     invalid,
     failure,
     problems,
-    status: saveStatusOf({ saving, refused, dirty, savedSinceEdit }),
+    status: saveStatusOf({ saving, refused, dirty, savedSinceEdit, unconfirmed }),
     dirty,
     saving,
-    held: saving || history.busy,
+    held: saving || history.busy || unconfirmed,
     staleBase,
     change,
     discard: () => {

@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { HttpResponse, getResponse, http } from "msw";
+import { handlers } from "../../../mocks/handlers";
 import { beforeEach, describe, expect, it } from "vitest";
 import { mockServer } from "../../../mocks/server";
 import {
@@ -1018,5 +1019,76 @@ describe("discarding a draft", () => {
     expect(form.getByRole("button", { name: "Discard household changes" })).toBe(discard);
     expect(discard).toHaveFocus();
     expectHeld(discard);
+  });
+});
+
+/** PL-033: a save whose answer was lost is read back, never called refused on a guess. */
+describe("a household save whose answer was lost", () => {
+  function loseTheAnswer({ readBackFails }: { readBackFails: boolean }) {
+    mockServer.use(
+      http.put(
+        "/v1/household",
+        async ({ request }) => {
+          await getResponse(handlers, request);
+          if (readBackFails) {
+            mockServer.use(
+              http.get(
+                "/v1/household",
+                () => HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 }),
+                { once: true },
+              ),
+            );
+          }
+          return HttpResponse.error();
+        },
+        { once: true },
+      ),
+    );
+  }
+
+  async function saveAHousehold(user: ReturnType<typeof userEvent.setup>) {
+    const form = await panel();
+    await user.clear(field("Comfortable monthly spend"));
+    await user.type(field("Comfortable monthly spend"), "3100");
+    await user.click(form.getByRole("button", { name: "Save household" }));
+    return form;
+  }
+
+  it("is saved when reading it back shows it stored", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    loseTheAnswer({ readBackFails: false });
+
+    const form = await saveAHousehold(user);
+
+    expect(await form.findByText("Saved.")).toBeInTheDocument();
+    expect(form.queryByRole("alert")).toBeNull();
+    const history = within(await screen.findByRole("region", { name: /^recent changes/i }));
+    expect(await history.findByText(/Comfortable monthly spend .* to 3100/)).toBeInTheDocument();
+  });
+
+  it("is unconfirmed, keeps its draft, and is settled by Check again, when it cannot be read back", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    loseTheAnswer({ readBackFails: true });
+
+    const form = await saveAHousehold(user);
+
+    const status = form.getByRole("status");
+    await waitFor(() => expect(status).toHaveTextContent(/not confirmed/i));
+    expect(status).toHaveTextContent(/Recent changes/);
+    expect(form.queryByText("Saved.")).toBeNull();
+    expect(form.queryByRole("alert")).toBeNull();
+    expect(field("Comfortable monthly spend")).toHaveValue("3100");
+    expectHeld(form.getByRole("button", { name: "Save household" }));
+
+    const history = within(await screen.findByRole("region", { name: /^recent changes/i }));
+    const entry = within((await history.findByText(/Comfortable monthly spend .* to 3100/)).closest("li") as HTMLElement);
+    await user.click(entry.getByRole("button", { name: "Check again" }));
+
+    await waitFor(() => expect(status).not.toHaveTextContent(/not confirmed/i));
+    expect(entry.queryByText(/not confirmed/i)).toBeNull();
+    expect(field("Comfortable monthly spend")).toHaveValue("3100");
+    await waitFor(() => expectNotHeld(form.getByRole("button", { name: "Save household" })));
   });
 });

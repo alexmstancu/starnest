@@ -80,7 +80,11 @@ function SettingsFields({ settings }: { settings: Settings }) {
           announces a change to a region it already knows, so one that appeared already saying
           "Saved." was never read out. */}
       <p className="panel__hint" role="status">
-        {form.status === "saved" ? "Saved." : null}
+        {form.status === "saved"
+          ? "Saved."
+          : form.status === "unconfirmed"
+            ? "Not confirmed: the server did not answer, so whether this was stored is not known yet. Recent changes can check it."
+            : null}
       </p>
       {form.staleBase && (
         <div className="notice notice--warning">

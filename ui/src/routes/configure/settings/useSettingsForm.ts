@@ -1,6 +1,6 @@
 /** What the settings panel does: hold the five values, send them, report what came back. */
 
-import { replaceSettings, type Settings } from "../../../api/endpoints";
+import { fetchSettings, replaceSettings, type Settings } from "../../../api/endpoints";
 import { useRecordForm, type RecordForm } from "../useRecordForm";
 import {
   SETTING_FIELDS,
@@ -22,7 +22,9 @@ export function useSettingsForm(settings: Settings): SettingsForm {
     rules: SETTING_RULES,
     invalid: invalidSettings,
     ranges: SETTING_RANGES,
-    send: (draft) => replaceSettings(settingsFrom(draft)),
+    recordOf: settingsFrom,
+    write: (record) => replaceSettings(record),
+    read: (signal) => fetchSettings({ signal }),
     recorded: { stage: "Acquisition limits", wording: { labels: LABELS }, consequences: CONSEQUENCES },
   });
 }

@@ -7,7 +7,7 @@
 
 import { readNumber, type NumberRule } from "../../format/typedNumber";
 
-export type SaveStatus = "saving" | "refused" | "unsaved" | "saved" | "none";
+export type SaveStatus = "saving" | "refused" | "unconfirmed" | "unsaved" | "saved" | "none";
 
 export interface SaveFacts {
   saving: boolean;
@@ -16,12 +16,27 @@ export interface SaveFacts {
   dirty: boolean;
   /** A save landed and nothing has been typed since. */
   savedSinceEdit: boolean;
+  /**
+   * A save was sent and its answer lost, and reading it back could not say whether it was
+   * stored (PL-033): neither saved nor refused until Recent changes checks it.
+   */
+  unconfirmed?: boolean;
 }
 
-/** In this order: an answer pending beats a refusal, which beats an edit, which beats a save. */
-export function saveStatusOf({ saving, refused, dirty, savedSinceEdit }: SaveFacts): SaveStatus {
+/**
+ * In this order: an answer pending beats a refusal, which beats a save nobody can confirm, which
+ * beats an edit, which beats a save.
+ */
+export function saveStatusOf({
+  saving,
+  refused,
+  dirty,
+  savedSinceEdit,
+  unconfirmed = false,
+}: SaveFacts): SaveStatus {
   if (saving) return "saving";
   if (refused) return "refused";
+  if (unconfirmed) return "unconfirmed";
   if (dirty) return "unsaved";
   if (savedSinceEdit) return "saved";
   return "none";

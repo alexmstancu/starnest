@@ -5,7 +5,7 @@
  * one every record form shares (`useRecordForm.ts`); what is the household's own is here.
  */
 
-import { replaceHousehold, type Household } from "../../../api/endpoints";
+import { fetchHousehold, replaceHousehold, type Household } from "../../../api/endpoints";
 import { HOUSEHOLD_LABELS } from "../../../format/vocabulary";
 import { useRecordForm, type RecordForm } from "../useRecordForm";
 import {
@@ -31,7 +31,9 @@ export function useHouseholdForm(household: Household): HouseholdForm {
     rules: HOUSEHOLD_RULES,
     invalid: invalidHouseholdFields,
     ranges: HOUSEHOLD_RANGES,
-    send: (draft) => replaceHousehold(householdFrom(draft)),
+    recordOf: householdFrom,
+    write: (record) => replaceHousehold(record),
+    read: (signal) => fetchHousehold({ signal }),
     recorded: {
       stage: "Household",
       // Where the household lives and which passports it holds are identifiers: said to have

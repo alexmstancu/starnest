@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { HttpResponse, http } from "msw";
+import { HttpResponse, getResponse, http } from "msw";
+import { handlers } from "../../../mocks/handlers";
 import { beforeEach, describe, expect, it } from "vitest";
 import { mockServer } from "../../../mocks/server";
 import {
@@ -770,5 +771,76 @@ describe("discarding a draft", () => {
     expect(form.getByRole("button", { name: "Discard settings changes" })).toBe(discard);
     expect(discard).toHaveFocus();
     expectHeld(discard);
+  });
+});
+
+/** PL-033: a save whose answer was lost is read back, never called refused on a guess. */
+describe("a settings save whose answer was lost", () => {
+  function loseTheAnswer({ readBackFails }: { readBackFails: boolean }) {
+    mockServer.use(
+      http.put(
+        "/v1/settings",
+        async ({ request }) => {
+          await getResponse(handlers, request);
+          if (readBackFails) {
+            mockServer.use(
+              http.get(
+                "/v1/settings",
+                () => HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 }),
+                { once: true },
+              ),
+            );
+          }
+          return HttpResponse.error();
+        },
+        { once: true },
+      ),
+    );
+  }
+
+  async function saveASetting(user: ReturnType<typeof userEvent.setup>) {
+    const form = await panel();
+    await user.clear(field("Refetch data older than"));
+    await user.type(field("Refetch data older than"), "30");
+    await user.click(form.getByRole("button", { name: "Save settings" }));
+    return form;
+  }
+
+  it("is saved when reading it back shows it stored", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    loseTheAnswer({ readBackFails: false });
+
+    const form = await saveASetting(user);
+
+    expect(await form.findByText("Saved.")).toBeInTheDocument();
+    expect(form.queryByRole("alert")).toBeNull();
+    const history = within(await screen.findByRole("region", { name: /^recent changes/i }));
+    expect(await history.findByText(/Refetch data older than .* to 30/)).toBeInTheDocument();
+  });
+
+  it("is unconfirmed, keeps its draft, and is settled by Check again, when it cannot be read back", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    loseTheAnswer({ readBackFails: true });
+
+    const form = await saveASetting(user);
+
+    const status = form.getByRole("status");
+    await waitFor(() => expect(status).toHaveTextContent(/not confirmed/i));
+    expect(status).toHaveTextContent(/Recent changes/);
+    expect(form.queryByText("Saved.")).toBeNull();
+    expect(form.queryByRole("alert")).toBeNull();
+    expect(field("Refetch data older than")).toHaveValue("30");
+    expectHeld(form.getByRole("button", { name: "Save settings" }));
+
+    const history = within(await screen.findByRole("region", { name: /^recent changes/i }));
+    const entry = within((await history.findByText(/Refetch data older than .* to 30/)).closest("li") as HTMLElement);
+    await user.click(entry.getByRole("button", { name: "Check again" }));
+
+    await waitFor(() => expect(status).not.toHaveTextContent(/not confirmed/i));
+    expect(entry.queryByText(/not confirmed/i)).toBeNull();
+    expect(field("Refetch data older than")).toHaveValue("30");
+    await waitFor(() => expectNotHeld(form.getByRole("button", { name: "Save settings" })));
   });
 });
