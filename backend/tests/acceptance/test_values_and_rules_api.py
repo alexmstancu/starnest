@@ -7,7 +7,7 @@ served; `reqs.md` 6.5 that a value may be typed only where its attribute says so
 
 import asyncio
 import re
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from datetime import UTC, datetime
 from typing import Any, ClassVar
 
@@ -800,6 +800,134 @@ class TestTheCompoundRules:
         ).json()
 
         assert all(candidate["warnings"] == [] for candidate in body["candidates"])
+
+
+A_MANUAL_MONETARY_ATTRIBUTE = "country.test_typed_rent"
+
+A_CONVERTED_RENT = A_TYPED_VALUE | {
+    "attribute": A_MANUAL_MONETARY_ATTRIBUTE,
+    "candidate": "country.romania",
+    "payload": {
+        "amount": 2500,
+        "currency": "RON",
+        "amount_eur": 502.51,
+        "fx_rate": {"rate": 0.2010050251, "rate_date": "2026-06-30", "data_source": "ecb"},
+    },
+}
+"""2,500 RON typed with the rate it was converted at, in the contract's nested shape."""
+
+
+@pytest.fixture
+async def a_typed_rent_attribute(api: httpx.AsyncClient, database_url: str) -> AsyncIterator[None]:
+    """A Monetary attribute that permits manual entry, for one test.
+
+    The catalog ships none (`0492` retyped the last), and the conversion path is exercised
+    through the only door a Monetary figure has today. Requested after `api`, so its teardown
+    runs first: the values and the rates go before the attribute does.
+    """
+    async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as connection:
+        await connection.execute(
+            "INSERT INTO attribute (id, level, value_type, name, pillar, manual_entry) "
+            "VALUES (%s, 'country', 'Monetary', 'Typed rent', 'housing', true)",
+            (A_MANUAL_MONETARY_ATTRIBUTE,),
+        )
+        try:
+            yield
+        finally:
+            # What `an_api` empties on closing anyway, emptied first so the attribute can go.
+            await connection.execute("TRUNCATE value, fx_rate RESTART IDENTITY CASCADE")
+            await connection.execute(
+                "DELETE FROM attribute WHERE id = %s", (A_MANUAL_MONETARY_ATTRIBUTE,)
+            )
+
+
+async def _the_ecb_published_ron(database_url: str) -> None:
+    async with await psycopg.AsyncConnection.connect(database_url, autocommit=True) as connection:
+        await connection.execute(
+            "INSERT INTO fx_rate (base_currency, quote_currency, rate_date, rate, data_source) "
+            "VALUES ('RON', 'EUR', '2026-06-30', 0.2010050251, 'ecb')"
+        )
+
+
+class TestTypingAConvertedAmount:
+    """ST-18 (D63): a non-euro amount, end to end, with its rate's provenance."""
+
+    async def test_a_converted_amount_is_served_with_its_rate_date_and_publisher(
+        self, api: httpx.AsyncClient, a_typed_rent_attribute: None, database_url: str
+    ) -> None:
+        await _the_ecb_published_ron(database_url)
+
+        response = await api.post("/v1/values/manual", json=A_CONVERTED_RENT)
+
+        assert response.status_code == 201, response.text
+        validate("enterValueManually", response.json(), status=201)
+        assert response.json()["payload"] == A_CONVERTED_RENT["payload"]
+        listed = (
+            await api.get("/v1/values", params={"attribute": A_MANUAL_MONETARY_ATTRIBUTE})
+        ).json()
+        validate("listValues", listed)
+        (served,) = listed["items"]
+        assert served["payload"]["fx_rate"] == {
+            "rate": 0.2010050251,
+            "rate_date": "2026-06-30",
+            "data_source": "ecb",
+        }
+
+    @pytest.mark.parametrize(
+        "claimed",
+        [
+            pytest.param({"rate_date": "2026-07-01"}, id="a day nobody published a rate for"),
+            pytest.param({"data_source": "manual"}, id="a publisher that did not publish it"),
+        ],
+    )
+    async def test_a_conversion_at_an_unpublished_rate_is_refused_409_not_500(
+        self,
+        api: httpx.AsyncClient,
+        a_typed_rent_attribute: None,
+        database_url: str,
+        claimed: dict[str, Any],
+    ) -> None:
+        await _the_ecb_published_ron(database_url)
+        payload = A_CONVERTED_RENT["payload"]
+        unpublished = A_CONVERTED_RENT | {
+            "payload": payload | {"fx_rate": payload["fx_rate"] | claimed}
+        }
+
+        response = await api.post("/v1/values/manual", json=unpublished)
+
+        assert response.status_code == 409, response.text
+        assert response.json()["code"] == "invalid_value"
+        validate("enterValueManually", response.json(), status=409)
+        listed = (
+            await api.get("/v1/values", params={"attribute": A_MANUAL_MONETARY_ATTRIBUTE})
+        ).json()
+        assert listed["items"] == []
+
+    @pytest.mark.parametrize(
+        "malformed",
+        [
+            pytest.param({"fx_rate": 0.2010050251}, id="a bare number for the rate"),
+            pytest.param(
+                {"fx_rate": {"rate": 0.2010050251, "rate_date": "2026-06-30"}},
+                id="a rate with no publisher",
+            ),
+            pytest.param({"fx_rate_date": "2026-06-30"}, id="a field the contract does not have"),
+        ],
+    )
+    async def test_a_rate_not_in_the_contracts_shape_is_refused(
+        self,
+        api: httpx.AsyncClient,
+        a_typed_rent_attribute: None,
+        database_url: str,
+        malformed: dict[str, Any],
+    ) -> None:
+        await _the_ecb_published_ron(database_url)
+        payload = A_CONVERTED_RENT["payload"] | malformed
+
+        response = await api.post("/v1/values/manual", json=A_CONVERTED_RENT | {"payload": payload})
+
+        assert response.status_code == 409, response.text
+        assert response.json()["code"] == "invalid_value"
 
 
 class TestExternalScores:

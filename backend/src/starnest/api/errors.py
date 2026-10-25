@@ -43,6 +43,7 @@ from starnest.criteria import (
 from starnest.data import (
     AnswerRecordedByAPersonError,
     ConflictingObservationError,
+    FxRateUnavailableError,
     InvalidManualValueError,
     InvalidReferencePeriodError,
     InvalidSourceOrderError,
@@ -156,6 +157,9 @@ STATUS_FOR: Mapping[type[Exception], tuple[int, str]] = {
     ManualEntryNotPermittedError: _refusal(409, "manual_entry_not_permitted"),
     ManualEntrySwitchedOffError: _refusal(409, "manual_entry_switched_off"),
     InvalidManualValueError: _refusal(409, "invalid_value"),
+    # A converted amount whose rate its publisher did not publish (ST-18): the value is not one
+    # the attribute can hold, for want of provenance rather than of shape.
+    FxRateUnavailableError: _refusal(409, "invalid_value"),
     ConflictingObservationError: _refusal(409, "conflicting_observation"),
     AnswerRecordedByAPersonError: _refusal(409, "answer_recorded_by_a_person"),
     # 422 -- the request describes something the domain will not accept.

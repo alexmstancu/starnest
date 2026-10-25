@@ -48,6 +48,7 @@ class TestTheSixTypesThatCarryAFigure:
             amount_eur=Decimal("3045.00"),
             fx_rate=Decimal("1.05"),
             fx_rate_date=date(2026, 7, 1),
+            fx_rate_source="ecb",
         )
 
         figure = magnitude_of(a_value(value_type=ValueType.MONETARY, payload=converted))

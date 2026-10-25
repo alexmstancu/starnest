@@ -1440,7 +1440,7 @@ currency and an fx rate; a temperature carries a unit; a population carries neit
 
 | Type | Payload |
 |---|---|
-| `Monetary` | `amount`, `currency`, `amount_eur`, `fx_rate`, `fx_rate_date` |
+| `Monetary` | `amount`, `currency`, `amount_eur`, and for a converted amount its rate as `fx_rate`, `fx_rate_date` and `fx_rate_source` -- the number, the day and the publisher, together or not at all, served as the contract's `FxRate` |
 | `Quantity` | `magnitude`, `unit` |
 | `Count` | `count`, optional `basis` |
 | `Ratio` | `value`, `basis` |

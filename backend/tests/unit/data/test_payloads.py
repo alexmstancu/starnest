@@ -178,6 +178,19 @@ REFUSED: list[tuple[str, type[Payload], dict[str, Any]]] = [
             "amount_eur": Decimal("910"),
             "fx_rate": Decimal("0.201033"),
             "fx_rate_date": date(2026, 6, 30),
+            "fx_rate_source": "ecb",
+        },
+    ),
+    (
+        "a EUR figure that claims a conversion",
+        Monetary,
+        {
+            "amount": Decimal("1410"),
+            "currency": "EUR",
+            "amount_eur": Decimal("1410"),
+            "fx_rate": Decimal("1"),
+            "fx_rate_date": date(2026, 6, 30),
+            "fx_rate_source": "ecb",
         },
     ),
     (
@@ -372,7 +385,32 @@ class TestMoneyAndItsConversion:
         assert (money.amount, money.currency) == (Decimal("2900"), "CHF")
         assert money.amount_eur == Decimal("3045.00")
         assert (money.fx_rate, money.fx_rate_date) == (Decimal("1.05"), date(2026, 7, 1))
+        assert money.fx_rate_source == "ecb"
+        assert money.conversion_rate == rate
         assert not money.is_native_euro
+
+    def test_a_figure_in_euro_has_no_conversion_rate(self) -> None:
+        assert Monetary.in_euro(Decimal("1410")).conversion_rate is None
+
+    @pytest.mark.parametrize(
+        "missing",
+        [
+            pytest.param({"fx_rate_source": None}, id="a rate without its publisher"),
+            pytest.param({"fx_rate": None, "fx_rate_date": None}, id="a publisher without a rate"),
+        ],
+    )
+    def test_a_rate_and_its_publisher_are_recorded_together(self, missing: dict) -> None:
+        """ST-18: a rate nobody is named as publishing is a number with half its provenance."""
+        fields = {
+            "amount": Decimal("910"),
+            "currency": "RON",
+            "amount_eur": Decimal("182.94"),
+            "fx_rate": Decimal("0.201033"),
+            "fx_rate_date": date(2026, 6, 30),
+            "fx_rate_source": "ecb",
+        }
+        with pytest.raises(ValidationError, match="together"):
+            Monetary(**{**fields, **missing})
 
     def test_refuses_a_rate_that_does_not_quote_euro(self) -> None:
         rate = FxRate(
@@ -399,6 +437,7 @@ class TestMoneyAndItsConversion:
                 amount_eur=Decimal("910"),
                 fx_rate=Decimal("0.201033"),
                 fx_rate_date=date(2026, 6, 30),
+                fx_rate_source="ecb",
             )
 
     def test_a_euro_figure_that_disagrees_with_its_own_euro_equivalent_is_refused(self) -> None:
@@ -415,6 +454,7 @@ class TestMoneyAndItsConversion:
             amount_eur=Decimal("182.94"),
             fx_rate=Decimal("0.201033"),
             fx_rate_date=date(2026, 6, 30),
+            fx_rate_source="ecb",
         )
 
         assert money.amount_eur == Decimal("182.94")
@@ -428,6 +468,7 @@ class TestMoneyAndItsConversion:
                 amount_eur=Decimal("183.94"),
                 fx_rate=Decimal("0.201033"),
                 fx_rate_date=date(2026, 6, 30),
+                fx_rate_source="ecb",
             )
 
     def test_a_negative_amount_is_legal_because_a_balance_may_be_negative(self) -> None:

@@ -24,12 +24,14 @@ from psycopg_pool import AsyncConnectionPool
 from starnest.api import build_app
 from starnest.api.settings import SettingsBody
 from starnest.criteria import UnknownCriteriaSetError
+from starnest.data import PublishedRates
 from starnest.data_acquisition import SourceAdapter
 from starnest.storage import (
     PostgresCandidateStore,
     PostgresCatalogStore,
     PostgresCriteriaStore,
     PostgresEvaluationStore,
+    PostgresFxRateStore,
     PostgresHouseholdStore,
     PostgresMatchRuleResultStore,
     PostgresRunStore,
@@ -40,6 +42,7 @@ from .contract import validate_refusal
 
 WRITABLE_TABLES = (
     "value",
+    "fx_rate",
     "household",
     "household_citizenship",
     "settings",
@@ -114,6 +117,8 @@ async def an_api(
             evaluation_store=PostgresEvaluationStore(pool),
             adapters=adapters,
             researcher=researcher,  # type: ignore[arg-type]
+            # The rates on record and no publisher: an acceptance test never reaches the ECB.
+            rates=PublishedRates(PostgresFxRateStore(pool)),
             display_name="Acceptance",
         )
         transport = httpx.ASGITransport(app=app)

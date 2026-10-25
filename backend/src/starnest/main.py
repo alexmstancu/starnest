@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from starnest.data import CatalogStore
+from starnest.data import CatalogStore, FxRateProvider, FxRateStore, PublishedRates
 from starnest.data_acquisition import (
     GateResearcher,
     RunStore,
@@ -168,6 +168,7 @@ def build() -> tuple[Environment, "FastAPI"]:
         PostgresCatalogStore,
         PostgresCriteriaStore,
         PostgresEvaluationStore,
+        PostgresFxRateStore,
         PostgresHouseholdStore,
         PostgresMatchRuleResultStore,
         PostgresRunStore,
@@ -196,6 +197,7 @@ def build() -> tuple[Environment, "FastAPI"]:
         # The gate researcher is the third permitted LLM use and is not a `SourceAdapter`: it
         # produces a proposed answer to a judgement, not a figure (`reqs.md` 6.10 use 3).
         researcher=_the_researcher(environment),
+        rates=_the_rates(PostgresFxRateStore(pool)),
         display_name=environment.app_display_name,
     )
 
@@ -355,6 +357,19 @@ def _the_sources(catalog: object, environment: "Environment") -> tuple:
         *(PublishedTableAdapter(table) for table in every_published_table()),
         *_the_paid_sources(environment),
     )
+
+
+def _the_rates(store: FxRateStore) -> FxRateProvider:
+    """The rates on record, then the ECB -- the publisher every conversion names (D63, `0112`).
+
+    Asked only when a converted amount arrives and its rate is not on record yet, so a free,
+    keyless publisher is reached once per currency and day at most.
+    """
+    import httpx
+
+    from starnest.data_sources.ecb import EcbReferenceRates
+
+    return PublishedRates(store, publisher=EcbReferenceRates(httpx.AsyncClient(timeout=30)))
 
 
 def _the_researcher(environment: "Environment") -> GateResearcher | None:

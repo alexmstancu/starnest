@@ -14,7 +14,6 @@ from typing import Any
 
 import psycopg
 import pytest
-from psycopg import errors
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.data import (
@@ -24,6 +23,7 @@ from starnest.data import (
     ConfidenceLevel,
     Count,
     ExternalScore,
+    FxRateUnavailableError,
     Index,
     LabelSet,
     MalformedValueError,
@@ -304,7 +304,9 @@ async def _publish(
         )
 
 
-def _a_converted_amount(*, rate: Decimal = A_PUBLISHED_RATE, on: date = A_RATE_DAY) -> Monetary:
+def _a_converted_amount(
+    *, rate: Decimal = A_PUBLISHED_RATE, on: date = A_RATE_DAY, publisher: str = "ecb"
+) -> Monetary:
     """910 RON, converted. The arithmetic holds whatever the rate, so only provenance varies."""
     return Monetary(
         amount=Decimal("910.00"),
@@ -312,6 +314,7 @@ def _a_converted_amount(*, rate: Decimal = A_PUBLISHED_RATE, on: date = A_RATE_D
         amount_eur=(Decimal("910.00") * rate).quantize(Decimal("0.01")),
         fx_rate=rate,
         fx_rate_date=on,
+        fx_rate_source=publisher,
     )
 
 
@@ -329,6 +332,36 @@ async def test_a_converted_amount_keeps_the_rate_and_the_day_it_was_converted_on
     assert stored.payload.fx_rate == A_PUBLISHED_RATE
 
 
+async def test_a_converted_amount_names_who_published_its_rate(
+    values: PostgresValueStore, pool: AsyncConnectionPool
+) -> None:
+    """ST-18: the rate is served as rate, date and publisher, so the publisher is stored."""
+    await _publish(pool)
+
+    await values.append([a_value(attribute=A_MONETARY_ATTRIBUTE, payload=_a_converted_amount())])
+    (listing,) = await values.read_values(attribute=A_MONETARY_ATTRIBUTE)
+
+    assert listing.value.payload.fx_rate_source == "ecb"
+
+
+async def test_a_publisher_that_did_not_publish_the_rate_is_refused(
+    values: PostgresValueStore, pool: AsyncConnectionPool
+) -> None:
+    """The ECB published it; a conversion claiming somebody else did names a rate nobody did."""
+    await _publish(pool)
+
+    with pytest.raises(FxRateUnavailableError, match="RON"):
+        await values.append(
+            [
+                a_value(
+                    attribute=A_MONETARY_ATTRIBUTE,
+                    payload=_a_converted_amount(publisher="manual"),
+                )
+            ]
+        )
+    assert await values.read_values(attribute=A_MONETARY_ATTRIBUTE) == ()
+
+
 async def test_a_conversion_at_a_rate_nobody_published_is_refused(
     values: PostgresValueStore,
 ) -> None:
@@ -338,7 +371,7 @@ async def test_a_conversion_at_a_rate_nobody_published_is_refused(
     is internally consistent and simply wrong. This payload's arithmetic is perfect; the rate
     was never published by anyone, and that is now the objection.
     """
-    with pytest.raises(errors.ForeignKeyViolation):
+    with pytest.raises(FxRateUnavailableError, match=r"0\.18"):
         await values.append(
             [
                 a_value(
@@ -355,7 +388,7 @@ async def test_a_conversion_dated_to_a_day_the_rate_was_not_published_for_is_ref
     """One rate per pair per day, so the day is part of what makes the rate the right one."""
     await _publish(pool, on=A_RATE_DAY)
 
-    with pytest.raises(errors.ForeignKeyViolation):
+    with pytest.raises(FxRateUnavailableError, match="2026-07-01"):
         await values.append(
             [
                 a_value(
@@ -376,6 +409,7 @@ async def test_a_figure_already_in_euro_needs_no_published_rate(
     (stored,) = await values.read_active_values(attributes=[A_MONETARY_ATTRIBUTE])
 
     assert stored.payload == payload
+    assert stored.payload.conversion_rate is None
 
 
 # --- appending ----------------------------------------------------------------------------

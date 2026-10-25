@@ -5240,10 +5240,13 @@ paths:
         `manual_entry_switched_off` while the `manual` source is switched off (PL-089),
         409
 
-        `invalid_value` where the value is not one the attribute can hold, and 409
+        `invalid_value` where the value is not one the attribute can hold -- a converted
+        amount whose
 
-        `conflicting_observation` where another figure is on record under the same
-        natural key.'
+        rate was not published included -- and 409 `conflicting_observation` where
+        another figure
+
+        is on record under the same natural key.'
       operationId: enterValueManually
       requestBody:
         content:

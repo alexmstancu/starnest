@@ -17,7 +17,7 @@ from fastapi import APIRouter, Query
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
-from starnest.api.dependencies import Candidates, Catalog, Values
+from starnest.api.dependencies import Candidates, Catalog, Rates, Values
 from starnest.api.errors import built_from_the_request
 from starnest.candidates import CandidateId, UnknownCandidateError
 from starnest.data import (
@@ -25,12 +25,16 @@ from starnest.data import (
     BreakdownOptionId,
     ConfidenceLevel,
     ConflictingObservationError,
+    FxRateProvider,
+    FxRateUnavailableError,
+    InvalidManualValueError,
     Monetary,
     Payload,
     ReferencePeriod,
     Value,
     ValueListing,
     a_manual_value,
+    confirm_published,
     restates,
 )
 from starnest.evaluation.wording import stored_text_in_words
@@ -173,12 +177,17 @@ def _both_run_filters() -> RequestValidationError:
     "/values/manual", operation_id="enterValueManually", status_code=201, response_model=ValueBody
 )
 async def enter_value_manually(
-    body: ManualValueBody, values: Values, catalog: Catalog, candidates: Candidates
+    body: ManualValueBody,
+    values: Values,
+    catalog: Catalog,
+    candidates: Candidates,
+    rates: Rates,
 ) -> ValueBody:
     """Refused with 409 `manual_entry_not_permitted` where the attribute does not allow it, 409
     `manual_entry_switched_off` while the `manual` source is switched off (PL-089), 409
-    `invalid_value` where the value is not one the attribute can hold, and 409
-    `conflicting_observation` where another figure is on record under the same natural key."""
+    `invalid_value` where the value is not one the attribute can hold -- a converted amount whose
+    rate was not published included -- and 409 `conflicting_observation` where another figure
+    is on record under the same natural key."""
     attribute = await catalog.read_attribute(body.attribute)
     if not any(
         str(known.id) == body.candidate
@@ -193,7 +202,7 @@ async def enter_value_manually(
         attribute,
         sources=await catalog.read_data_sources(),
         candidate=CandidateId(body.candidate),
-        payload=body.payload,
+        payload=_domain_payload(body.payload),
         reference_period=period,
         retrieval_date=body.retrieval_date,
         confidence_level=body.confidence_level,
@@ -201,6 +210,8 @@ async def enter_value_manually(
         citations=body.citations,
         breakdown_option=body.breakdown_option,
     )
+    if isinstance(value.payload, Monetary):
+        await _confirm_its_rate_was_published(value.payload, rates)
     # append is idempotent: it stores the value, or no-ops if this exact manual entry (same
     # natural key, including the client's retrieval_date) was already recorded. Either way the row
     # is now present, so a re-submit returns the stored value rather than crashing on an empty
@@ -227,6 +238,44 @@ async def enter_value_manually(
         if _is_the_same_measurement(found.value, value)
     )
     return _value_body(listing, await _attribute_names_for([listing], catalog))
+
+
+_FX_RATE_FIELDS = {"rate": "fx_rate", "rate_date": "fx_rate_date", "data_source": "fx_rate_source"}
+"""The contract's `FxRate`, field by field, as `Monetary` names the same three facts."""
+
+
+def _domain_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """The contract's nested `fx_rate` as the domain's three fields (ST-18).
+
+    Only the contract's shape is accepted: a bare number for the rate, or the domain's own field
+    names, is refused rather than guessed at.
+    """
+    if any(field in payload for field in ("fx_rate_date", "fx_rate_source")) or (
+        "fx_rate" in payload and not isinstance(payload["fx_rate"], dict)
+    ):
+        raise InvalidManualValueError(
+            "a converted amount names its rate as fx_rate: its rate, rate_date and data_source"
+        )
+    rate = payload.get("fx_rate")
+    if rate is None:
+        return payload
+    return {key: item for key, item in payload.items() if key != "fx_rate"} | {
+        _FX_RATE_FIELDS.get(field, field): item for field, item in rate.items()
+    }
+
+
+async def _confirm_its_rate_was_published(payload: Monetary, rates: FxRateProvider | None) -> None:
+    """A typed conversion's rate, checked against what its publisher published, before it is
+    stored: the foreign key would refuse it too, but only after the figure was half written."""
+    rate = payload.conversion_rate
+    if rate is None:
+        return
+    if rates is None:
+        raise FxRateUnavailableError(
+            f"no source of published exchange rates is configured, so {payload.currency} "
+            "cannot be converted"
+        )
+    await confirm_published(rate, rates=rates)
 
 
 def _identity_of(stored: Value) -> dict[str, Any]:
@@ -297,17 +346,22 @@ def _value_body(listing: ValueListing, attribute_names: Mapping[str, str] = {}) 
 def _payload_body(payload: Payload | None) -> dict[str, Any]:
     """The payload as the contract shapes it: the type is on the value, not repeated inside.
 
-    **A monetary payload's exchange rate is not served yet.** The contract describes it as the
-    rate, its date and its publisher, and the payload carries the first two only; serving it
-    without the publisher would be a number with half its provenance. No monetary value is
-    stored today (`known-issues.md` P10).
+    **A converted amount's rate is served whole** (ST-18): the rate, its date and its publisher,
+    as the contract's `FxRate`, or nothing for an amount issued in EUR.
     """
     if payload is None:
         return {}
-    exclude = {"value_type"} | (
-        {"fx_rate", "fx_rate_date"} if isinstance(payload, Monetary) else set()
-    )
-    return _as_numbers(payload.model_dump(exclude=exclude, exclude_none=True))
+    if not isinstance(payload, Monetary):
+        return _as_numbers(payload.model_dump(exclude={"value_type"}, exclude_none=True))
+    served = payload.model_dump(include={"amount", "currency", "amount_eur"})
+    rate = payload.conversion_rate
+    if rate is not None:
+        served["fx_rate"] = {
+            "rate": rate.rate,
+            "rate_date": rate.rate_date.isoformat(),
+            "data_source": str(rate.data_source),
+        }
+    return _as_numbers(served)
 
 
 def _as_numbers(dumped: Any) -> Any:

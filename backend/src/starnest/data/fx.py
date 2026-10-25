@@ -92,3 +92,71 @@ class FxRateProvider(ABC):
         an unknown pair: an invented rate is a wrong number with correct-looking provenance,
         which is the failure this application exists to avoid.
         """
+
+
+class FxRateStore(ABC):
+    """The rates already published and recorded, one per pair per day (`fx_rate`, `0001`).
+
+    Declared here and implemented in `storage`, like every other store. A recorded rate is never
+    edited: one rate per pair per day is what keeps two conversions on the same day consistent.
+    """
+
+    @abstractmethod
+    async def read_rate(
+        self, *, base_currency: CurrencyCode, quote_currency: CurrencyCode, on: date
+    ) -> FxRate:
+        """The rate recorded for exactly `on`. Raises `FxRateUnavailableError` when none is."""
+
+    @abstractmethod
+    async def record_rate(self, rate: FxRate) -> FxRate:
+        """Record a published rate, and return the one on record for its pair and day.
+
+        Idempotent: a rate already recorded for the day stands, and is what comes back.
+        """
+
+
+class PublishedRates(FxRateProvider):
+    """The rates on record first, then the publisher -- asked once per pair and day, recorded.
+
+    **Recorded before it is used**, because a stored conversion names its rate by a foreign key
+    (`0112`, `0521`): a rate that was used and not recorded would leave the figure pointing at
+    nothing. Without a publisher only the record answers, which is the state of a client that
+    must never reach the network (the acceptance suite).
+    """
+
+    def __init__(self, store: FxRateStore, *, publisher: FxRateProvider | None = None) -> None:
+        self._store = store
+        self._publisher = publisher
+
+    async def rate_for(
+        self, *, base_currency: CurrencyCode, quote_currency: CurrencyCode, on: date
+    ) -> FxRate:
+        try:
+            return await self._store.read_rate(
+                base_currency=base_currency, quote_currency=quote_currency, on=on
+            )
+        except FxRateUnavailableError:
+            if self._publisher is None:
+                raise
+            published = await self._publisher.rate_for(
+                base_currency=base_currency, quote_currency=quote_currency, on=on
+            )
+        return await self._store.record_rate(published)
+
+
+async def confirm_published(rate: FxRate, *, rates: FxRateProvider) -> None:
+    """Refuse a rate its publisher did not publish, for that pair, on that day, at that number.
+
+    What a person typing a converted amount claims about its rate is checked against what was
+    published, before anything is stored: an internally consistent and simply wrong rate is the
+    failure only the published one can catch (`0112`).
+    """
+    published = await rates.rate_for(
+        base_currency=rate.base_currency, quote_currency=rate.quote_currency, on=rate.rate_date
+    )
+    if published != rate:
+        raise FxRateUnavailableError(
+            f"{rate.data_source} did not publish {rate.rate} for {rate.base_currency} to "
+            f"{rate.quote_currency} on {rate.rate_date}; the rate published for that day is "
+            f"{published.rate}, by {published.data_source}, for {published.rate_date}"
+        )

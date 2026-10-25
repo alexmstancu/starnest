@@ -242,7 +242,7 @@ value              id, candidate, attribute, value_type, data_source,
                    confidence_level, rejection_reason, data_acquisition_run
 
 value_monetary     value_id, value_type, amount, currency, amount_eur,
-                   fx_rate, fx_rate_date
+                   fx_rate, fx_rate_date, fx_rate_source
 value_quantity     value_id, value_type, magnitude, unit
 value_count        value_id, value_type, count, basis
 value_ratio        value_id, value_type, value, basis

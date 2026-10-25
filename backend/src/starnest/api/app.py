@@ -33,7 +33,7 @@ from starnest.api.errors import (
 )
 from starnest.candidates import CandidateStore
 from starnest.criteria import CriteriaStore, MatchRuleResultStore
-from starnest.data import CatalogStore, ValueStore
+from starnest.data import CatalogStore, FxRateProvider, ValueStore
 from starnest.data_acquisition import GateResearcher, RunStore, SourceAdapter
 from starnest.evaluation import EvaluationStore
 from starnest.household import HouseholdStore
@@ -71,6 +71,7 @@ def build_app(
     evaluation_store: EvaluationStore,
     adapters: tuple[SourceAdapter, ...] = (),
     researcher: GateResearcher | None = None,
+    rates: FxRateProvider | None = None,
     display_name: str,
 ) -> FastAPI:
     """One application, wired to the stores it was given.
@@ -96,6 +97,8 @@ def build_app(
     # None is ordinary: the LLM path is off until a key and its prices are configured, and the
     # research endpoint answers 501 rather than pretending there was nothing to research.
     app.state.researcher = researcher
+    # None refuses every converted amount: a rate nobody can confirm was published is not used.
+    app.state.rates = rates
 
     for router in (
         settings.router,

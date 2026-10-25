@@ -15,7 +15,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, errors
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.candidates import CandidateId
@@ -29,6 +29,7 @@ from starnest.data import (
     Count,
     DataSourceId,
     ExternalScore,
+    FxRateUnavailableError,
     Index,
     LabelSet,
     Monetary,
@@ -259,6 +260,16 @@ class PostgresValueStore(ValueStore):
             )
 
     async def _append_one(self, value: Value) -> Value | None:
+        try:
+            return await self._insert_one(value)
+        except errors.ForeignKeyViolation as refused:
+            if refused.diag.constraint_name != _A_PUBLISHED_RATE or not isinstance(
+                value.payload, Monetary
+            ):
+                raise
+            raise FxRateUnavailableError(_unpublished(value.payload)) from None
+
+    async def _insert_one(self, value: Value) -> Value | None:
         async with acquire(self._pool) as connection:
             value_id = await self._insert_row(connection, value)
             if value_id is None:
@@ -331,6 +342,19 @@ class PostgresValueStore(ValueStore):
         return score
 
 
+_A_PUBLISHED_RATE = "value_monetary_rate_is_one_its_publisher_published"
+"""The key that pins a converted amount to a rate its publisher published (`0112`, `0521`)."""
+
+
+def _unpublished(payload: Monetary) -> str:
+    """The refusal, in words built from the figure -- never from the driver's message."""
+    return (
+        f"{payload.fx_rate_source} published no rate of {payload.fx_rate} for "
+        f"{payload.currency} to EUR on {payload.fx_rate_date}, so an amount converted at it "
+        "cannot be stored"
+    )
+
+
 def _filter_or_none(identifiers: Sequence[str]) -> list[str] | None:
     """An empty filter means "do not narrow", which the SQL spells as a NULL array."""
     return [str(identifier) for identifier in identifiers] or None
@@ -400,6 +424,7 @@ async def _insert_payload(
                 amount_eur=payload.amount_eur,
                 fx_rate=payload.fx_rate,
                 fx_rate_date=payload.fx_rate_date,
+                fx_rate_source=_text_or_none(payload.fx_rate_source),
             )
         case Quantity():
             await queries.insert_quantity_payload(

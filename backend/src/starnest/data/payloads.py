@@ -32,7 +32,7 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from starnest.data.fx import EURO, CurrencyMismatchError, FxRate
-from starnest.data.identifiers import CurrencyCode, UnitId
+from starnest.data.identifiers import CurrencyCode, DataSourceId, UnitId
 
 
 class ValueType(StrEnum):
@@ -118,17 +118,25 @@ class Monetary(Payload):
     amount_eur: Decimal = Field(allow_inf_nan=False)
     fx_rate: Decimal | None = Field(default=None, gt=0, allow_inf_nan=False)
     fx_rate_date: date | None = None
+    fx_rate_source: DataSourceId | None = Field(
+        default=None, description="Who published the rate (ST-18). A rate without one is a guess."
+    )
 
     @model_validator(mode="after")
     def _reject_a_conversion_that_cannot_be_audited(self) -> "Monetary":
-        """A converted figure must name the rate and the day, and a rate must be dated.
+        """A converted figure must name the rate, the day and its publisher, together.
 
-        Both halves matter: an undated rate cannot be checked against what was published, and
-        a foreign amount with no rate is a EUR figure nobody can reproduce.
+        Each part matters: an undated rate cannot be checked against what was published, a rate
+        with no publisher is half its provenance, and a foreign amount with no rate is a EUR
+        figure nobody can reproduce.
         """
-        if (self.fx_rate is None) != (self.fx_rate_date is None):
+        if len({self.fx_rate is None, self.fx_rate_date is None, self.fx_rate_source is None}) > 1:
             raise MalformedPayloadError(
-                "an exchange rate and its date are stored together or not at all"
+                "an exchange rate, its date and its publisher are stored together or not at all"
+            )
+        if self.currency == EURO and self.fx_rate is not None:
+            raise MalformedPayloadError(
+                f"an amount issued in {EURO} was never converted, so it carries no rate"
             )
         if self.currency != EURO and self.fx_rate is None:
             raise MalformedPayloadError(
@@ -144,11 +152,10 @@ class Monetary(Payload):
         as complete, so a CHF rent copied straight into `amount_eur` -- the likeliest adapter
         mistake -- compares directly against a EUR figure and nothing looks broken.
 
-        The multiplication is restated here rather than borrowed from `converted()`, which
-        builds an `FxRate`: that record requires the source that published the rate, and a
-        `Monetary` does not carry one. One multiplication is cheaper than inventing a source
-        to satisfy a constructor, and the direction it must run in is the one thing worth
-        stating -- an inverted rate is off by the square of itself.
+        The multiplication is restated here rather than borrowed from `conversion_rate`, which
+        builds an `FxRate` and so refuses a pair that does not convert before this check could
+        say what is wrong. The direction it must run in is the one thing worth stating -- an
+        inverted rate is off by the square of itself.
         """
         if self.currency == EURO and self.amount_eur != self.amount:
             raise MalformedPayloadError(
@@ -187,6 +194,20 @@ class Monetary(Payload):
             amount_eur=rate.convert(amount),
             fx_rate=rate.rate,
             fx_rate_date=rate.rate_date,
+            fx_rate_source=rate.data_source,
+        )
+
+    @property
+    def conversion_rate(self) -> FxRate | None:
+        """The published rate this figure was converted at, or None for one issued in EUR."""
+        if self.fx_rate is None or self.fx_rate_date is None or self.fx_rate_source is None:
+            return None
+        return FxRate(
+            base_currency=self.currency,
+            quote_currency=EURO,
+            rate_date=self.fx_rate_date,
+            rate=self.fx_rate,
+            data_source=self.fx_rate_source,
         )
 
     @property

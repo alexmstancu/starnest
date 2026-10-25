@@ -12,7 +12,7 @@ from fastapi import Depends, Request
 
 from starnest.candidates import CandidateStore
 from starnest.criteria import CriteriaStore, MatchRuleResultStore
-from starnest.data import CatalogStore, ValueStore
+from starnest.data import CatalogStore, FxRateProvider, ValueStore
 from starnest.data_acquisition import GateResearcher, RunStore, SourceAdapter
 from starnest.evaluation import EvaluationStore
 from starnest.household import HouseholdStore
@@ -59,6 +59,11 @@ def _researcher(request: Request) -> GateResearcher | None:
     return getattr(request.app.state, "researcher", None)
 
 
+def _rates(request: Request) -> FxRateProvider | None:
+    """Whatever answers which rate was published, or nothing: then no amount can be converted."""
+    return getattr(request.app.state, "rates", None)
+
+
 def _adapters(request: Request) -> tuple[SourceAdapter, ...]:
     """Every source this application can fetch from.
 
@@ -79,3 +84,4 @@ Catalog = Annotated[CatalogStore, Depends(_catalog)]
 Runs = Annotated[RunStore, Depends(_runs)]
 Adapters = Annotated[tuple[SourceAdapter, ...], Depends(_adapters)]
 Researcher = Annotated["GateResearcher | None", Depends(_researcher)]
+Rates = Annotated[FxRateProvider | None, Depends(_rates)]

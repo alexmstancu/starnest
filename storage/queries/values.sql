@@ -49,7 +49,8 @@ SELECT v.id,
            WHEN 'Monetary' THEN jsonb_build_object(
                'amount', monetary.amount, 'currency', monetary.currency,
                'amount_eur', monetary.amount_eur,
-               'fx_rate', monetary.fx_rate, 'fx_rate_date', monetary.fx_rate_date)
+               'fx_rate', monetary.fx_rate, 'fx_rate_date', monetary.fx_rate_date,
+               'fx_rate_source', monetary.fx_rate_source)
            WHEN 'Quantity' THEN jsonb_build_object(
                'magnitude', quantity.magnitude, 'unit', quantity.unit)
            WHEN 'Count' THEN jsonb_build_object(
@@ -183,7 +184,8 @@ SELECT v.id,
            WHEN 'Monetary' THEN jsonb_build_object(
                'amount', monetary.amount, 'currency', monetary.currency,
                'amount_eur', monetary.amount_eur,
-               'fx_rate', monetary.fx_rate, 'fx_rate_date', monetary.fx_rate_date)
+               'fx_rate', monetary.fx_rate, 'fx_rate_date', monetary.fx_rate_date,
+               'fx_rate_source', monetary.fx_rate_source)
            WHEN 'Quantity' THEN jsonb_build_object(
                'magnitude', quantity.magnitude, 'unit', quantity.unit)
            WHEN 'Count' THEN jsonb_build_object(
@@ -341,12 +343,13 @@ SELECT :value_id, url
 FROM   unnest(:urls::text[]) AS url
 ON CONFLICT DO NOTHING;
 
--- name: insert_monetary_payload(value_id, amount, currency, amount_eur, fx_rate, fx_rate_date)!
+-- name: insert_monetary_payload(value_id, amount, currency, amount_eur, fx_rate, fx_rate_date, fx_rate_source)!
 -- The published figure exactly as issued, plus its EUR equivalent and the rate that produced
--- it. The rate is data, not an implementation detail (reqs.md 5.5).
+-- it, with who published the rate. The rate is data, not an implementation detail (reqs.md 5.5).
 INSERT INTO value_monetary (value_id, value_type, amount, currency, amount_eur,
-                            fx_rate, fx_rate_date)
-VALUES (:value_id, 'Monetary', :amount, :currency, :amount_eur, :fx_rate, :fx_rate_date);
+                            fx_rate, fx_rate_date, fx_rate_source)
+VALUES (:value_id, 'Monetary', :amount, :currency, :amount_eur, :fx_rate, :fx_rate_date,
+        :fx_rate_source);
 
 -- name: insert_quantity_payload(value_id, magnitude, unit)!
 INSERT INTO value_quantity (value_id, value_type, magnitude, unit)

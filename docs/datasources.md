@@ -163,6 +163,7 @@ have surveyed the specific town — local bureaucracy, local job market, city-le
 | **UNESCO World Heritage** | Inscribed sites with coordinates | XML/CSV list | Feeds `city.heritage_and_culture_density` |
 | **WHO Global Health Observatory** | Health system indicators | REST (OData) | Replaces the dead EHCI (section 6.1) |
 | **UNdata** | Aggregator across UN agencies — demography, education, environment | Web + downloads | Convenient, but **largely a mirror** of upstream agencies — see section 6.4 |
+| **ECB reference rates** | The euro foreign exchange reference rate per currency per working day | REST (SDMX), `data-api.ecb.europa.eu/service/data/EXR/D.<cur>.EUR.SP00.A`, CSV | **No key.** Built (`data_sources/ecb`, PL-170): the publisher of every rate a conversion names (`0112`, `0521`). Published as 1 EUR = x; stored inverted, to ten significant digits, as one unit in EUR. A weekend or holiday takes the last working day's rate. Asked only when a converted amount arrives whose rate is not on record |
 | **UNODC** | Homicide, violent crime, prisons, justice | **Portal download** (ZIP: CSV + JSON metadata) | **Not a REST API** — expect a scheduled download, not a live call |
 
 ### Tier 2 — free, with registration or meaningful limits

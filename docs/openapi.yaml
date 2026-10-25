@@ -355,6 +355,12 @@ paths:
         an early estimate is captured so a real dataset can supersede it later without deleting
         anything.
 
+        A non-euro amount carries the rate it was converted at, as `fx_rate` (`FxRate`): the
+        number, the day and the source that published it. That rate must be one its publisher
+        published for that day -- read from the rates on record, or asked of the publisher (the
+        ECB) once and recorded -- or the request is refused with `409 invalid_value`, and nothing
+        is stored.
+
         Rejected with `409 manual_entry_not_permitted` when the attribute does not allow it; with
         `409 manual_entry_switched_off` while the `manual` source is switched off, because a
         switched-off source is left out of scoring (`reqs.md` Q232), so a figure stored then
@@ -381,7 +387,8 @@ paths:
           description: >-
             `manual_entry_not_permitted`: the attribute does not permit manual entry.
             `manual_entry_switched_off`: the manual source is switched off.
-            `invalid_value`: the value is not one the attribute can hold.
+            `invalid_value`: the value is not one the attribute can hold -- a converted amount
+            whose rate its publisher did not publish for that day included.
             `conflicting_observation`: another figure is already on record for the same
             observation, with that observation's id and natural key in `details`.
           content:
@@ -1464,11 +1471,15 @@ components:
 
     FxRate:
       type: object
+      description: >-
+        The published rate a converted amount used: one unit of the amount's currency is `rate`
+        euro, on `rate_date`, as `data_source` published it (reqs.md 5.5). Absent for an amount
+        issued in euro, which was never converted.
       required: [rate, rate_date, data_source]
       properties:
-        rate: { type: number }
-        rate_date: { type: string, format: date }
-        data_source: { type: string }
+        rate: { type: number, exclusiveMinimum: 0 }
+        rate_date: { type: string, format: date, description: "The day the rate was published for; a weekend amount carries the last working day's." }
+        data_source: { type: string, description: "Who published the rate -- the ECB for every rate this application fetches." }
 
     Level:
       type: object
