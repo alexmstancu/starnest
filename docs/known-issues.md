@@ -21,6 +21,10 @@ the account of a defect outlives the defect.
 
 ## Status
 
+**2026-10-25: six opened, P101-P106, handled in a separate pass by decision** -- the last
+review of PL-033 found five, and the batch review left one about the mock. Round 3 closed with
+them open; see the last section.
+
 **69 findings: 67 closed, 2 open, and both are open by decision rather than by neglect**:
 P38's mitigated LLM editions and P6's Cloudflare block. **P10's unserved exchange rate closed
 2026-10-25** (PL-170, D63): a converted amount stores and serves its rate's publisher, and the
@@ -616,3 +620,29 @@ GPT-6 Astra and Grok 4.7 reviewed the 109 commits of the October remediation, an
 | ~~**P98**~~ | **The migration lock guards skipped SQL shapes they could not read** (RE-9): a refusal in a `DO $tag$` block, and a copy that starts with `WITH`, among others. No shipped migration uses any of them. | **Closed 2026-10-24 (PL-174).** `test_migration_hygiene.py` fails closed: every migration and rollback is refused if it holds a shape the lock checks cannot read -- `DO` not followed by `$$`, a `RAISE` with no level or message, `ASSERT`, a statement starting with `WITH`, `SELECT ... INTO` outside a `DO` block, `CREATE UNLOGGED`, a copy written as `TABLE t`, a function, procedure or trigger, and a write or `EXECUTE` inside a `DO` block -- and the message names the form to write instead. Upserts are deliberately not counted as copies: seven shipped files pair one with a copy. |
 | **P99** | **A stale set read that lands before the save's answer still reaches the pillar and rules panels** (RD-2 residual, `2856c7f`). The read began after the save was sent but before it committed; its answer arrived first, so no answered write marks it stale, and the panels show the old values until the next save returns the stored ones. | **Open by decision, low** (2026-10-22): needs two set switches within one save's round trip. Closing it means counting writes in flight, not only answered ones. |
 | ~~**P100**~~ | **`make e2e` read `.env` values in make** (user, password, port for the copy's URL), and was wider than first recorded (TL-N4): **any** quoted user, password or port broke the URL, a `$(` in the password stopped every make target, and a password holding an `@` or a stray `%` got past yoyo to the suite's backend, whose libpq error printed it. It failed closed -- the copy's name is guarded, so the live database was never reached. `compose.yaml` joined the raw password into the containers' URLs the same way. | **Closed 2026-10-24 (PL-173, D66).** `tools/e2e_copy.py` reads the user, password and port with python-dotenv -- the file first, then the environment, as compose does -- percent-encodes them, migrates the copy in-process and replaces itself with npm; make hands it only the copy's name and never holds the password. `E2E_YOYO_URL` and `E2E_SUITE_URL` no longer exist and left the e2e guard. The containers' URLs carry no credentials: libpq reads them from `PGUSER`, `PGPASSWORD` and `PGDATABASE`. Proved in a sandbox on make 3.81 with passwords holding `@`, `%`, `#`, quotes and `$(` (`test_make_isolation.py`). **Still true:** `make -p` prints `POSTGRES_PASSWORD`, because `-include .env` keeps it as a make variable. |
+
+## Found by the last review of PL-033 -- 2026-10-25
+
+The independent review of PL-033's round 10 (`85f384e`), and of the Recent-changes writers
+merged with it (C11, PL-138), found five High defects. **By decision on 2026-10-25 they are
+handled in a separate pass**, and round 3 closed PL-033, PL-142 and PL-138 with them open.
+
+- **When they bite:** four need the local server to stall past the client's 10-second write
+  bound, or to drop a response. **P104 happens in normal use.**
+- **One root:** each recording writer re-implements the write protocol (the one write slot,
+  the per-set hold, the read-back, the unconfirmed entry, delivery through the session, and
+  ending the write without depending on a component staying mounted), and each copy misses a
+  different piece. The fix is one session-level runner that every recorded write uses,
+  forward and Undo alike.
+- **A head start:** the unfinished round 11 is kept, unmerged, on branch `area/ui-history-3`
+  (`21fea38`). It has five tests reproducing P101-P105, all failing at `c0ee9c3`, and that
+  runner partly built.
+
+| # | Finding | State |
+|---|---|---|
+| **P101** | **An overdue creation loses its history** (`RecentChanges.tsx`, `stranded()`, from `5ed84a1`). With Create held past 10 seconds, the refreshed list lacks the unfinished set, and `stranded()` takes that for a deletion and drops its unconfirmed entry. When the request lands, the set exists with no entry and no Undo. | **Open.** Drop only the entries of a set the session knew to exist and that has since gone. |
+| **P102** | **A source write in flight when Configure is left holds every Configure write for good** (`sources/useDataSources.ts`, from `e3ed552`). Its `reload()` belongs to the unmounted hook and never resolves, so the write never ends, and every writer and Undo stays held until the page is reloaded. | **Open.** The shared runner. |
+| **P103** | **A source switch whose answer is lost, and whose read-back fails, is reported as refused** (`sources/useDataSources.ts`, from `e3ed552`). There is no unconfirmed entry and no Check again, and Reset cannot reverse a change that did happen. | **Open.** The shared runner. |
+| **P104** | **Undoing "made a gate a warning" leaves it a warning while the screen says gate** (`rules/ruleSwitches.ts`, from `85f384e`). The prior state recorded the outcome as `null`, the default, so the reverse leaves `outcome` out, and the server keeps the outcome it holds (`openapi.yaml`, `setMatchRuleEnforcement`). | **Open.** Record the outcome the set holds (`match_rule_outcomes`, `compound_rule_outcomes`) in every rule state, and send it on Undo. |
+| **P105** | **An Undo of a rule switch that outlives the 10-second bound frees the rule with no unconfirmed entry** (`rules/useRuleToggles.ts`, from `85f384e`). The undo engine's handling of a lost reverse answer is older, and reaches every writer's Undo. | **Open.** Run reverses through the same runner as writes. |
+| **P106** | **The mock counts a source it does not list as switched on and free** (`mocks/handlers.ts`, the exact-pairs estimate). OECD is absent from the mock's sources, so the mock arms an estimate over attributes only it declares where the server might refuse. Low: test fidelity. Adding OECD broke about twenty source-priority tests that count the sources. | **Open.** Add OECD and every declared source to the fixture, and update the tests that count them. |
