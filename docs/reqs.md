@@ -1187,7 +1187,9 @@ in shape:
 
 **Exactly one threshold kind may apply**, decided by the attribute's value type — a constraint
 the database checks, through the same composite key that governs values (section 3.6, `arch.md` 3.3b). Both were single JSON columns in an earlier draft; that hid the shape from
-every query and moved validation back into application code.
+every query and moved validation back into application code. **And one row of it at most**: a
+criterion carries one label threshold or one share bound, never several (`0520`) -- the API's
+`labels` is a one-entry array.
 
 > **`is_scored` and `blocks_if_missing` answer different questions**, and their earlier names —
 > `included` and `required` — sounded close enough to be confused. `is_scored: false` means *you

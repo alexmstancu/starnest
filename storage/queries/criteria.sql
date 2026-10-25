@@ -555,18 +555,17 @@ DELETE FROM criterion_threshold_share WHERE criterion = :criterion;
 INSERT INTO criterion_threshold_range (criterion, value_type, min_value, max_value)
 VALUES (:criterion, :value_type, :min_value, :max_value);
 
--- name: insert_criterion_threshold_labels(criterion, labels, containment_rules)!
--- A LabelSet threshold is a list of label/rule pairs, written in one statement.
+-- name: insert_criterion_threshold_label(criterion, label, containment_rule)!
+-- One label and how it must be contained: a criterion carries one at most (0520).
 INSERT INTO criterion_threshold_label (criterion, value_type, label, containment_rule)
-SELECT :criterion, 'LabelSet', pair.label, pair.containment_rule
-FROM   unnest(:labels::text[], :containment_rules::text[]) AS pair(label, containment_rule);
+VALUES (:criterion, 'LabelSet', :label, :containment_rule);
 
 -- name: insert_criterion_threshold_boolean(criterion, required_value)!
 INSERT INTO criterion_threshold_boolean (criterion, value_type, required_value)
 VALUES (:criterion, 'Boolean', :required_value);
 
 -- name: insert_criterion_threshold_share(criterion, label, min_share, max_share)!
--- A bound on one named label's share of a composition.
+-- A bound on one named label's share of a composition; a criterion carries one at most (0520).
 INSERT INTO criterion_threshold_share (criterion, value_type, label, min_share, max_share)
 VALUES (:criterion, 'ShareComposition', :label, :min_share, :max_share);
 

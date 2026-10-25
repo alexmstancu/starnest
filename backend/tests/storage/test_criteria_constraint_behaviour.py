@@ -279,3 +279,78 @@ class TestATargetRangeNeedsAFixedScale:
                 """,
                 (evaluation, A_SEEDED_ATTRIBUTE, A_SEEDED_PILLAR),
             )
+
+
+# --- a criterion carries one bound at most (0520) -------------------------------------------
+
+A_COMPOSED_ATTRIBUTE = "country.criteria_constraint_languages"
+"""A `ShareComposition`, which the shipped catalog does not have until the city level."""
+
+
+def _attach_a_composed_criterion(connection: psycopg.Connection) -> None:
+    connection.execute(
+        "INSERT INTO attribute (id, pillar, level, value_type, name)"
+        " VALUES (%s, 'culture', 'country', 'ShareComposition', 'Languages spoken')",
+        (A_COMPOSED_ATTRIBUTE,),
+    )
+    connection.execute(
+        """
+        INSERT INTO criterion (criteria_set, attribute, pillar, value_type, is_scored, weight,
+                               goal, normalisation_method)
+        VALUES (%s, %s, 'culture', 'ShareComposition', false, 10, 'maximise', 'as_is')
+        """,
+        (A_SET, A_COMPOSED_ATTRIBUTE),
+    )
+
+
+def _bound_a_share(connection: psycopg.Connection, label: str) -> None:
+    connection.execute(
+        """
+        INSERT INTO criterion_threshold_share (criterion, value_type, label, min_share)
+        SELECT id, value_type, %s, 20 FROM criterion WHERE criteria_set = %s AND attribute = %s
+        """,
+        (label, A_SET, A_COMPOSED_ATTRIBUTE),
+    )
+
+
+def _require_a_label(connection: psycopg.Connection, label: str) -> None:
+    connection.execute(
+        """
+        INSERT INTO criterion_threshold_label (criterion, value_type, label, containment_rule)
+        SELECT id, value_type, %s, 'must_contain'
+        FROM   criterion WHERE criteria_set = %s AND attribute = %s
+        """,
+        (label, A_SET, A_LABELLED_ATTRIBUTE),
+    )
+
+
+class TestACriterionCarriesOneBoundAtMost:
+    """The domain, the API and the contract all model one bound per criterion, and the tables
+    were keyed for several. A second share bound was read as the first and lost on the next
+    edit; a second label made the whole set unreadable."""
+
+    def test_one_share_bound_is_accepted(self, connection: psycopg.Connection) -> None:
+        """The control: without it, the refusal below could be the attribute or the criterion."""
+        _record_the_catalog(connection)
+        _attach_a_composed_criterion(connection)
+
+        _bound_a_share(connection, "English")
+
+        stored = connection.execute("SELECT count(*) FROM criterion_threshold_share").fetchone()
+        assert stored == (1,)
+
+    def test_a_second_share_bound_is_refused(self, connection: psycopg.Connection) -> None:
+        _record_the_catalog(connection)
+        _attach_a_composed_criterion(connection)
+        _bound_a_share(connection, "English")
+
+        with pytest.raises(errors.UniqueViolation, match="one_per_criterion"):
+            _bound_a_share(connection, "German")
+
+    def test_a_second_label_threshold_is_refused(self, connection: psycopg.Connection) -> None:
+        _record_the_catalog(connection)
+        _attach_a_labelled_criterion(connection, is_scored=False)
+        _require_a_label(connection, "Cfb")
+
+        with pytest.raises(errors.UniqueViolation, match="one_per_criterion"):
+            _require_a_label(connection, "Csa")

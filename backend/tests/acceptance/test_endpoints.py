@@ -512,8 +512,8 @@ class TestTheThresholdThatDecidesAMatch:
     async def test_a_label_threshold_naming_two_labels_is_refused(
         self, api: httpx.AsyncClient, a_scratch_criteria_set: str
     ) -> None:
-        """The schema holds one row per label and a criterion models one, so a second label
-        would be written and never read back -- refused before it is written."""
+        """A criterion models one label threshold and the schema holds one (`0520`), so a
+        second label is refused before anything is written."""
         refused = await api.patch(
             f"/v1/criteria-sets/{a_scratch_criteria_set}/criteria/{OVERBURDEN}",
             json={

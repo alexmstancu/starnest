@@ -11,8 +11,10 @@ catalog holds it rather than as a fixture invented to be convenient.
 """
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
 import pytest
 from psycopg import errors
@@ -29,6 +31,7 @@ from starnest.criteria import (
 )
 from starnest.data import UnknownAttributeError
 from starnest.storage import PostgresCriteriaStore, PostgresEvaluationStore
+from starnest.storage.criteria_store import _threshold_from
 
 pytestmark = pytest.mark.storage
 
@@ -501,11 +504,9 @@ class TestTheThresholdShapesTheStoreCanWrite:
     boolean and share paths were exercised by nothing -- which is exactly the shape of `P15`,
     where the store quietly failed to write the rule lists nobody read back.
 
-    **A label threshold is testable and the other two are not, honestly.** No attribute in the
-    catalog is a `Boolean` or a `ShareComposition` at any level, so a criterion carrying one of
-    those thresholds cannot be built without inventing an attribute -- and an attribute invented
-    by a test is a catalog this application does not ship. The branches stay uncovered and the
-    reason is written here rather than papered over with a fixture that proves nothing.
+    No attribute in the catalog is a `Boolean` or a `ShareComposition` at any level, so the
+    share bound is written against an attribute the test adds (`add_attribute`): the schema,
+    not the seed, is what decides whether one bound goes in and comes back out (`0520`).
     """
 
     async def test_a_label_threshold_survives_the_round_trip(
@@ -545,6 +546,92 @@ class TestTheThresholdShapesTheStoreCanWrite:
             await criteria.purge_criteria_set("no_threshold_round_trip")
 
         assert read_back.criteria[0].matching_threshold is None
+
+    async def test_a_share_bound_survives_creation_and_an_edit(
+        self, criteria: PostgresCriteriaStore, add_attribute: Callable[..., Any]
+    ) -> None:
+        """One bound in, the same bound out, and an edit replaces it rather than adding a
+        second -- which `0520` would refuse, and which the reader once read as the first."""
+        from starnest.criteria import ShareThreshold
+
+        attribute = await add_attribute("country.store_languages", "ShareComposition")
+        english = ShareThreshold(label="English", min_share=Decimal(20))
+        german = ShareThreshold(label="German", max_share=Decimal(50))
+        await criteria.create_criteria_set(_a_composed_set("share_round_trip", attribute, english))
+        try:
+            created = await criteria.read_criteria_set("share_round_trip", level=COUNTRY)
+            await criteria.replace_criteria_set(
+                _a_composed_set("share_round_trip", attribute, german)
+            )
+            edited = await criteria.read_criteria_set("share_round_trip", level=COUNTRY)
+        finally:
+            await criteria.purge_criteria_set("share_round_trip")
+
+        assert created.criteria[0].matching_threshold == english
+        assert edited.criteria[0].matching_threshold == german
+
+
+class TestTheReaderRefusesSeveralBoundsOnOneCriterion:
+    """`0520` makes both states unstorable; the reader still refuses rather than choosing, so a
+    restore of an older dump cannot make it read the first and lose the rest silently."""
+
+    @staticmethod
+    def an_entry(**thresholds: object) -> dict[str, Any]:
+        return {
+            "attribute": "country.climate_zone",
+            "threshold_range": None,
+            "threshold_boolean": None,
+            "threshold_labels": [],
+            "threshold_shares": [],
+            **thresholds,
+        }
+
+    def test_two_share_bounds_are_refused(self) -> None:
+        entry = self.an_entry(
+            threshold_shares=[
+                {"label": "English", "min_share": 20, "max_share": None},
+                {"label": "German", "min_share": None, "max_share": 50},
+            ]
+        )
+
+        with pytest.raises(ValueError, match=r"country\.climate_zone carries 2 share bounds"):
+            _threshold_from(entry)
+
+    def test_two_label_thresholds_are_refused(self) -> None:
+        entry = self.an_entry(
+            threshold_labels=[
+                {"label": "Cfb", "containment_rule": "must_contain"},
+                {"label": "Csa", "containment_rule": "must_contain"},
+            ]
+        )
+
+        with pytest.raises(ValueError, match=r"country\.climate_zone carries 2 label thresholds"):
+            _threshold_from(entry)
+
+
+def _a_composed_set(identifier: str, attribute: str, threshold: object) -> CriteriaSet:
+    """One unscored criterion on a `ShareComposition` attribute a test added."""
+    from starnest.criteria import Criterion
+    from starnest.data import ValueType
+
+    return CriteriaSet(
+        id=identifier,
+        name=identifier,
+        criteria=(
+            Criterion(
+                criteria_set=identifier,
+                attribute=attribute,
+                pillar="economics",
+                value_type=ValueType.SHARE_COMPOSITION,
+                weight=Decimal(100),
+                goal=Goal.MAXIMISE,
+                normalisation_method=NormalisationMethod.PERCENTILE,
+                is_scored=False,
+                matching_threshold=threshold,
+            ),
+        ),
+        pillar_weights=(PillarWeight(pillar="economics", level=COUNTRY, weight=Decimal(100)),),
+    )
 
 
 def _a_label_set(identifier: str, *, threshold: object = None) -> CriteriaSet:

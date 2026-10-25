@@ -480,11 +480,11 @@ class PostgresCriteriaStore(CriteriaStore):
                 connection, criterion=criterion_id, required_value=threshold.required_value
             )
         elif isinstance(threshold, LabelThreshold):
-            await self._queries.insert_criterion_threshold_labels(
+            await self._queries.insert_criterion_threshold_label(
                 connection,
                 criterion=criterion_id,
-                labels=[threshold.label],
-                containment_rules=[threshold.containment_rule],
+                label=threshold.label,
+                containment_rule=threshold.containment_rule,
             )
         elif isinstance(threshold, ShareThreshold):
             await self._queries.insert_criterion_threshold_share(
@@ -560,26 +560,32 @@ def _threshold_from(entry: dict[str, Any]) -> MatchingThreshold | None:
     if entry["threshold_boolean"] is not None:
         return BooleanThreshold(required_value=entry["threshold_boolean"]["required_value"])
     if entry["threshold_labels"]:
-        labels = entry["threshold_labels"]
-        if len(labels) > 1:
-            # The table holds one row per label and `LabelThreshold` holds one label, so a
-            # criterion with several is a state the schema permits and the domain cannot
-            # represent. Saying so beats returning the first and losing the rest silently.
-            raise ValueError(
-                f"{entry['attribute']} carries {len(labels)} label thresholds and the domain "
-                "models one; the criterion cannot be read until they agree"
-            )
-        return LabelThreshold(
-            label=labels[0]["label"], containment_rule=labels[0]["containment_rule"]
-        )
+        label = _the_one(entry, "threshold_labels", "label thresholds")
+        return LabelThreshold(label=label["label"], containment_rule=label["containment_rule"])
     if entry["threshold_shares"]:
-        share = entry["threshold_shares"][0]
+        share = _the_one(entry, "threshold_shares", "share bounds")
         return ShareThreshold(
             label=share["label"],
             min_share=_decimal_or_none(share["min_share"]),
             max_share=_decimal_or_none(share["max_share"]),
         )
     return None
+
+
+def _the_one(entry: dict[str, Any], key: str, kind: str) -> dict[str, Any]:
+    """The one bound of its kind a criterion carries, refused rather than chosen among.
+
+    `0520` lets each table hold one row per criterion, as the domain models one. A database
+    rolled back past it can hold several again, and returning the first would lose the rest
+    silently on the next edit -- so the criterion is refused, naming what it carries.
+    """
+    bounds = entry[key]
+    if len(bounds) > 1:
+        raise ValueError(
+            f"{entry['attribute']} carries {len(bounds)} {kind} and the domain models one; "
+            "the criterion cannot be read until they agree"
+        )
+    return bounds[0]
 
 
 def _pillar_weight_from(entry: dict[str, Any]) -> PillarWeight:
