@@ -20,6 +20,7 @@ from starnest.criteria import (
     PillarWeight,
     RangeThreshold,
     ReducerMode,
+    ScaleAnchor,
 )
 from starnest.data import (
     ConfidenceLevel,
@@ -293,7 +294,9 @@ class TestTheWholeInterpretationIsFrozen:
         saved = await store.save(
             criteria=scratch,
             level=COUNTRY,
-            results=[a_result(PORTUGAL, 70, 1)],
+            # The interpreted set freezes satisfaction alone, so a contribution on any other
+            # attribute names no frozen criterion (0523).
+            results=[a_result(PORTUGAL, 70, 1, attribute_scores=())],
             score_scale_max=100,
             computed_at=COMPUTED_AT,
             note=f"{TEST_EVALUATION_MARKER}ST-08 retype divergence",
@@ -617,10 +620,11 @@ class TestTheRestOfTheReadingIsFrozen:
         assert read.non_match_reasons[0].reason_detail == reason
 
 
-def a_zone(year: int, zone: str) -> Value:
-    """Portugal's climate zone for one year: a LabelSet, which no score reads."""
+def a_zone(year: int, zone: str, candidate: str = PORTUGAL) -> Value:
+    """A country's climate zone for one year -- Portugal's unless named: a LabelSet, which no
+    score reads."""
     return Value(
-        candidate=PORTUGAL,
+        candidate=candidate,
         attribute=CLIMATE_ZONE,
         value_type=ValueType.LABEL_SET,
         data_source="copernicus",
@@ -763,6 +767,102 @@ class TestTheEvidenceIsFrozen:
             refused.value.diag.constraint_name
             == "non_match_reason_only_a_threshold_names_one_figure"
         )
+
+
+class TestTheSavedRecordIsItsOwn:
+    """PL-147, PL-148 (`0523`): what a save writes is pinned to its own candidate and level, and
+    the save writes what the keys require."""
+
+    async def test_a_contribution_citing_another_candidates_figure_is_refused_whole(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """Mutation: take the contribution's candidate from the value rather than its result, and
+        the figure's key holds while the result's names the refusal instead."""
+        (theirs,) = await PostgresValueStore(pool).append([a_zone(2023, "Csa", GREECE)])
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        store = PostgresEvaluationStore(pool)
+        before = await store.read_evaluations()
+        borrowed = AttributeScore(
+            attribute=CLIMATE_ZONE,
+            pillar="climate",
+            used_value=theirs.id,
+            effective_weight=Decimal(0),
+            contribution=Decimal(0),
+        )
+
+        with pytest.raises(psycopg.errors.ForeignKeyViolation) as refused:
+            await store.save(
+                criteria=criteria,
+                level=COUNTRY,
+                results=[a_result(PORTUGAL, 71, 1, attribute_scores=(borrowed,))],
+                score_scale_max=100,
+                computed_at=COMPUTED_AT,
+            )
+
+        assert (
+            refused.value.diag.constraint_name
+            == "candidate_attribute_score_cites_its_own_measurement"
+        )
+        assert await store.read_evaluations() == before
+
+    async def test_a_set_spanning_two_levels_freezes_only_the_evaluations_slice(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """The criteria and their anchors filtered alike, and the rules by the catalog's level.
+        Mutations: drop the criteria filter and the city attribute meets the frozen criterion's
+        keys; filter the criteria and not the anchors, and the anchor's key refuses it; drop the
+        rules' filter and the city gate meets `evaluation_match_rule_is_at_its_evaluations_level`.
+        """
+        country = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        a_city_criterion = Criterion(
+            criteria_set=SHIPPED,
+            attribute="city.rent_centre",
+            pillar="housing",
+            value_type=ValueType.QUANTITY,
+            weight=Decimal(100),
+            goal=Goal.MINIMISE,
+            normalisation_method=NormalisationMethod.FIXED,
+            scale_anchors=(
+                ScaleAnchor(input_value=Decimal(500), score=100),
+                ScaleAnchor(input_value=Decimal(2000), score=0),
+            ),
+        )
+        both_levels = country.model_copy(
+            update={
+                "criteria": (*country.criteria, a_city_criterion),
+                "pillar_weights": (
+                    *country.pillar_weights,
+                    PillarWeight(pillar="housing", level="city", weight=Decimal(100)),
+                ),
+                "enforced_match_rules": country.enforced_match_rules | {"city_curfew"},
+            }
+        )
+        store = PostgresEvaluationStore(pool)
+        async with pool.connection() as connection:
+            await connection.execute(
+                "INSERT INTO match_rule (id, level, name, description) "
+                "VALUES ('city_curfew', 'city', 'A city gate', 'The city has no curfew.')"
+            )
+        try:
+            saved = await store.save(
+                criteria=both_levels,
+                level=COUNTRY,
+                results=[a_result(PORTUGAL, 71, 1)],
+                score_scale_max=100,
+                computed_at=COMPUTED_AT,
+                note=f"{TEST_EVALUATION_MARKER}PL-148 one level",
+            )
+
+            frozen = await store.read_criteria(saved.id)
+
+            assert sorted(str(c.attribute) for c in frozen.criteria) == sorted(
+                str(c.attribute) for c in country.criteria
+            )
+            assert frozen.enforced_match_rules == country.enforced_match_rules
+        finally:
+            await store.sweep_test_evaluations()
+            async with pool.connection() as connection:
+                await connection.execute("DELETE FROM match_rule WHERE id = 'city_curfew'")
 
 
 class TestSweepingWhatATestSaved:

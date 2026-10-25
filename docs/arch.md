@@ -1105,6 +1105,11 @@ Four queries dominate, and each needs one:
 At the size in section 3.5 none of this is performance-critical; they are here so the shape of the hot
 path is deliberate rather than discovered.
 
+**Two more unique indexes on `value` earn their place as keys, not as query paths** (`0523`):
+`(id, candidate, attribute)` and `(id, candidate)` exist so a saved contribution, refusal or
+compound-rule input can be pinned to its own candidate's figure by a composite foreign key, the
+same justification as `(id, value_type)`. Each acquisition append maintains them.
+
 ### 9.4 Logging
 
 Application logging, distinct from the database's statement log (section 10.7):

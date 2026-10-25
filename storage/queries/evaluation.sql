@@ -33,12 +33,16 @@ RETURNING id;
 -- The criteria snapshot: weight, pillar weight, goal, band, zero points, normalisation method,
 -- breakdown choice and blocking flag, per attribute. Recording which attributes were in scope
 -- is what keeps the coverage figure meaningful after the catalog grows.
+--
+-- Each at the evaluation's level, read from the evaluation as candidate_result reads it: the
+-- attribute must sit there (0523), so the caller sends only that level's slice.
 INSERT INTO evaluation_criterion (
-    evaluation, attribute, pillar, value_type, is_scored, weight, pillar_weight, goal,
+    evaluation, attribute, level, pillar, value_type, is_scored, weight, pillar_weight, goal,
     target_range_min, target_range_max, zero_score_below, zero_score_above,
     normalisation_method, breakdown_option, reducer_mode, blocks_if_missing,
     weight_locked, pillar_weight_locked, matching_threshold)
-SELECT :evaluation, frozen.attribute, frozen.pillar, frozen.value_type, frozen.is_scored,
+SELECT :evaluation, frozen.attribute, parent.level, frozen.pillar, frozen.value_type,
+       frozen.is_scored,
        frozen.weight, frozen.pillar_weight, frozen.goal, frozen.target_range_min,
        frozen.target_range_max, frozen.zero_score_below, frozen.zero_score_above,
        frozen.normalisation_method, frozen.breakdown_option, frozen.reducer_mode,
@@ -62,7 +66,8 @@ FROM   jsonb_to_recordset(:criteria::jsonb) AS frozen(
            reducer_mode         text,
            blocks_if_missing    boolean,
            weight_locked        boolean,
-           matching_threshold   jsonb);
+           matching_threshold   jsonb)
+JOIN   evaluation AS parent ON parent.id = :evaluation;
 
 -- name: insert_evaluation_scale_anchors(evaluation, anchors)!
 -- The frozen twin of criterion_scale_anchor, keyed on the attribute rather than on a criterion
@@ -121,11 +126,16 @@ RETURNING id, candidate;
 -- used_value pins the exact value row behind one contribution, which is what closes the
 -- provenance chain from a total down to a source and a date. It is null when no value was
 -- available and the weight was redistributed away.
+--
+-- The evaluation and the candidate are the parent result's, never the value's: the keys hold the
+-- figure to that candidate and the attribute to a criterion that evaluation froze (0523), and a
+-- candidate taken from the figure would make the first of them hold of anything.
 INSERT INTO candidate_attribute_score (
-    candidate_result, attribute, used_value, normalised_score, effective_weight, contribution,
-    score_scale_max)
-SELECT detail.candidate_result, detail.attribute, detail.used_value, detail.normalised_score,
-       detail.effective_weight, detail.contribution, parent.score_scale_max
+    candidate_result, evaluation, candidate, attribute, used_value, normalised_score,
+    effective_weight, contribution, score_scale_max)
+SELECT detail.candidate_result, parent.evaluation, parent.candidate, detail.attribute,
+       detail.used_value, detail.normalised_score, detail.effective_weight, detail.contribution,
+       parent.score_scale_max
 FROM   jsonb_to_recordset(:scores::jsonb) AS detail(
            candidate_result bigint,
            attribute        text,
@@ -141,10 +151,12 @@ JOIN   candidate_result AS parent ON parent.id = detail.candidate_result;
 -- row, which the schema enforces rather than this statement.
 --
 -- With the evidence it read, by key (FU-A3, FU-A4): a gate refusal the answer version, a
--- threshold refusal the value row. Both are immutable, so the reason reopens to them later.
-INSERT INTO non_match_reason (candidate_result, evaluation, attribute, match_rule,
+-- threshold refusal the value row. Both are immutable, so the reason reopens to them later, and
+-- both are the parent result's candidate's, which is copied here for the keys to hold (0523).
+INSERT INTO non_match_reason (candidate_result, evaluation, candidate, attribute, match_rule,
                               compound_rule, reason_detail, match_rule_answer, used_value)
-SELECT reason.candidate_result, parent.evaluation, reason.attribute, reason.match_rule,
+SELECT reason.candidate_result, parent.evaluation, parent.candidate, reason.attribute,
+       reason.match_rule,
        reason.compound_rule, reason.reason_detail, reason.match_rule_answer, reason.used_value
 FROM   ROWS FROM (jsonb_to_recordset(:reasons::jsonb) AS (
            candidate_result  bigint,
@@ -175,53 +187,74 @@ FROM   jsonb_to_recordset(:warnings::jsonb) AS warning(
 -- name: insert_candidate_warning_inputs(inputs)!
 -- The value rows each warning read to fire -- its frozen source/date chain (ST-07). Written
 -- after the warnings so the foreign key to candidate_warning holds. A warning that read a figure
--- with no stored row contributes no input, so a warning may have none.
-INSERT INTO candidate_warning_input (candidate_result, compound_rule, value_id, ordinal)
-SELECT input.candidate_result, input.compound_rule, input.value_id, input.ordinal
+-- with no stored row contributes no input, so a warning may have none. Each figure is the
+-- parent result's candidate's, copied here for the key to hold (0523).
+INSERT INTO candidate_warning_input (candidate_result, candidate, compound_rule, value_id,
+                                     ordinal)
+SELECT input.candidate_result, parent.candidate, input.compound_rule, input.value_id,
+       input.ordinal
 FROM   jsonb_to_recordset(:inputs::jsonb) AS input(
            candidate_result bigint,
            compound_rule    text,
            value_id         bigint,
-           ordinal          integer);
+           ordinal          integer)
+JOIN   candidate_result AS parent ON parent.id = input.candidate_result;
 
 -- name: insert_non_match_inputs(inputs)!
 -- The value rows a not_matching compound rule read to rule a candidate out -- its frozen
 -- source/date chain, the mirror of insert_candidate_warning_inputs (ST-07). The ordinal keeps
--- the figures in the order the rule's conditions name them.
-INSERT INTO non_match_input (candidate_result, compound_rule, value_id, ordinal)
-SELECT input.candidate_result, input.compound_rule, input.value_id, input.ordinal
+-- the figures in the order the rule's conditions name them. Written after the refusals, which
+-- each input hangs off by its rule, and each the parent result's candidate's figure (0523).
+INSERT INTO non_match_input (candidate_result, candidate, compound_rule, value_id, ordinal)
+SELECT input.candidate_result, parent.candidate, input.compound_rule, input.value_id,
+       input.ordinal
 FROM   jsonb_to_recordset(:inputs::jsonb) AS input(
            candidate_result bigint,
            compound_rule    text,
            value_id         bigint,
-           ordinal          integer);
+           ordinal          integer)
+JOIN   candidate_result AS parent ON parent.id = input.candidate_result;
 
 -- name: insert_evaluation_match_rules(evaluation, match_rules, outcomes)!
 -- The gates this reading enforced, frozen so a reopened set says what it screened on rather than
 -- what the live set screens on now (ST-07). A row means enforced; off is the absence of a row.
 -- Each with what it did when a candidate failed it, the outcome at the same position (D56).
-INSERT INTO evaluation_match_rule (evaluation, match_rule, outcome)
-SELECT :evaluation, rule.match_rule, rule.outcome
-FROM   unnest(:match_rules::text[], :outcomes::text[]) AS rule(match_rule, outcome);
+--
+-- With the gate's own level, which must be the evaluation's (0523): a gate declared for another
+-- level is not frozen, as a set read for this level would not carry it. A gate asked at every
+-- level has none and is always frozen.
+INSERT INTO evaluation_match_rule (evaluation, match_rule, level, outcome)
+SELECT :evaluation, rule.match_rule, gate.level, rule.outcome
+FROM   unnest(:match_rules::text[], :outcomes::text[]) AS rule(match_rule, outcome)
+JOIN   match_rule AS gate ON gate.id = rule.match_rule
+JOIN   evaluation AS parent ON parent.id = :evaluation
+WHERE  gate.level IS NULL OR gate.level = parent.level;
 
 -- name: insert_evaluation_compound_rules(evaluation, compound_rules, outcomes)!
 -- The compound rules this reading applied, frozen for the same reason (ST-07), each with the
--- outcome it had; a null is the rule's own, read from the catalog as it stands now (D56).
-INSERT INTO evaluation_compound_rule (evaluation, compound_rule, outcome)
-SELECT :evaluation, rule.compound_rule,
-       COALESCE(rule.outcome, (SELECT outcome FROM compound_rule WHERE id = rule.compound_rule))
-FROM   unnest(:compound_rules::text[], :outcomes::text[]) AS rule(compound_rule, outcome);
+-- outcome it had; a null is the rule's own, read from the catalog as it stands now (D56). With
+-- the rule's level, and only at the evaluation's, as for the gates above (0523).
+INSERT INTO evaluation_compound_rule (evaluation, compound_rule, level, outcome)
+SELECT :evaluation, rule.compound_rule, catalog.level, COALESCE(rule.outcome, catalog.outcome)
+FROM   unnest(:compound_rules::text[], :outcomes::text[]) AS rule(compound_rule, outcome)
+JOIN   compound_rule AS catalog ON catalog.id = rule.compound_rule
+JOIN   evaluation AS parent ON parent.id = :evaluation
+WHERE  catalog.level IS NULL OR catalog.level = parent.level;
 
 -- name: insert_candidate_gate_warnings(warnings)!
 -- A gate the set held as a warning, and the candidate failed (D56): the flag, with the answer
 -- version it read, so a reopened ranking shows the answer as it stood then (FU-A4).
-INSERT INTO candidate_gate_warning (candidate_result, match_rule, match_rule_answer, detail)
-SELECT warning.candidate_result, warning.match_rule, warning.match_rule_answer, warning.detail
+-- The answer is the parent result's candidate's, copied here for the key to hold (0523).
+INSERT INTO candidate_gate_warning (candidate_result, candidate, match_rule, match_rule_answer,
+                                    detail)
+SELECT warning.candidate_result, parent.candidate, warning.match_rule,
+       warning.match_rule_answer, warning.detail
 FROM   jsonb_to_recordset(:warnings::jsonb) AS warning(
            candidate_result  bigint,
            match_rule        text,
            match_rule_answer bigint,
-           detail            text);
+           detail            text)
+JOIN   candidate_result AS parent ON parent.id = warning.candidate_result;
 
 -- Reading a saved evaluation back.
 

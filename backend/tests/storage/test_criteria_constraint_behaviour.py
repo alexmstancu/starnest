@@ -271,11 +271,11 @@ class TestATargetRangeNeedsAFixedScale:
             connection.execute(
                 """
                 INSERT INTO evaluation_criterion
-                       (evaluation, attribute, pillar, value_type, is_scored, weight,
+                       (evaluation, attribute, level, pillar, value_type, is_scored, weight,
                         pillar_weight, goal, normalisation_method, blocks_if_missing,
                         weight_locked, target_range_min, target_range_max)
-                VALUES (%s, %s, %s, 'Quantity', true, 40, 30, 'target_range', 'percentile',
-                        false, false, 18, 26)
+                VALUES (%s, %s, 'country', %s, 'Quantity', true, 40, 30, 'target_range',
+                        'percentile', false, false, 18, 26)
                 """,
                 (evaluation, A_SEEDED_ATTRIBUTE, A_SEEDED_PILLAR),
             )

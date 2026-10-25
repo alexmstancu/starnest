@@ -94,10 +94,15 @@ class TestAnEvaluationFreezesItsScale:
         can be walked around at the third.
         """
         evaluation = record_an_evaluation(connection, scale=THE_FROZEN_SCALE)
+        record_a_frozen_criterion(connection, evaluation)
         result = record_a_result(connection, evaluation)
 
-        with pytest.raises(errors.ForeignKeyViolation):
+        with pytest.raises(errors.ForeignKeyViolation) as refused:
             record_an_attribute_score(connection, result, scale=100)
+
+        assert (
+            refused.value.diag.constraint_name == "candidate_attribute_score_uses_its_results_scale"
+        )
 
 
 class TestNoScoreLeavesTheScale:
@@ -126,6 +131,7 @@ class TestNoScoreLeavesTheScale:
     ) -> None:
         """The scale reaches here through the result, not the evaluation, and still binds."""
         evaluation = record_an_evaluation(connection)
+        record_a_frozen_criterion(connection, evaluation)
         result = record_a_result(connection, evaluation)
 
         with pytest.raises(errors.CheckViolation):
@@ -171,6 +177,7 @@ class TestSharesStayWithinWhatAShareIsOutOf:
     ) -> None:
         """Redistribution moves weight between criteria and never mints any (`reqs.md` 5.3)."""
         evaluation = record_an_evaluation(connection)
+        record_a_frozen_criterion(connection, evaluation)
         result = record_a_result(connection, evaluation)
 
         with pytest.raises(errors.CheckViolation):

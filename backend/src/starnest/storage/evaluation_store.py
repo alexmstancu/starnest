@@ -96,6 +96,9 @@ class PostgresEvaluationStore(EvaluationStore):
         pillar_locks = {
             str(w.pillar): w.weight_locked for w in criteria.pillar_weights if w.level == level
         }
+        # The level's slice only, as for the pillar weights: a frozen criterion must sit at its
+        # evaluation's level, and its anchors with it (PL-148, `0523`).
+        at_level = [c for c in criteria.criteria if c.attribute.level_id == level]
         async with acquire(self._pool) as connection:
             row = await self._queries.insert_evaluation(
                 connection,
@@ -110,10 +113,7 @@ class PostgresEvaluationStore(EvaluationStore):
                 connection,
                 evaluation=evaluation,
                 criteria=json.dumps(
-                    [
-                        _frozen(criterion, pillar_weights, pillar_locks)
-                        for criterion in criteria.criteria
-                    ]
+                    [_frozen(criterion, pillar_weights, pillar_locks) for criterion in at_level]
                 ),
             )
             # Which gates this reading enforced and which compound rules it applied, frozen so a
@@ -149,7 +149,7 @@ class PostgresEvaluationStore(EvaluationStore):
                     "score": anchor.score,
                     "label": anchor.label,
                 }
-                for criterion in criteria.criteria
+                for criterion in at_level
                 for anchor in criterion.scale_anchors
             ]
             if anchors:

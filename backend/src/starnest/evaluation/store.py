@@ -74,6 +74,11 @@ class EvaluationStore(ABC):
 
         One transaction: a ranking whose criteria snapshot is missing would read as a set of
         numbers nobody could account for, which is the opposite of why it was kept.
+
+        Only `level`'s slice of `criteria` is frozen -- its criteria, their anchors, its pillar
+        weights and the rules declared for it or for every level -- however much of the set is
+        passed (PL-148). Every row a result keeps cites that result's own candidate's evidence,
+        and the database refuses the rest (PL-147).
         """
 
     @abstractmethod

@@ -495,9 +495,17 @@ red.
   stop, and a stop decided from a stale number is not a cap"; `add_spend` is typed `-> None` and
   drops them, so the cap is decided from a per-process meter that starts at zero. This is what
   makes P35's duplicate run able to spend twice the cap.
-- **`evaluation_criterion` is the one evaluation child `0108` did not pin to its level**, and
-  `candidate_attribute_score` has no foreign key to it -- so a drill-down over a frozen set that
-  does not cover a scored criterion would raise on a NULL pillar. Both unreachable today.
+- ~~**`evaluation_criterion` is the one evaluation child `0108` did not pin to its level**, and
+  `candidate_attribute_score` has no foreign key to it~~ **Fixed by `0523` (PL-147, PL-148).** A
+  frozen criterion carries its evaluation's level and its attribute must sit at it; a contribution
+  names a criterion its evaluation froze and a figure of its own candidate and attribute; a
+  refusal's figure and gate answer, a gate warning's answer and a compound rule's input figures
+  are the result's own candidate's; a refusal's inputs hang off the refusal. `save` freezes only
+  the level's criteria and anchors. **What stays open, by decision:** a frozen rule list pins a
+  rule's level only where the catalog gives it one -- a gate asked at every level carries none,
+  and a raw writer that leaves `level` NULL on a levelled rule is not refused (the save copies it
+  from the catalog); and a compound rule's input figures are pinned to their candidate, not to
+  the rule's condition attributes, which would tie a frozen record to an editable catalog row.
 - ~~**Re-fetching an external score stores a second row and both are served**, while
   `append_external_score` claims a current edition is derived. Nothing derives it.~~ **Fixed
   2026-10-25** (PL-171: ST-10, D64). `0522` gives an outside opinion its `series`;

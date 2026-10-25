@@ -24,6 +24,9 @@ pytestmark = pytest.mark.storage
 MIGRATIONS = Path(__file__).resolve().parents[2].parent / "storage" / "migrations"
 THE_MIGRATION = MIGRATIONS / "0514-a-gate-concerns-only-candidates-at-its-level.sql"
 ITS_ROLLBACK = THE_MIGRATION.with_name(f"{THE_MIGRATION.stem}.rollback.sql")
+#: Rolled back first, as a descending `make rollback` reaches 0514: it keys frozen gates on
+#: `match_rule_level_key`, which 0514's rollback drops.
+A_LATER_ROLLBACK = next(MIGRATIONS.glob("0523-*.rollback.sql"))
 
 THE_SHIPPED_PAIRS = [
     ("ch_eu_efta_quota", "country.switzerland", "country"),
@@ -62,6 +65,7 @@ def _the_level_is_kept(connection: psycopg.Connection) -> bool:
 @pytest.fixture
 def before_the_migration(connection: psycopg.Connection) -> Iterator[psycopg.Connection]:
     with connection.transaction(force_rollback=True):
+        assert _apply_until_refused(connection, _statements(A_LATER_ROLLBACK)) is None
         assert _apply_until_refused(connection, _statements(ITS_ROLLBACK)) is None
         assert not _the_level_is_kept(connection)
         yield connection

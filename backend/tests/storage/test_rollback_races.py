@@ -172,9 +172,9 @@ def a_saved_ranking(*then: str) -> str:
 
 
 A_FROZEN_CRITERION = (
-    "INSERT INTO evaluation_criterion (evaluation, attribute, pillar, is_scored, weight, "
+    "INSERT INTO evaluation_criterion (evaluation, attribute, level, pillar, is_scored, weight, "
     "pillar_weight, goal, normalisation_method, blocks_if_missing, value_type, weight_locked) "
-    "VALUES (ranking, 'country.homicide_rate', 'safety', true, 100, 10, 'minimise', "
+    "VALUES (ranking, 'country.homicide_rate', 'country', 'safety', true, 100, 10, 'minimise', "
     "'percentile', false, 'Quantity', true);"
 )
 A_RESULT = (
@@ -447,8 +447,9 @@ REFUSALS = (
             "INSERT INTO value_quantity (value_id, value_type, magnitude, unit) "
             "SELECT figure, 'Quantity', 1, unit FROM attribute_quantity_parameter "
             "WHERE attribute = 'country.homicide_rate';",
-            "INSERT INTO candidate_warning_input (candidate_result, compound_rule, value_id) "
-            "VALUES (result, 'cheap_but_taxed', figure);",
+            "INSERT INTO candidate_warning_input "
+            "(candidate_result, candidate, compound_rule, value_id) "
+            "VALUES (result, 'country.romania', 'cheap_but_taxed', figure);",
         ),
         undo=RANKING_UNDONE,
         says="cannot roll back 0504: 1 saved warning input row(s)",

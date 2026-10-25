@@ -79,17 +79,19 @@ def record_a_frozen_criterion(
     evaluation: int,
     *,
     attribute: str = A_SEEDED_ATTRIBUTE,
+    level: str = A_SEEDED_LEVEL,
     weight: Decimal = Decimal("40"),
     pillar_weight: Decimal = Decimal("30"),
 ) -> None:
     connection.execute(
         """
-        INSERT INTO evaluation_criterion (evaluation, attribute, pillar, value_type, is_scored,
-                                          weight, pillar_weight, goal, normalisation_method,
-                                          blocks_if_missing, weight_locked)
-        VALUES (%s, %s, %s, 'Quantity', true, %s, %s, 'minimise', 'percentile', false, false)
+        INSERT INTO evaluation_criterion (evaluation, attribute, level, pillar, value_type,
+                                          is_scored, weight, pillar_weight, goal,
+                                          normalisation_method, blocks_if_missing, weight_locked)
+        VALUES (%s, %s, %s, %s, 'Quantity', true, %s, %s, 'minimise', 'percentile', false,
+                false)
         """,
-        (evaluation, attribute, ITS_PILLAR, weight, pillar_weight),
+        (evaluation, attribute, level, ITS_PILLAR, weight, pillar_weight),
     )
 
 
@@ -115,18 +117,63 @@ def record_an_attribute_score(
     connection: psycopg.Connection,
     result: int,
     *,
+    attribute: str = A_SEEDED_ATTRIBUTE,
+    used_value: int | None = None,
+    candidate: str | None = None,
+    evaluation: int | None = None,
     normalised_score: int | None = A_SCORE_ON_THE_SCALE,
     effective_weight: Decimal = Decimal("40"),
     scale: int = THE_FROZEN_SCALE,
 ) -> None:
+    """One contribution. Its evaluation and candidate are its result's unless a test is about
+    one of them (`0523`); the frozen criterion it names is the test's to record."""
+    parent = connection.execute(
+        "SELECT evaluation, candidate FROM candidate_result WHERE id = %s", (result,)
+    ).fetchone()
+    assert parent is not None
     connection.execute(
         """
-        INSERT INTO candidate_attribute_score (candidate_result, attribute, normalised_score,
-                                               effective_weight, contribution, score_scale_max)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO candidate_attribute_score (candidate_result, evaluation, candidate, attribute,
+                                               used_value, normalised_score, effective_weight,
+                                               contribution, score_scale_max)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
-        (result, A_SEEDED_ATTRIBUTE, normalised_score, effective_weight, Decimal("2.8"), scale),
+        (
+            result,
+            parent[0] if evaluation is None else evaluation,
+            parent[1] if candidate is None else candidate,
+            attribute,
+            used_value,
+            normalised_score,
+            effective_weight,
+            Decimal("2.8"),
+            scale,
+        ),
     )
+
+
+def record_a_figure(
+    connection: psycopg.Connection,
+    *,
+    candidate: str = A_SEEDED_CANDIDATE,
+    attribute: str = A_SEEDED_ATTRIBUTE,
+) -> int:
+    """A stored figure, with no payload: the connection rolls back before the payload check,
+    which is deferred to commit (`0519`), would ask for one."""
+    row = connection.execute(
+        """
+        INSERT INTO value (candidate, attribute, value_type, data_source,
+                           reference_period_start, reference_period_end, retrieval_date,
+                           confidence_level)
+        SELECT %s, a.id, a.value_type, 'eurostat', '2024-01-01', '2024-12-31', now(), 'high'
+        FROM   attribute AS a
+        WHERE  a.id = %s
+        RETURNING id
+        """,
+        (candidate, attribute),
+    ).fetchone()
+    assert row is not None
+    return int(row[0])
 
 
 def record_a_non_match_reason(
@@ -136,15 +183,31 @@ def record_a_non_match_reason(
     evaluation: int,
     attribute: str | None = A_SEEDED_ATTRIBUTE,
     match_rule: str | None = None,
+    compound_rule: str | None = None,
+    used_value: int | None = None,
+    match_rule_answer: int | None = None,
 ) -> None:
-    """Why one candidate is out, naming either a frozen criterion or a gate -- never both."""
+    """Why one candidate is out, naming one frozen criterion, gate or compound rule, with the
+    evidence it read. Its candidate is its result's (`0523`)."""
     connection.execute(
         """
-        INSERT INTO non_match_reason (candidate_result, evaluation, attribute, match_rule,
+        INSERT INTO non_match_reason (candidate_result, evaluation, candidate, attribute,
+                                      match_rule, compound_rule, used_value, match_rule_answer,
                                       reason_detail)
-        VALUES (%s, %s, %s, %s, 'above the limit')
+        SELECT %s, %s, r.candidate, %s, %s, %s, %s, %s, 'above the limit'
+        FROM   candidate_result AS r
+        WHERE  r.id = %s
         """,
-        (result, evaluation, attribute, match_rule),
+        (
+            result,
+            evaluation,
+            attribute,
+            match_rule,
+            compound_rule,
+            used_value,
+            match_rule_answer,
+            result,
+        ),
     )
 
 

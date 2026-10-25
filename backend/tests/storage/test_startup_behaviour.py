@@ -262,8 +262,6 @@ class TestSweepingWhatATestSaved:
         sweep deletes, so each needs `ON DELETE CASCADE` (the one `0504` forgot). A row in every
         one of them, and the sweep must still succeed."""
         a_value = await self._a_real_value_id(pool)
-        evaluation = await self._save(pool, f"{TEST_EVALUATION_MARKER}sanity suite frozen whole")
-
         async with pool.connection() as connection:
             (match_rule,) = await (
                 await connection.execute("SELECT id FROM match_rule LIMIT 1")
@@ -271,11 +269,20 @@ class TestSweepingWhatATestSaved:
             (compound_rule,) = await (
                 await connection.execute("SELECT id FROM compound_rule LIMIT 1")
             ).fetchone()
-            (candidate_result,) = await (
-                await connection.execute(
-                    "SELECT id FROM candidate_result WHERE evaluation = %s", (evaluation,)
-                )
-            ).fetchone()
+        # A refusal's inputs hang off the refusal by their rule (0523), so the store writes both.
+        evaluation = await self._save(
+            pool,
+            f"{TEST_EVALUATION_MARKER}sanity suite frozen whole",
+            non_match_reasons=(
+                NonMatch(
+                    compound_rule=compound_rule,
+                    reason_detail="ruled out by a rule",
+                    input_values=(a_value,),
+                ),
+            ),
+        )
+
+        async with pool.connection() as connection:
             await connection.execute(
                 "INSERT INTO evaluation_match_rule (evaluation, match_rule) VALUES (%s, %s)",
                 (evaluation, match_rule),
@@ -285,11 +292,14 @@ class TestSweepingWhatATestSaved:
                 " VALUES (%s, %s, 'warning')",
                 (evaluation, compound_rule),
             )
-            await connection.execute(
-                "INSERT INTO non_match_input (candidate_result, compound_rule, value_id, ordinal) "
-                "VALUES (%s, %s, %s, 0)",
-                (candidate_result, compound_rule, a_value),
-            )
+            (inputs,) = await (
+                await connection.execute(
+                    "SELECT count(*) FROM non_match_input AS i JOIN candidate_result AS r "
+                    "ON r.id = i.candidate_result WHERE r.evaluation = %s",
+                    (evaluation,),
+                )
+            ).fetchone()
+        assert inputs == 1
 
         booted = await boot(pool, database_url)
 
