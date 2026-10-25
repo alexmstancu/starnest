@@ -492,6 +492,65 @@ describe("what the screen says once a pass has ended", () => {
  * shape is the server saying no before asking the model anything; any other failure can come
  * after calls that were paid for, and the response that would have said how many never arrived.
  */
+/**
+ * PL-153 stage 2. **A re-check names what it asks again**: each answer by its gate and its
+ * candidate, and the pass as a re-check, so it is never read as a sweep of every gate.
+ */
+describe("what the screen says of a re-check", () => {
+  const VISA_FOR_PORTUGAL: Gate = {
+    id: "country.visa_route_exists",
+    candidate: "country.portugal",
+    name: "A visa route exists for Portugal",
+  };
+  const UK_FOR_THE_UK: Gate = {
+    id: "country.uk_skilled_worker",
+    candidate: "country.united_kingdom",
+    name: "UK Skilled Worker route for United Kingdom",
+  };
+
+  function aRecheck(): Pass {
+    return beginPass({
+      level: "country",
+      gates: [VISA_FOR_PORTUGAL, UK_FOR_THE_UK],
+      questionsTotal: 2,
+      capEur: 1,
+      ceilingEur: 0.08,
+      recheck: true,
+    });
+  }
+
+  it("says which answer it is re-checking", () => {
+    expect(describeProgress({ pass: aRecheck(), gate: VISA_FOR_PORTUGAL }, false)).toBe(
+      "Re-checking A visa route exists for Portugal at the Country level. So far 0 of 2 questions, €0.00 spent of at most €0.08.",
+    );
+  });
+
+  it("calls a finished one a re-check of every answer", () => {
+    const pass = after(aRecheck(), answer(0.04), answer(0.04));
+
+    expect(describeEnd({ kind: "finished", pass })).toBe(
+      "The last re-check at the Country level re-checked every answer: it asked 2 of 2 questions and spent €0.08 of at most €0.08.",
+    );
+  });
+
+  it("says you stopped it, with what it spent, and names the earlier one as such", () => {
+    const pass = after(aRecheck(), answer(0.04));
+
+    expect(describeEnd({ kind: "stopped", pass })).toBe(
+      "You stopped the last re-check at the Country level: it asked 1 of 2 questions and spent €0.04 of at most €0.08.",
+    );
+    expect(describeEnd({ kind: "stopped", pass }, "earlier")).toBe(
+      "You stopped the re-check before it at the Country level: it asked 1 of 2 questions and spent €0.04 of at most €0.08.",
+    );
+  });
+
+  it("names the answer it was refused at", () => {
+    expect(describeEnd({ kind: "refused", pass: aRecheck(), failure: null })).toBe(
+      "The last re-check at the Country level was refused at A visa route exists for Portugal, which spent nothing: it asked 0 of 2 questions and spent nothing.",
+    );
+  });
+});
+
 describe("whether a failed research request is known to have spent nothing", () => {
   it("knows a refusal in the contract's shape spent nothing", () => {
     expect(spendIsKnown(REFUSED)).toBe(true);

@@ -224,6 +224,27 @@ describe("the wording table", () => {
     expect(presentError(outside).message).not.toMatch(/portugal|homicide/i);
   });
 
+  it("counts the answers a re-check named that nobody recorded, and names none of them by id", () => {
+    const unrecorded = (pairs: number) =>
+      new ApiError({
+        code: "unknown_scope",
+        message: "SENTINEL_MESSAGE",
+        status: 422,
+        details: {
+          recheck: Array.from({ length: pairs }, () => ({
+            match_rule: "country.visa_route_exists",
+            candidate: "country.portugal",
+          })),
+        },
+      });
+
+    expect(presentError(unrecorded(1)).message).toBe(
+      "A re-check asks again only about an answer a person recorded, and an answer it named has none.",
+    );
+    expect(presentError(unrecorded(2)).message).toMatch(/and 2 answers it named have none\.$/);
+    expect(presentError(unrecorded(2)).message).not.toMatch(/country\.|SENTINEL/);
+  });
+
   it("says an identifier in the request is malformed when the server says so", () => {
     const malformed = new ApiError({
       code: "invalid_request",

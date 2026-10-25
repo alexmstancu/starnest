@@ -185,7 +185,15 @@ export const WORDS = {
   cannot_be_ranked: unset(cannotBeRanked),
   invalid_match_rule_result: refusal("That answer is not one this gate accepts."),
   unknown_data_source: refusal("That source is not in the catalog."),
-  unknown_scope: refusal("The scope names something that does not exist at this level."),
+  unknown_scope: refusal((details) => {
+    // A re-check names answers rather than ids (PL-153): the ones nobody recorded are listed.
+    const unrecorded = details["recheck"];
+    if (!Array.isArray(unrecorded)) return "The scope names something that does not exist at this level.";
+    const lead = "A re-check asks again only about an answer a person recorded, and ";
+    return unrecorded.length > 1
+      ? `${lead}${String(unrecorded.length)} answers it named have none.`
+      : `${lead}an answer it named has none.`;
+  }),
   invalid_source_order: refusal("The source order must name every source once, and no other."),
 } satisfies Record<ErrorCode | ClientCode, Wording>;
 

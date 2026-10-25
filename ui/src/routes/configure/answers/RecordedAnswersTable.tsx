@@ -2,6 +2,7 @@ import type { MatchRuleResult } from "../../../api/endpoints";
 import { formatDate, formatMatchStatus, safeHttpUrl } from "../../../format/display";
 import { describeAge, describePeriod, periodHasEnded } from "../gateAnswerReading";
 import type { PendingProposal } from "./gateAnswerForm";
+import { isWorthRechecking } from "./recheck";
 
 /**
  * The answers a person recorded, each with the period it holds for, how old it is, and -- when
@@ -18,6 +19,8 @@ export function RecordedAnswersTable({
   held,
   onChange,
   onTake,
+  recheckHeld,
+  onRecheck,
 }: {
   /** In reading order already: ended periods first. */
   recorded: readonly MatchRuleResult[];
@@ -30,6 +33,10 @@ export function RecordedAnswersTable({
   held: boolean;
   onChange: (answer: MatchRuleResult) => void;
   onTake: (answer: MatchRuleResult, proposal: PendingProposal) => void;
+  /** An estimate or a pass is in flight, or the list is outdated: Re-check keeps its focus. */
+  recheckHeld: boolean;
+  /** Estimates a re-check of one answer (PL-153 stage 2); `button` is where focus returns. */
+  onRecheck: (answer: MatchRuleResult, button: HTMLElement) => void;
 }) {
   if (recorded.length === 0) {
     return (
@@ -68,6 +75,11 @@ export function RecordedAnswersTable({
               now={now}
               held={held}
               onChange={() => onChange(answer)}
+              recheck={
+                isWorthRechecking(answer, today)
+                  ? { held: recheckHeld, press: (button) => onRecheck(answer, button) }
+                  : null
+              }
             />,
             pending !== null && (
               <PendingRow
@@ -95,6 +107,7 @@ function AnswerRow({
   now,
   held,
   onChange,
+  recheck,
 }: {
   answer: MatchRuleResult;
   gate: string;
@@ -104,13 +117,23 @@ function AnswerRow({
   now: Date;
   held: boolean;
   onChange: () => void;
+  /** Offered where the answer may have gone stale; null elsewhere. */
+  recheck: { held: boolean; press: (button: HTMLElement) => void } | null;
 }) {
   const recordedAt = answer.recorded_at ?? answer.retrieval_date;
   return (
     <tr className={ended ? "table__row answer-row--ended" : "table__row"}>
       <th scope="row">{gate}</th>
       <td>{candidate}</td>
-      <td>{formatMatchStatus(answer.match_result)}</td>
+      <td>
+        {formatMatchStatus(answer.match_result)}
+        {answer.needs_recheck === true && (
+          <p className="answer-row__ended">
+            The household's citizenships have changed since this was recorded, so it may need
+            checking again. It applies until you change it.
+          </p>
+        )}
+      </td>
       <td>
         {describePeriod(answer.reference_period)}
         {ended && answer.reference_period != null && (
@@ -148,6 +171,18 @@ function AnswerRow({
         >
           Change {gate} for {candidate}
         </button>
+        {recheck !== null && (
+          <button
+            type="button"
+            className="button"
+            aria-disabled={recheck.held || undefined}
+            onClick={(event) => {
+              if (!recheck.held) recheck.press(event.currentTarget);
+            }}
+          >
+            Re-check {gate} for {candidate}
+          </button>
+        )}
       </td>
     </tr>
   );

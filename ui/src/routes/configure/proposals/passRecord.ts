@@ -99,7 +99,11 @@ function parseProgress(stored: Record<string, unknown>): Progress | undefined {
   const inFlight = stored["inFlight"] === null ? null : parseGate(stored["inFlight"]);
   if (pass === undefined || inFlight === undefined) return undefined;
   const next = pass.gates[pass.tally.asked];
-  if (inFlight !== null && (next?.id !== inFlight.id || next.name !== inFlight.name)) {
+  const isNext =
+    next?.id === inFlight?.id &&
+    next?.name === inFlight?.name &&
+    next?.candidate === inFlight?.candidate;
+  if (inFlight !== null && !isNext) {
     return undefined;
   }
   return { pass, inFlight };
@@ -135,7 +139,10 @@ function parsePass(stored: unknown): Pass | undefined {
   const parsedGates = gates.map(parseGate);
   if (!parsedGates.every((gate) => gate !== undefined)) return undefined;
   if (!holdsTogether(tally, parsedGates.length)) return undefined;
-  return { level, gates: parsedGates, questionsTotal, capEur, ceilingEur, tally };
+  // Absent from a record stored before re-checks existed, which was never one.
+  const recheck = stored["recheck"] ?? false;
+  if (typeof recheck !== "boolean") return undefined;
+  return { level, gates: parsedGates, questionsTotal, capEur, ceilingEur, recheck, tally };
 }
 
 /**
@@ -168,8 +175,10 @@ function parseTally(stored: unknown): PassTally | undefined {
 
 function parseGate(stored: unknown): Gate | undefined {
   if (!isRecord(stored)) return undefined;
-  const { id, name } = stored;
-  return typeof id === "string" && typeof name === "string" ? { id, name } : undefined;
+  const { id, name, candidate } = stored;
+  if (typeof id !== "string" || typeof name !== "string") return undefined;
+  if (candidate === undefined) return { id, name };
+  return typeof candidate === "string" ? { id, name, candidate } : undefined;
 }
 
 /**

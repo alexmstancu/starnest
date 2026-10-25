@@ -90,7 +90,8 @@ export function ProposalsPanel({
   const { end } = pass;
   const { restorePlan } = proposals;
   useEffect(() => {
-    if (end !== null && end.pass.level === levelId && leavesEstimateUnspent(end)) {
+    // A re-check's estimate is the answers area's to offer again, never this panel's.
+    if (end !== null && !end.pass.recheck && end.pass.level === levelId && leavesEstimateUnspent(end)) {
       restorePlan();
     }
   }, [end, levelId, restorePlan]);

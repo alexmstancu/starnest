@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 import { isApiError } from "../../../api/ApiError";
-import { fetchLevels } from "../../../api/endpoints";
+import { fetchLevels, putMatchRuleResult } from "../../../api/endpoints";
 import { mockServer } from "../../../mocks/server";
 import { SelectionProvider } from "../../../shell/SelectionContext";
 import { SessionProvider } from "../../../shell/SessionProvider";
@@ -514,6 +514,29 @@ describe("the last pass's end, kept until it is dismissed", () => {
     );
 
     expect(renderScreen().pass().statusLine).toEqual({ text: UNREADABLE, warning: true });
+  });
+
+  it("keeps a re-check's outcome, naming it as one, across a reload", async () => {
+    await putMatchRuleResult("country.visa_route_exists", "country.portugal", {
+      match_result: "matching",
+      data_source: "manual",
+    });
+    const screen = renderScreen();
+    act(() =>
+      screen.pass().start({
+        ...A_PASS,
+        questionsTotal: 1,
+        ceilingEur: 0.04,
+        recheck: [
+          { id: "country.visa_route_exists", candidate: "country.portugal", name: "A visa route exists for Portugal" },
+        ],
+      }),
+    );
+    await waitFor(() => expect(screen.pass().end?.kind).toBe("finished"));
+
+    expect(screen.reload().pass().statusLine?.text).toBe(
+      "The last re-check at the Country level re-checked every answer: it asked 1 of 1 question and spent €0.04 of at most €0.04.",
+    );
   });
 
   it("forgets an outcome that could not be read once dismissed", () => {

@@ -2,7 +2,12 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
-import type { MatchRuleResult } from "../../../api/endpoints";
+import {
+  putMatchRuleResult,
+  replaceSettings,
+  type MatchRuleResult,
+} from "../../../api/endpoints";
+import { SETTINGS } from "../../../mocks/fixtures";
 import { mockServer } from "../../../mocks/server";
 import { expectHeld } from "../../../testing/keyboard";
 import { renderShell } from "../../../testing/renderShell";
@@ -492,5 +497,217 @@ describe("the citizenships an answer assumed", () => {
     await waitFor(() =>
       expect(row).toHaveTextContent("Recorded for a different citizenship: check it again."),
     );
+  });
+});
+
+/**
+ * PL-153 stage 2. **A person asks again about an answer they recorded**: estimated first, armed
+ * like any pass, run through the screen's one research pass -- one at a time, the same Stop, the
+ * same kept outcome -- and what it finds sits beside the answer, which goes on applying.
+ */
+describe("re-checking a recorded answer", () => {
+  const ENDED = { start: "2025-01-01", end: "2025-12-31" };
+  const VISA = "A visa route exists for Portugal";
+  const UK = "UK Skilled Worker route for United Kingdom";
+
+  /** Two answers a person recorded whose periods have ended: what a re-check is for. */
+  async function twoEndedAnswers(): Promise<void> {
+    for (const [gate, candidate] of [
+      ["country.visa_route_exists", "country.portugal"],
+      ["country.uk_skilled_worker", "country.united_kingdom"],
+    ] as const) {
+      await putMatchRuleResult(gate, candidate, {
+        match_result: "matching",
+        data_source: "manual",
+        reference_period: ENDED,
+      });
+    }
+  }
+
+  function theStrip() {
+    return within(theAnswers().getByRole("group", { name: "Re-check" }));
+  }
+
+  function passLine(): HTMLElement {
+    return within(screen.getByRole("region", { name: "Gate proposals" })).getByRole("status");
+  }
+
+  /** Every body sent to an endpoint, still answered by the mock. */
+  function watchBodies(path: string): unknown[] {
+    const bodies: unknown[] = [];
+    const listen = ({ request }: { request: Request }) => {
+      if (request.method === "POST" && new URL(request.url).pathname === path) {
+        void request.clone().json().then((body: unknown) => bodies.push(body));
+      }
+    };
+    mockServer.events.on("request:start", listen);
+    onTestFinished(() => mockServer.events.removeListener("request:start", listen));
+    return bodies;
+  }
+
+  async function recheck(name: string): Promise<void> {
+    await userEvent.click(await theAnswers().findByRole("button", { name: `Re-check ${name}` }));
+    await theAnswers().findByRole("group", { name: "Re-check" });
+  }
+
+  it("offers a re-check on an answer whose period ended or that needs one, and on no other", async () => {
+    serveAnswers([
+      { ...RECORDED, reference_period: ENDED },
+      {
+        ...RECORDED,
+        match_rule: "country.eu_free_movement",
+        candidate: "country.spain",
+        reference_period: null,
+        needs_recheck: true,
+      },
+      { ...RECORDED, match_rule: "country.visa_route_exists", candidate: "country.portugal" },
+    ]);
+    renderShell("/configure");
+    await settled();
+
+    await theAnswers().findByRole("button", { name: "Re-check UK Skilled Worker route for United Kingdom" });
+    expect(
+      theAnswers().getByRole("button", { name: "Re-check Free movement applies for Spain" }),
+    ).toBeInTheDocument();
+    expect(theAnswers().getByText(/household's citizenships have changed/i)).toBeInTheDocument();
+    expect(theAnswers().queryByRole("button", { name: `Re-check ${VISA}` })).toBeNull();
+  });
+
+  it("estimates a re-check of one answer, re-checks only it, and keeps what it finds beside it", async () => {
+    await twoEndedAnswers();
+    const plans = watchBodies("/v1/match-rule-research/plan");
+    const asked = watchBodies("/v1/match-rule-research");
+    renderShell("/configure");
+    await settled();
+
+    await recheck(VISA);
+    expect(theStrip().getByText(`To re-check ${VISA}: 1 question, 1 call, at most €0.04.`)).toBeInTheDocument();
+    expect(theStrip().getByText("Halts at the €10.00 spend cap.")).toBeInTheDocument();
+    await userEvent.click(theStrip().getByRole("button", { name: "Start the re-check" }));
+
+    await waitFor(() =>
+      expect(passLine()).toHaveTextContent(
+        "The last re-check at the Country level re-checked every answer: it asked 1 of 1 question and spent €0.04 of at most €0.04.",
+      ),
+    );
+    const pair = { match_rule: "country.visa_route_exists", candidate: "country.portugal" };
+    expect(plans).toEqual([{ level: "country", recheck: [pair] }]);
+    expect(asked).toEqual([{ level: "country", recheck: [pair], accept_uncapped_spend: false }]);
+    const pending = await theAnswers().findByRole("row", { name: /Take the proposal for A visa route exists and Portugal/ });
+    expect(pending).toHaveTextContent("A re-check proposes Not matching");
+    expect(theAnswers().getByRole("row", { name: /^A visa route exists Portugal Matching/ })).toBeInTheDocument();
+    expect(theAnswers().queryByRole("group", { name: "Re-check" })).toBeNull();
+  });
+
+  it("puts focus back on the answer's Re-check once the re-check starts", async () => {
+    await twoEndedAnswers();
+    renderShell("/configure");
+    await settled();
+    await recheck(VISA);
+
+    theStrip().getByRole("button", { name: "Start the re-check" }).focus();
+    await userEvent.keyboard("{Enter}");
+
+    expect(theAnswers().getByRole("button", { name: `Re-check ${VISA}` })).toHaveFocus();
+  });
+
+  it("refuses a re-check of an answer nobody recorded, worded from its code, with Try again", async () => {
+    serveAnswers([
+      { ...RECORDED, match_rule: "country.visa_route_exists", candidate: "country.portugal", reference_period: ENDED },
+    ]);
+    renderShell("/configure");
+    await settled();
+
+    await userEvent.click(await theAnswers().findByRole("button", { name: `Re-check ${VISA}` }));
+
+    expect(
+      await theAnswers().findByText(
+        "A re-check asks again only about an answer a person recorded, and an answer it named has none.",
+      ),
+    ).toBeInTheDocument();
+    expect(theAnswers().getByText("The re-check's estimate did not go through")).toBeInTheDocument();
+    expect(theAnswers().getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(theAnswers().queryByText(/country\./)).toBeNull();
+    expect(theAnswers().queryByRole("group", { name: "Re-check" })).toBeNull();
+  });
+
+  it("offers Try again for a failed estimate, and the second arms the re-check", async () => {
+    await twoEndedAnswers();
+    let failing = true;
+    mockServer.use(
+      http.post(`${BASE}/match-rule-research/plan`, () =>
+        failing
+          ? HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 })
+          : undefined,
+      ),
+    );
+    renderShell("/configure");
+    await settled();
+
+    await userEvent.click(await theAnswers().findByRole("button", { name: `Re-check ${VISA}` }));
+    expect(await theAnswers().findByText("The server failed while answering.")).toBeInTheDocument();
+    failing = false;
+    await userEvent.click(theAnswers().getByRole("button", { name: "Try again" }));
+
+    expect(await theAnswers().findByRole("group", { name: "Re-check" })).toBeInTheDocument();
+  });
+
+  it("asks for an uncapped re-check with no cap set, and keeps the estimate when it was refused", async () => {
+    await twoEndedAnswers();
+    await replaceSettings({ ...SETTINGS, run_spend_cap_eur: null });
+    renderShell("/configure");
+    await settled();
+    await recheck(VISA);
+
+    await userEvent.click(theStrip().getByRole("button", { name: "Start the re-check" }));
+
+    await waitFor(() =>
+      expect(passLine()).toHaveTextContent(
+        `The last re-check at the Country level was refused at ${VISA}, which spent nothing`,
+      ),
+    );
+    // The pass's refusal, worded from its code, where the pass is said.
+    expect(
+      within(screen.getByRole("region", { name: "Gate proposals" })).getByText(/no spend cap is set/i),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      await theStrip().findByRole("checkbox", { name: /accept an uncapped spend for this re-check/i }),
+    );
+    await userEvent.click(theStrip().getByRole("button", { name: "Start the re-check" }));
+    await waitFor(() => expect(passLine()).toHaveTextContent(/re-checked every answer/));
+  });
+
+  it("re-checks every answer to look at again, and stops mid-way saying what it spent", async () => {
+    await twoEndedAnswers();
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    onTestFinished(() => release());
+    const asked: unknown[] = [];
+    mockServer.use(
+      http.post(`${BASE}/match-rule-research`, async ({ request }) => {
+        asked.push(await request.clone().json());
+        if (asked.length === 1) await held;
+        return undefined;
+      }),
+    );
+    renderShell("/configure");
+    await settled();
+    await recheck("the 2 answers to look at again");
+    expect(theStrip().getByText(`To re-check 2 answers: 2 questions, 2 calls, at most €0.08.`)).toBeInTheDocument();
+    await userEvent.click(theStrip().getByRole("button", { name: "Start the re-check" }));
+    await waitFor(() => expect(passLine()).toHaveTextContent(`Re-checking ${VISA} at the Country level`));
+    expectHeld(theAnswers().getByRole("button", { name: `Re-check ${UK}` }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Stop after this question" }));
+    release();
+
+    await waitFor(() =>
+      expect(passLine()).toHaveTextContent(
+        "You stopped the last re-check at the Country level: it asked 1 of 2 questions and spent €0.04 of at most €0.08.",
+      ),
+    );
+    expect(asked).toHaveLength(1);
   });
 });

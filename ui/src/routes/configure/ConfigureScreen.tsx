@@ -188,7 +188,7 @@ export function ConfigureScreen({ route }: { route: RouteDefinition }) {
                 levelId={levelId}
                 answersFreshness={answersVersion}
                 onAnswered={noteAnswered}
-                researching={pass.running}
+                pass={pass}
                 form={answerForm}
               />
             )}

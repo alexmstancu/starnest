@@ -524,9 +524,21 @@ export const handlers = [
     HttpResponse.json({ items: matchRuleResults.map(withRecheck) }),
   ),
 
-  http.post(`${BASE}/match-rule-research/plan`, () =>
-    HttpResponse.json(RESEARCH_PLAN),
-  ),
+  http.post(`${BASE}/match-rule-research/plan`, async ({ request }) => {
+    const scope = (await request.json()) as ResearchRequestBody;
+    const refused = refusedRecheck(scope);
+    if (refused) return refused;
+    if (scope.recheck == null) return HttpResponse.json(RESEARCH_PLAN);
+    // A re-check's pairs are its whole scope: one question for each research can answer.
+    const asked = recheckFindings(scope.recheck).length;
+    return HttpResponse.json({
+      ...RESEARCH_PLAN,
+      gates_total: asked,
+      cleared_by_citizenship: 0,
+      llm_call_count: asked,
+      estimated_cost_eur: asked * RESEARCH_CALL_COST_EUR,
+    });
+  }),
 
   /**
    * One research request, answered as the server answers it since UI-01: it asks only a gate
@@ -539,11 +551,10 @@ export const handlers = [
    * nothing out -- and those hold whoever answered.
    */
   http.post(`${BASE}/match-rule-research`, async ({ request }) => {
-    const scope = (await request.json()) as {
-      level: string;
-      match_rules?: string[] | null;
-      accept_uncapped_spend?: boolean;
-    };
+    const scope = (await request.json()) as ResearchRequestBody;
+    const refused = refusedRecheck(scope);
+    if (refused) return refused;
+    if (scope.recheck != null) return recheckAnswers(scope.recheck, scope.accept_uncapped_spend);
     const named =
       scope.match_rules ??
       MATCH_RULES.filter(
@@ -556,21 +567,8 @@ export const handlers = [
           (stored) => isSameAnswer(stored, finding) && stored.is_proposal !== true,
         ),
     );
-    // **Refused before anything is asked**, as the server refuses (`refuse_unless_capped`): a
-    // request that would spend, with no cap set and no acceptance in it.
-    if (
-      asked.length > 0 &&
-      settings.run_spend_cap_eur == null &&
-      scope.accept_uncapped_spend !== true
-    ) {
-      return HttpResponse.json(
-        {
-          code: "spend_cap_not_set",
-          message: "this run would ask a source that charges, and no spend cap is set.",
-        },
-        { status: 409 },
-      );
-    }
+    const uncapped = refusedUncapped(asked.length, scope.accept_uncapped_spend);
+    if (uncapped) return uncapped;
     // A proposal replaces an earlier one for the same gate and candidate, as the store's does.
     matchRuleResults = [
       ...matchRuleResults.filter(
@@ -2071,6 +2069,123 @@ function round(value: number): number {
 }
 
 /** Two answers about the same gate for the same candidate: one row, whoever wrote it. */
+/** A research request or its estimate, as the page sends either. */
+interface ResearchRequestBody {
+  level: string;
+  match_rules?: string[] | null;
+  candidates?: string[] | null;
+  recheck?: { match_rule: string; candidate: string }[] | null;
+  accept_uncapped_spend?: boolean;
+}
+
+/**
+ * A re-check refused as `api/rules.py` refuses it (PL-153, D53), in its order: beside a list of
+ * gates or candidates, or empty, it is not a request the contract accepts; then a pair nobody
+ * recorded an answer to is refused by name, before anything is asked.
+ */
+function refusedRecheck(scope: ResearchRequestBody): Response | undefined {
+  const { recheck } = scope;
+  if (recheck == null) return undefined;
+  if (recheck.length === 0 || scope.match_rules != null || scope.candidates != null) {
+    return HttpResponse.json(
+      {
+        code: "invalid_request",
+        message: "The request does not match what this operation accepts.",
+        details: {
+          errors: [
+            {
+              location: ["body"],
+              problem: "a re-check names its answers, so match_rules and candidates are left out",
+              kind: "value_error",
+            } satisfies FieldProblem,
+          ],
+        },
+      },
+      { status: 422 },
+    );
+  }
+  const unrecorded = recheck.filter(
+    (pair) =>
+      !matchRuleResults.some((stored) => isSameAnswer(stored, pair) && stored.is_proposal !== true),
+  );
+  if (unrecorded.length === 0) return undefined;
+  return HttpResponse.json(
+    {
+      code: "unknown_scope",
+      message: "a re-check asks again only about an answer a person recorded: nothing was asked",
+      details: {
+        recheck: unrecorded.map(({ match_rule, candidate }) => ({ match_rule, candidate })),
+      },
+    },
+    { status: 422 },
+  );
+}
+
+/** What research finds about the pairs a re-check names: one call each, for those it can answer. */
+function recheckFindings(
+  recheck: readonly { match_rule: string; candidate: string }[],
+): MatchRuleResult[] {
+  return RESEARCHED_PROPOSALS.filter((finding) =>
+    recheck.some((pair) => isSameAnswer(finding, pair)),
+  );
+}
+
+/**
+ * **Refused before anything is asked**, as the server refuses (`refuse_unless_capped`): a
+ * request that would spend, with no cap set and no acceptance in it.
+ */
+function refusedUncapped(asking: number, accepted: boolean | undefined): Response | undefined {
+  if (asking === 0 || settings.run_spend_cap_eur != null || accepted === true) return undefined;
+  return HttpResponse.json(
+    {
+      code: "spend_cap_not_set",
+      message: "this run would ask a source that charges, and no spend cap is set.",
+    },
+    { status: 409 },
+  );
+}
+
+/**
+ * A re-check, answered as the server answers it (D53): what it finds is kept **beside** the
+ * person's answer as its pending proposal, never over it, and the answer goes on applying.
+ */
+function recheckAnswers(
+  recheck: readonly { match_rule: string; candidate: string }[],
+  accepted: boolean | undefined,
+): Response {
+  const asked = recheckFindings(recheck);
+  const uncapped = refusedUncapped(asked.length, accepted);
+  if (uncapped) return uncapped;
+  const now = new Date().toISOString();
+  matchRuleResults = matchRuleResults.map((stored) => {
+    const finding = asked.find((each) => isSameAnswer(each, stored));
+    if (finding === undefined || stored.is_proposal === true) return stored;
+    return {
+      ...stored,
+      pending_proposal: {
+        match_result: finding.match_result,
+        reason: finding.reason ?? null,
+        data_source: finding.data_source,
+        reference_period: finding.reference_period ?? null,
+        retrieval_date: now,
+        recorded_at: now,
+        citations: finding.citations ?? [],
+      },
+    };
+  });
+  researchSpend = [
+    ...researchSpend,
+    ...asked.map(() => ({ researched_at: now, cost_eur: RESEARCH_CALL_COST_EUR })),
+  ];
+  return HttpResponse.json({
+    proposals: asked,
+    refusals: [],
+    cost_eur: asked.length * RESEARCH_CALL_COST_EUR,
+    calls: asked.length,
+    halted_on_spend_cap: false,
+  });
+}
+
 function isSameAnswer(
   one: Pick<MatchRuleResult, "match_rule" | "candidate">,
   other: Pick<MatchRuleResult, "match_rule" | "candidate">,

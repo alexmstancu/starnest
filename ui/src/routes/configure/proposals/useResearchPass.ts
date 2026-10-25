@@ -3,6 +3,7 @@ import {
   fetchMatchRules,
   fetchSettings,
   researchMatchRules,
+  type ResearchScope,
 } from "../../../api/endpoints";
 import { useSessionState } from "../../../shell/SessionProvider";
 import { type Outcome, type PassRecord, parsePassRecord, storedFormOf } from "./passRecord";
@@ -21,6 +22,7 @@ import {
   nextStep,
   withAnswer,
   type Asking,
+  type Gate,
   type Pass,
   type PassEnd,
   type Progress,
@@ -59,6 +61,11 @@ export interface PassRequest {
   acceptUncapped: boolean;
   /** The estimate's ceiling, which the spend is read beside. */
   ceilingEur: number;
+  /**
+   * Answers a person recorded, to ask again (PL-153): each a gate with its candidate, named for
+   * the screen. Given, they are the pass's whole scope, asked one per request.
+   */
+  recheck?: readonly Gate[];
 }
 
 export interface ResearchPass {
@@ -259,16 +266,19 @@ async function askEachGate(
 ): Promise<PassEnd> {
   let pass: Pass;
   try {
-    const [settings, rules] = await Promise.all([
+    const { recheck } = request;
+    const [settings, gates] = await Promise.all([
       fetchSettings({ signal }),
-      fetchMatchRules(request.level, { signal }),
+      // A re-check names its own answers; a pass asks every gate at the level.
+      recheck ?? fetchMatchRules(request.level, { signal }).then((rules) => rules.items),
     ]);
     pass = beginPass({
       level: request.level,
-      gates: rules.items,
+      gates,
       questionsTotal: request.questionsTotal,
       capEur: settings.run_spend_cap_eur ?? null,
       ceilingEur: request.ceilingEur,
+      recheck: recheck !== undefined,
     });
   } catch (failure) {
     signal.throwIfAborted();
@@ -287,7 +297,7 @@ async function askEachGate(
       const answer = await researchMatchRules(
         {
           level: request.level,
-          match_rules: [step.ask.id],
+          ...scopeOf(step.ask),
           accept_uncapped_spend: request.acceptUncapped,
         },
         { signal },
@@ -299,4 +309,11 @@ async function askEachGate(
       return failedOn(pass, failure);
     }
   }
+}
+
+/** One request's scope: the gate, or -- for a re-check -- the one answer, gate and candidate. */
+function scopeOf(item: Gate): Pick<ResearchScope, "match_rules" | "recheck"> {
+  return item.candidate === undefined
+    ? { match_rules: [item.id] }
+    : { recheck: [{ match_rule: item.id, candidate: item.candidate }] };
 }

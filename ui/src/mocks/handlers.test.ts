@@ -14,6 +14,7 @@ import {
   fetchRanking,
   fetchRun,
   planRetry,
+  planMatchRuleResearch,
   planRun,
   putMatchRuleResult,
   renameCriteriaSet,
@@ -1174,5 +1175,103 @@ describe("the mock's gate answer", () => {
     });
 
     expect(stored.is_proposal).toBe(true);
+  });
+});
+
+/**
+ * PL-153 stage 2. **A re-check is refused and stored as the server refuses and stores it**: the
+ * pairs it names are its whole scope, a pair nobody answered is refused by name, and what it
+ * finds sits beside the person's answer, never over it.
+ */
+describe("the mock's re-check of recorded answers", () => {
+  const VISA_FOR_PORTUGAL = { match_rule: "country.visa_route_exists", candidate: "country.portugal" };
+
+  async function aPersonAnswered(): Promise<void> {
+    await putMatchRuleResult(VISA_FOR_PORTUGAL.match_rule, VISA_FOR_PORTUGAL.candidate, {
+      match_result: "matching",
+      data_source: "manual",
+      reason: "Read the consulate's page.",
+    });
+  }
+
+  async function refusalOf(ask: () => Promise<unknown>): Promise<ApiError> {
+    return (await ask().catch((thrown: unknown) => thrown)) as ApiError;
+  }
+
+  it("estimates only the pairs it names", async () => {
+    await aPersonAnswered();
+
+    const plan = await planMatchRuleResearch({ level: "country", recheck: [VISA_FOR_PORTUGAL] });
+
+    expect([plan.gates_total, plan.llm_call_count, plan.estimated_cost_eur]).toEqual([
+      1, 1, RESEARCH_CALL_COST_EUR,
+    ]);
+  });
+
+  it("keeps what it finds beside the person's answer, which still applies", async () => {
+    await aPersonAnswered();
+
+    const outcome = await researchMatchRules({ level: "country", recheck: [VISA_FOR_PORTUGAL] });
+    const stored = (await fetchMatchRuleResults()).items.find(
+      (answer) => answer.candidate === VISA_FOR_PORTUGAL.candidate,
+    );
+
+    expect([outcome.calls, outcome.cost_eur]).toEqual([1, RESEARCH_CALL_COST_EUR]);
+    expect(stored).toMatchObject({ match_result: "matching", data_source: "manual", is_proposal: false });
+    expect(stored?.pending_proposal).toMatchObject({ match_result: "not_matching", data_source: "llm" });
+  });
+
+  it.each([
+    ["the estimate", () => planMatchRuleResearch({ level: "country", recheck: [VISA_FOR_PORTUGAL] })],
+    ["the pass", () => researchMatchRules({ level: "country", recheck: [VISA_FOR_PORTUGAL] })],
+  ])("refuses %s for a pair nobody answered with 422 unknown_scope, naming it", async (_act, ask) => {
+    const error = await refusalOf(ask);
+
+    expect([error.status, error.code, error.details]).toEqual([
+      422,
+      "unknown_scope",
+      { recheck: [VISA_FOR_PORTUGAL] },
+    ]);
+  });
+
+  it("refuses a re-check beside a list of gates with 422 invalid_request", async () => {
+    await aPersonAnswered();
+
+    const error = await refusalOf(() =>
+      researchMatchRules({
+        level: "country",
+        recheck: [VISA_FOR_PORTUGAL],
+        match_rules: ["country.visa_route_exists"],
+      }),
+    );
+
+    expect([error.status, error.code]).toEqual([422, "invalid_request"]);
+  });
+
+  it("refuses a re-check that would spend with no cap set, and stores nothing", async () => {
+    await aPersonAnswered();
+    await replaceSettings({ ...SETTINGS, run_spend_cap_eur: null });
+
+    const error = await refusalOf(() =>
+      researchMatchRules({ level: "country", recheck: [VISA_FOR_PORTUGAL] }),
+    );
+    const stored = (await fetchMatchRuleResults()).items.find(
+      (answer) => answer.candidate === VISA_FOR_PORTUGAL.candidate,
+    );
+
+    expect([error.status, error.code]).toEqual([409, "spend_cap_not_set"]);
+    expect(stored?.pending_proposal ?? null).toBeNull();
+  });
+
+  it("is pending no longer once the person records again", async () => {
+    await aPersonAnswered();
+    await researchMatchRules({ level: "country", recheck: [VISA_FOR_PORTUGAL] });
+
+    await aPersonAnswered();
+    const stored = (await fetchMatchRuleResults()).items.find(
+      (answer) => answer.candidate === VISA_FOR_PORTUGAL.candidate,
+    );
+
+    expect(stored?.pending_proposal ?? null).toBeNull();
   });
 });

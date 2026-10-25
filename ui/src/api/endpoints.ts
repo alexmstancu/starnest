@@ -633,6 +633,8 @@ export type ResearchPlan = components["schemas"]["ResearchPlan"];
 export interface ResearchScope {
   level: string;
   match_rules?: string[] | null;
+  /** Answers a person recorded, to ask again: given, the whole scope (PL-153, D53). */
+  recheck?: components["schemas"]["RecheckScope"];
 }
 
 /**

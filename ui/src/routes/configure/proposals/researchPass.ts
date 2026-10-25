@@ -19,7 +19,13 @@ import type { MatchRule } from "../../../api/endpoints";
 import { formatIdentifier, formatMoney } from "../../../format/display";
 
 /** A gate as a pass asks it: its id goes in the request, its name on the screen. */
-export type Gate = Pick<MatchRule, "id" | "name">;
+export type Gate = Pick<MatchRule, "id" | "name"> & {
+  /**
+   * A re-check's answer is one gate about one candidate (PL-153): the candidate's id goes in the
+   * request with the gate's, and `name` says both -- "A visa route exists for Portugal".
+   */
+  candidate?: string;
+};
 
 /** What one research request answers with about itself. */
 export interface ResearchAnswer {
@@ -66,6 +72,11 @@ export interface Pass {
   capEur: number | null;
   /** The estimate's ceiling, which the spend is read beside: "at most" this. */
   ceilingEur: number;
+  /**
+   * A re-check of answers a person recorded (PL-153), said as one in every sentence: its items
+   * are answers, each a gate about a candidate, never a sweep of the level's gates.
+   */
+  recheck: boolean;
   tally: PassTally;
 }
 
@@ -106,8 +117,9 @@ export function beginPass(scope: {
   questionsTotal: number;
   capEur: number | null;
   ceilingEur: number;
+  recheck?: boolean;
 }): Pass {
-  return { ...scope, tally: NOTHING_YET };
+  return { ...scope, recheck: scope.recheck ?? false, tally: NOTHING_YET };
 }
 
 /**
@@ -219,7 +231,7 @@ export function describeProgress({ pass, gate }: Asking, stopAsked: boolean): st
   const at = atLevel(pass);
   const doing = stopAsked
     ? `Stopping once ${gate.name} is answered ${at}`
-    : `Asking ${gate.name} ${at}`;
+    : `${pass.recheck ? "Re-checking" : "Asking"} ${gate.name} ${at}`;
   return (
     `${doing}. So far ${questionsOf(pass)}, ` +
     `${euros(spentEur(pass.tally))} spent of at most ${euros(pass.ceilingEur)}.`
@@ -237,12 +249,14 @@ export function describeEnd(
   which: "last" | "earlier" = "last",
 ): string {
   const { pass } = end;
-  const subject = which === "last" ? "the last pass" : "the pass before it";
+  const noun = pass.recheck ? "re-check" : "pass";
+  const subject = which === "last" ? `the last ${noun}` : `the ${noun} before it`;
   const the = `${subject.charAt(0).toUpperCase()}${subject.slice(1)} ${atLevel(pass)}`;
   const did = whatItDid(pass);
   const atGate = pass.gates[pass.tally.asked]?.name ?? "its last gate";
   switch (end.kind) {
     case "finished":
+      if (pass.recheck) return `${the} re-checked every answer: it ${did}.`;
       return pass.gates.length === 0
         ? `${the} found no gate to ask, so it made no calls and spent nothing.`
         : `${the} asked every gate: it ${did}.`;
@@ -255,7 +269,7 @@ export function describeEnd(
     case "failed":
       return (
         `${the} failed at ${atGate}, and what that request spent is not known: ` +
-        `before it, the pass ${did}.`
+        `before it, the ${noun} ${did}.`
       );
     case "unread":
       return (
@@ -266,7 +280,7 @@ export function describeEnd(
       return end.inFlight === null
         ? `${the} ended when you left Configure: it ${did}.`
         : `${the} ended when you left Configure while ${end.inFlight.name} was being ` +
-            `asked, and what that question spent is not known: before it, the pass ${did}.`;
+            `asked, and what that question spent is not known: before it, the ${noun} ${did}.`;
   }
 }
 

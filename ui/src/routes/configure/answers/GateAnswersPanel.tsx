@@ -1,4 +1,4 @@
-import { type Ref, useImperativeHandle, useRef } from "react";
+import { type Ref, useEffect, useImperativeHandle, useRef } from "react";
 import type { MatchRuleResult } from "../../../api/endpoints";
 import { useCandidateNames } from "../../../api/useCandidateNames";
 import { useMatchRuleNames } from "../../../api/useMatchRuleNames";
@@ -6,6 +6,11 @@ import { candidateName, formatMatchStatus, matchRuleName } from "../../../format
 import { ActRefusal } from "../../../shell/ActRefusal";
 import { LoadedRegion } from "../../../shell/LoadedRegion";
 import { dayOf, inReadingOrder } from "../gateAnswerReading";
+import { leavesEstimateUnspent } from "../proposals/researchPass";
+import type { ResearchPass } from "../proposals/useResearchPass";
+import { isWorthRechecking, recheckItem } from "./recheck";
+import { RecheckStrip } from "./RecheckStrip";
+import { useRecheck } from "./useRecheck";
 import { draftAnsweringOtherwise, draftFrom, draftFromProposal } from "./gateAnswerForm";
 import { GateAnswerFormPanel } from "./GateAnswerFormPanel";
 import { RecordedAnswersTable } from "./RecordedAnswersTable";
@@ -30,14 +35,17 @@ export function GateAnswersPanel({
   levelId,
   answersFreshness,
   onAnswered,
-  researching,
+  pass,
   form,
 }: {
   levelId: string;
   answersFreshness: number;
   onAnswered: () => void;
-  /** A research pass is asking: Save waits for it. */
-  researching: boolean;
+  /**
+   * The screen's one research pass: Save waits while it asks, and a re-check runs through it,
+   * with its Stop, its progress and its kept outcome (PL-153 stage 2).
+   */
+  pass: ResearchPass;
   /** Lets the proposals open this form on a pair (PL-153), as Change and Take the proposal do. */
   form?: Ref<AnswerForm>;
 }) {
@@ -59,6 +67,28 @@ export function GateAnswersPanel({
     answerOtherwise: (proposal) => fill(draftAnsweringOtherwise(proposal)),
   }));
   const tableHeld = answers.saving || answers.stale;
+  const researching = pass.running;
+
+  // **A re-check asks again about answers a person recorded** (PL-153 stage 2): estimated here,
+  // run as the screen's pass. Focus goes back to the Re-check that opened it when its strip goes.
+  const recheck = useRecheck();
+  const opener = useRef<HTMLElement | null>(null);
+  const recordedHeading = useRef<HTMLHeadingElement>(null);
+  const askRecheck = (worth: readonly MatchRuleResult[], button: HTMLElement) => {
+    opener.current = button;
+    recheck.ask(levelId, worth.map((answer) => recheckItem(answer, names(answer))));
+  };
+  const handFocusBack = () => {
+    if (opener.current?.isConnected) opener.current.focus();
+    else recordedHeading.current?.focus();
+  };
+  const { end } = pass;
+  const { restore } = recheck;
+  useEffect(() => {
+    if (end !== null && end.pass.recheck && leavesEstimateUnspent(end)) restore();
+  }, [end, restore]);
+  const recheckHeld = tableHeld || researching || recheck.estimating;
+  const worthRechecking = answers.recorded.filter((answer) => isWorthRechecking(answer, today));
 
   return (
     <section className="panel" aria-labelledby="gate-answers-heading">
@@ -86,7 +116,33 @@ export function GateAnswersPanel({
           `Recorded ${formatMatchStatus(answers.saved.match_result)} for ${names(answers.saved).join(" and ")}.`}
       </p>
 
-      <h4 className="gate-answers__heading">Recorded answers</h4>
+      <h4 ref={recordedHeading} className="gate-answers__heading" tabIndex={-1}>
+        Recorded answers
+      </h4>
+      <ActRefusal act="The re-check's estimate" error={recheck.failure} onResend={recheck.resend ?? undefined} />
+      {recheck.estimate !== null && (
+        <RecheckStrip
+          estimate={recheck.estimate}
+          held={researching}
+          onStart={(acceptUncapped) => {
+            const { estimate } = recheck;
+            if (estimate === null) return;
+            handFocusBack();
+            recheck.forget();
+            pass.start({
+              level: levelId,
+              questionsTotal: estimate.plan.gates_total,
+              acceptUncapped,
+              ceilingEur: estimate.plan.estimated_cost_eur,
+              recheck: estimate.items,
+            });
+          }}
+          onNotYet={() => {
+            handFocusBack();
+            recheck.forget();
+          }}
+        />
+      )}
       <LoadedRegion
         read={answers.read}
         what="The gate answers"
@@ -95,6 +151,21 @@ export function GateAnswersPanel({
         prominence="region"
       >
         {() => (
+          <>
+          {worthRechecking.length > 1 && (
+            <div className="rule-form__actions">
+              <button
+                type="button"
+                className="button"
+                aria-disabled={recheckHeld || undefined}
+                onClick={(event) => {
+                  if (!recheckHeld) askRecheck(worthRechecking, event.currentTarget);
+                }}
+              >
+                Re-check the {worthRechecking.length} answers to look at again
+              </button>
+            </div>
+          )}
           <RecordedAnswersTable
             recorded={inReadingOrder(answers.recorded, today, names)}
             names={names}
@@ -104,7 +175,10 @@ export function GateAnswersPanel({
             held={tableHeld}
             onChange={(answer) => fill(draftFrom(answer))}
             onTake={(answer, proposal) => fill(draftFromProposal(answer, proposal))}
+            recheckHeld={recheckHeld}
+            onRecheck={(answer, button) => askRecheck([answer], button)}
           />
+          </>
         )}
       </LoadedRegion>
     </section>
