@@ -660,6 +660,18 @@ describe("what decides that a figure did not move", () => {
     expect(row?.later).toBe("1000 CHF (1061.2349 EUR)");
   });
 
+  it("a refreshed row's two figures differ when only the label boundaries moved", () => {
+    const employers = { ...pair, attribute: "country.international_employers" };
+    const diff = compareAll(
+      [{ ...employers, payload: { labels: ["Booking Holdings, Inc."] } }],
+      [{ ...employers, payload: { labels: ["Booking Holdings", "Inc."] } }],
+    );
+    const [row] = diff.rows;
+
+    expect(diff.refreshed).toBe(1);
+    expect(row?.earlier).not.toBe(row?.later);
+  });
+
   /**
    * NEW-39. **An assigned score can change in its rationale alone**, and its number, range and
    * assigner then read the same on both sides of a row that says it moved.

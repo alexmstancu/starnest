@@ -322,6 +322,32 @@ describe("a figure exactly as stored", () => {
       }),
     ).toBe("7.13 on 0–10 (assigned by human)");
   });
+
+  /**
+   * PL-090 (NEW-59). **A label may hold a comma** ("Booking Holdings, Inc."), so joining with
+   * ", " makes one label and two read the same. Exactly, each label is quoted.
+   */
+  it.each([
+    [{ labels: ["Booking Holdings, Inc."] }, { labels: ["Booking Holdings", "Inc."] }],
+    [
+      { shares: [{ label: "Dutch, Flemish", share: 60 }] },
+      { shares: [{ label: "Dutch", share: 60 }, { label: "Flemish", share: 60 }] },
+    ],
+  ])("in exact mode a label holding a comma reads as one label: %o", (one, two) => {
+    const exactly = (payload: object) => describeFigure({ payload }, { exact: true });
+    expect(exactly(one)).not.toBe(exactly(two));
+  });
+
+  it("quotes each label exactly, and leaves the readable line as it was", () => {
+    const payload = { labels: ["Booking Holdings, Inc.", "SAP"] };
+    expect(describeFigure({ payload }, { exact: true })).toBe(
+      '"Booking Holdings, Inc.", "SAP"',
+    );
+    expect(describeFigure({ payload })).toBe("Booking Holdings, Inc., SAP");
+    expect(
+      describeFigure({ payload: { shares: [{ label: "Dutch, Flemish", share: 60 }] } }, { exact: true }),
+    ).toBe('"Dutch, Flemish" 60%');
+  });
 });
 
 /**

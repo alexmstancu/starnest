@@ -149,11 +149,14 @@ export function describeFigure(
       ? `${digits(payload["count"])} per ${formatIdentifier(basis)}`
       : digits(payload["count"]);
   }
-  if ("labels" in payload) return (payload["labels"] as string[]).join(", ");
+  // **Exactly, each label is quoted** (PL-090): a label may hold a comma, so joined bare,
+  // "Booking Holdings, Inc." and the two labels "Booking Holdings" and "Inc." read the same.
+  const label = options.exact === true ? (text: string) => JSON.stringify(text) : String;
+  if ("labels" in payload) return (payload["labels"] as string[]).map(label).join(", ");
   if ("body" in payload) return String(payload["body"]);
   if ("shares" in payload)
     return (payload["shares"] as { label: string; share: number }[])
-      .map((share) => `${share.label} ${share.share}%`)
+      .map((share) => `${label(share.label)} ${share.share}%`)
       .join(", ");
   // The one mark for an absent figure, shared with every other formatter rather than written
   // out again here -- two spellings of "nothing" is one too many.
