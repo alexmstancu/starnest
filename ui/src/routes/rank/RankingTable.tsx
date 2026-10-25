@@ -735,10 +735,9 @@ function ConfidenceBar({
  * read as "scored badly", and a bare dash reads as a rendered value that failed to arrive --
  * both of them claims the application cannot support (`reqs.md` 5.3).
  *
- * It says nothing about *why* the score is absent: the two causes are a coverage floor and a
- * `blocks_if_missing` criterion (`reqs.md` 5.3), and the ranking response does not say which.
- * The match status column reports what is known; guessing the cause would be the same fault
- * in prose that a fabricated number would be in figures.
+ * It says nothing about *why* the score is absent -- a coverage floor or a `blocks_if_missing`
+ * criterion (`reqs.md` 5.3) -- because the reasons cell beside it does, from the result's own
+ * `insufficient_reason`; saying it twice would only give the two a chance to disagree.
  */
 function ScoreCell({ result }: { result: CandidateResult }) {
   if (result.score === null || result.score === undefined) {

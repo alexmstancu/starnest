@@ -39,8 +39,8 @@ describe("the route table", () => {
     expect(ROUTES.map((route) => route.path)).toContain(DEFAULT_ROUTE);
   });
 
-  it("gives every route a label and a summary, and no path twice", () => {
-    expect(ROUTES.every((route) => route.label && route.summary)).toBe(true);
+  it("gives every route a label, and no path twice", () => {
+    expect(ROUTES.every((route) => route.label)).toBe(true);
     expect(new Set(ROUTES.map((route) => route.path)).size).toBe(ROUTES.length);
   });
 });

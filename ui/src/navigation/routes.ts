@@ -9,8 +9,6 @@
 export interface RouteDefinition {
   path: string;
   label: string;
-  /** Shown under the heading until P6 replaces the placeholder with the real screen. */
-  summary: string;
 }
 
 // **No type annotation, deliberately.** An annotation on a `const` wins over the `as const`
@@ -22,26 +20,18 @@ export const ROUTES = [
   {
     path: "/configure",
     label: "Configure",
-    summary:
-      "Criteria and weights, criteria sets, matching thresholds and match rules, source priority, candidates, household and settings.",
   },
   {
     path: "/acquire",
     label: "Acquire",
-    summary:
-      "Scope selector, dry-run estimate, spend cap, live progress, failures with one-click retry, and run history.",
   },
   {
     path: "/rank",
     label: "Rank",
-    summary:
-      "The ranking table, the non-matching section, attribute drill-down, candidate detail with full provenance, and external scores.",
   },
   {
     path: "/compare",
     label: "Compare",
-    summary:
-      "One focus candidate against its comparators: aggregate deltas, the per-attribute table with weighted contributions, and the templated synthesis.",
   },
 ] as const satisfies readonly RouteDefinition[];
 

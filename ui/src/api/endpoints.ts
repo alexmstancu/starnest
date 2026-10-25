@@ -29,8 +29,6 @@ export type Settings = components["schemas"]["Settings"];
 export type CriteriaSet = components["schemas"]["CriteriaSet"];
 export type Criterion = components["schemas"]["Criterion"];
 export type EvaluationSummary = components["schemas"]["EvaluationSummary"];
-export type EvaluationCriterion =
-  components["schemas"]["EvaluationCriterion"];
 export type CandidateScoreDetail =
   components["schemas"]["CandidateScoreDetail"];
 
@@ -850,23 +848,12 @@ export function fetchEvaluation(
   });
 }
 
-/** The criteria as they were when this was saved -- a full copy, never a reference. */
 /** Discard a saved ranking with everything frozen with it (D47). 404 when nobody kept it. */
 export function deleteEvaluation(
   evaluationId: number,
   options?: RequestOptions,
 ): Promise<void> {
   return deleteResource("/evaluations/{evaluationId}", {
-    ...options,
-    pathParams: { evaluationId },
-  });
-}
-
-export function fetchEvaluationCriteria(
-  evaluationId: number,
-  options?: RequestOptions,
-): Promise<{ criteria: EvaluationCriterion[] }> {
-  return getJson("/evaluations/{evaluationId}/criteria", undefined, {
     ...options,
     pathParams: { evaluationId },
   });

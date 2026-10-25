@@ -423,6 +423,7 @@ describe("every class the markup uses is styled", () => {
     "matrix__cell--focus": "C07",
     "matrix__cell--compact": "C07",
     "lock-icon": "C08 (PL-109): sized by its attributes, a hook with no rule yet",
+    "pillar-card__fill": "C05 (PL-062): a hook; its colour is the rect's fill attribute, a datum",
   };
 
   const STRING = /"([^"\n]*)"|'([^'\n]*)'|`([^`]*)`/g;

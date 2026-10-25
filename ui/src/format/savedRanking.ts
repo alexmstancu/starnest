@@ -1,4 +1,4 @@
-import { criteriaSetName, formatDate, formatDateTime, formatIdentifier } from "./display";
+import { criteriaSetName, formatDate, formatIdentifier } from "./display";
 
 /**
  * The wording and the ordering behind a saved ranking, wherever one is listed.
@@ -52,18 +52,6 @@ export function describeSaved(saved: SavedRankingLike, sets: SetNames): string {
   return note === undefined || note === ""
     ? `${criteriaSetName(sets, saved.criteria_set)}, ${formatIdentifier(saved.level)}`
     : note;
-}
-
-/**
- * The second line: always the full provenance, whether or not a note took the first.
- *
- * **A phrase, not a list of facts strung together.** The separator this used to lean on is
- * barred outright (`CLAUDE.md`), and the fix that matters is not a different character -- it
- * is saying the thing in words, which reads as a sentence and needs no separator at all.
- */
-export function detailOf(saved: SavedRankingLike, sets: SetNames): string {
-  const level = formatIdentifier(saved.level).toLowerCase();
-  return `${criteriaSetName(sets, saved.criteria_set)} at ${level} level, saved ${formatDateTime(saved.computed_at)}`;
 }
 
 /**

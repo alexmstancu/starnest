@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   describeSaved,
-  detailOf,
   newestFirst,
   requestedSavedRanking,
   ledOn,
@@ -81,14 +80,6 @@ describe("the saved rankings list", () => {
     expect(describeSaved(saved({ note: "   " }), SETS)).toBe(
       "Working locally, Country",
     );
-  });
-
-  it("states the provenance in words, with no separator character", () => {
-    const detail = detailOf(saved(), SETS);
-    expect(detail).toContain("Working locally at country level");
-    expect(detail).not.toContain("local_employment");
-    expect(detail).toMatch(/saved /);
-    expect(detail).not.toContain("·");
   });
 
   /**

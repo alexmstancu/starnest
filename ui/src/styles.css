@@ -138,7 +138,6 @@
 
   /* Layout */
   --sidebar-width: 16.375rem;
-  --content-max-width: 64rem;
 }
 
 * {
@@ -3385,19 +3384,6 @@ select.field__control {
   border-radius: 2px;
   background: var(--colour-border);
   overflow: hidden;
-}
-
-.pillar-card__fill--good,
-.pillar-card__fill--fair {
-  fill: #5eead4;
-}
-
-.pillar-card__fill--weak {
-  fill: #fdb022;
-}
-
-.pillar-card__fill--none {
-  fill: transparent;
 }
 
 .pillar-card__foot {

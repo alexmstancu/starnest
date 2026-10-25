@@ -275,9 +275,17 @@ async function setWeight(
 
   // **Letting go is the save.** The weight is a slider, as the design draws it, and it commits
   // when the pointer comes up -- there is no Save beside it.
+  const stored = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PATCH" &&
+      /\/criteria-sets\/[^/]+\/criteria\//.test(new URL(response.url()).pathname),
+  );
   await input.fill(weight);
   await input.dispatchEvent("pointerup");
-  // The server's answer, not ours: the row shows what came back from the PUT.
+  // **The server's answer to the PATCH, waited for** (E2E-1): callers navigate away straight after,
+  // and a page left before the write answered would leave it unsaved or half-shown. Then the row,
+  // which shows what came back rather than what was dragged.
+  expect((await stored).ok()).toBe(true);
   await expect(input).toHaveValue(weight);
 }
 
