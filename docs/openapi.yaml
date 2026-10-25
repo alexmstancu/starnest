@@ -1763,7 +1763,8 @@ components:
             required: [input_value, score]
             properties:
               input_value: { type: number }
-              score: { type: integer }
+              # The ceiling is the live score_scale_max, a setting, so only the floor is stated.
+              score: { type: integer, minimum: 0 }
               label: { type: [string, "null"], description: "e.g. affordable, stretching" }
         matching_threshold:
           description: Shape depends on the attribute's value type. Null clears it.

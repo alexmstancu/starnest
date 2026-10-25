@@ -90,14 +90,8 @@ describe("a numeric field's bounds, against the contract", () => {
       );
     });
 
-    /**
-     * **A known gap, said rather than skipped.** The server refuses a score below zero
-     * (`ScaleAnchor.score`, `ge=0`) and the contract does not yet state it, so the screen holds
-     * the server's floor. When the contract gains `minimum: 0` this fails, and the exception goes.
-     */
-    it("an anchor's score: whole, with the server's floor the contract does not yet state", () => {
-      expect(screenBounds(rules.anchorScore)).toEqual({ minimum: 0, whole: true });
-      expect(contractBounds(anchor["score"])).toEqual({ whole: true });
+    it("an anchor's score: whole, with the floor the server enforces", () => {
+      expect(screenBounds(rules.anchorScore)).toEqual(contractBounds(anchor["score"]));
     });
   });
 });
