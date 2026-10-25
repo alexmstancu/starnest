@@ -5,6 +5,7 @@ How the URL carries every spelling of a password is proved by running make, in
 """
 
 import importlib.util
+import socket
 from pathlib import Path
 from types import ModuleType
 
@@ -117,6 +118,53 @@ def test_the_suite_replaces_the_script_with_npm_in_the_interface(
     assert (program, arguments) == ("npm", ["npm", "run", "e2e", "--", "e2e/sanity.spec.ts"])
     assert environment["E2E_DATABASE_URL"].endswith("/appdb_e2e")
     assert Path.cwd() == env_file.parent / "ui"
+
+
+def a_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+def test_the_suite_refuses_a_port_something_else_already_serves(
+    env_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A server left over from an earlier run answered on the suite's port, so Playwright ran
+    the new interface against an old backend and every run passed against code it never
+    started. The suite refuses instead, naming the port."""
+    monkeypatch.setattr(e2e_copy, "ROOT", env_file.parent)
+    monkeypatch.setattr(e2e_copy.os, "execvpe", lambda *_: pytest.fail("npm was started"))
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as squatter:
+        squatter.bind(("127.0.0.1", 0))
+        squatter.listen()
+        taken = squatter.getsockname()[1]
+        monkeypatch.setenv("E2E_BACKEND_PORT", str(taken))
+        monkeypatch.setenv("E2E_UI_PORT", str(a_free_port()))
+
+        with pytest.raises(SystemExit, match=f"127.0.0.1:{taken}"):
+            e2e_copy.main(["suite", "appdb_e2e"])
+
+
+def test_the_suite_starts_when_both_ports_are_free(
+    env_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(e2e_copy, "ROOT", env_file.parent)
+    (env_file.parent / "ui").mkdir()
+    monkeypatch.chdir(env_file.parent)
+    monkeypatch.setenv("E2E_BACKEND_PORT", str(a_free_port()))
+    monkeypatch.setenv("E2E_UI_PORT", str(a_free_port()))
+    started: list[str] = []
+
+    def replace_the_process(program: str, *_: object) -> None:
+        started.append(program)
+        raise SystemExit(0)
+
+    monkeypatch.setattr(e2e_copy.os, "execvpe", replace_the_process)
+
+    with pytest.raises(SystemExit):
+        e2e_copy.main(["suite", "appdb_e2e"])
+
+    assert started == ["npm"]
 
 
 def test_the_migration_is_handed_to_yoyo_in_process(

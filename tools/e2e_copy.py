@@ -14,6 +14,7 @@ line, and no message here names it.
 
 import os
 import re
+import socket
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -73,6 +74,27 @@ def suite_environment(
     return {**environ, "E2E_DATABASE_URL": copy_url(name, env_file, environ)}
 
 
+def refuse_unless_the_ports_are_free(environ: Mapping[str, str] = os.environ) -> None:
+    """Refuse when a suite port already answers: a server left there by an earlier run would
+    answer Playwright in place of the one this run starts, and the new interface would be tested
+    against old code while every test passed."""
+    for key in ("E2E_BACKEND_PORT", "E2E_UI_PORT"):
+        port = environ.get(key, "")
+        if not port.isdigit():
+            continue
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            # As the servers bind: a port in TIME_WAIT is free, one that listens is not.
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                probe.bind(("127.0.0.1", int(port)))
+            except OSError:
+                raise SystemExit(
+                    f"e2e: something already listens on 127.0.0.1:{port} ({key}), probably a "
+                    "server left by an earlier run -- stop it "
+                    f"(lsof -nP -iTCP:{port} -sTCP:LISTEN) and run again"
+                ) from None
+
+
 def main(arguments: list[str]) -> int:
     if len(arguments) < 2 or arguments[0] not in COMMANDS:
         raise SystemExit(USAGE)
@@ -81,6 +103,7 @@ def main(arguments: list[str]) -> int:
         if suite_arguments:
             raise SystemExit(USAGE)
         return migrate(name)
+    refuse_unless_the_ports_are_free()
     environment = suite_environment(name)
     os.chdir(ROOT / "ui")
     # npm takes this process's place, so no Python stands between the terminal and Playwright.
