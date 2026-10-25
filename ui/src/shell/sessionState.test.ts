@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SLICES_KEY, readSlices, readTabSelection, writeSelection, writeSlices } from "./sessionState";
+import {
+  SLICES_KEY,
+  readLastUsedSelection,
+  readSlices,
+  readTabSelection,
+  writeSelection,
+  writeSlices,
+} from "./sessionState";
 
 describe("the session's storage", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -28,6 +35,17 @@ describe("the session's storage", () => {
     );
 
     expect(readSlices()).toEqual({ kept: { value: 1, level: null } });
+  });
+
+  it("opens a new tab on a selection only when it was chosen, never when it was restored", () => {
+    writeSelection({ criteriaSet: { id: "default", name: "Default" }, levelId: "country" }, { lastUsed: true });
+    writeSelection(
+      { criteriaSet: { id: "remote_only", name: "Remote only" }, levelId: "country" },
+      { lastUsed: false },
+    );
+
+    expect(readTabSelection()?.criteriaSet?.id).toBe("remote_only");
+    expect(readLastUsedSelection()?.criteriaSet?.id).toBe("default");
   });
 
   it("lives in memory only when storage is unavailable, and never throws", () => {
