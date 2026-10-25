@@ -639,6 +639,21 @@ SELECT r.match_rule,
               AND  citation.candidate = r.candidate),
            '[]'::jsonb) AS citations,
        live.recorded_at,
+       -- The citizenships the live version assumed, and whether the household's differ now
+       -- (Q239). A version that assumed nothing on record is never flagged: nobody knows what
+       -- it assumed. Flagged only; the answer applies until a person records again.
+       ARRAY(SELECT a.citizenship
+             FROM   match_rule_answer_citizenship AS a
+             WHERE  a.answer = r.answer
+             ORDER  BY a.citizenship) AS assumed_citizenships,
+       EXISTS (SELECT 1 FROM match_rule_answer_citizenship AS a WHERE a.answer = r.answer)
+       AND ARRAY(SELECT a.citizenship
+                 FROM   match_rule_answer_citizenship AS a
+                 WHERE  a.answer = r.answer
+                 ORDER  BY a.citizenship)
+           IS DISTINCT FROM ARRAY(SELECT held.candidate
+                                  FROM   household_citizenship AS held
+                                  ORDER  BY held.candidate) AS needs_recheck,
        pending.id                     AS pending_answer,
        pending.match_result           AS pending_match_result,
        pending.reason                 AS pending_reason,
@@ -675,14 +690,24 @@ ORDER  BY r.candidate, r.match_rule;
 -- name: insert_match_rule_answer(match_rule, candidate, match_result, reason, data_source, reference_period_start, reference_period_end, retrieval_date, override_reason, override_date)<!
 -- One version of a gate's answer, never changed once written (Q237). The live row is pointed at
 -- it by upsert_match_rule_result in the same transaction.
-INSERT INTO match_rule_answer (
-    match_rule, candidate, match_result, reason, data_source,
-    reference_period_start, reference_period_end, retrieval_date,
-    override_reason, override_date)
-VALUES (:match_rule, :candidate, :match_result, :reason, :data_source,
-        :reference_period_start, :reference_period_end, :retrieval_date,
-        :override_reason, :override_date)
-RETURNING id;
+--
+-- **With the household citizenships it assumed** (Q239), copied in the same statement, so the
+-- copy is the household as this version was written against it and no edit lands in between.
+WITH version AS (
+    INSERT INTO match_rule_answer (
+        match_rule, candidate, match_result, reason, data_source,
+        reference_period_start, reference_period_end, retrieval_date,
+        override_reason, override_date)
+    VALUES (:match_rule, :candidate, :match_result, :reason, :data_source,
+            :reference_period_start, :reference_period_end, :retrieval_date,
+            :override_reason, :override_date)
+    RETURNING id
+), assumed AS (
+    INSERT INTO match_rule_answer_citizenship (answer, citizenship)
+    SELECT version.id, held.candidate
+    FROM   version CROSS JOIN household_citizenship AS held
+)
+SELECT id FROM version;
 
 -- name: lock_match_rule_result(match_rule, candidate)^
 -- The live answer of one pair, locked, and whether a person gave it. Read before a re-check's

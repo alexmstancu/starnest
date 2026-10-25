@@ -27,6 +27,7 @@ from starnest.criteria import TOTAL, CriteriaSet, Criterion
 from starnest.data import (
     CompoundRule,
     ConfidenceLevel,
+    MatchRule,
     MatchRuleResult,
     PillarId,
     RuleOutcome,
@@ -46,6 +47,7 @@ from starnest.evaluation.results import (
     PillarScore,
 )
 from starnest.evaluation.rules import (
+    Citizenship,
     gates_that_rule_out,
     gates_that_warn,
     judgements_of,
@@ -89,6 +91,8 @@ def rank_candidates(
     stale_values: Set[int],
     home_candidate: str | None = None,
     names: Names = NO_NAMES,
+    match_rules: Sequence[MatchRule] = (),
+    citizenships: Set[CandidateId] = frozenset(),
 ) -> tuple[CandidateResult, ...]:
     """Score every candidate, and put them in order.
 
@@ -113,6 +117,11 @@ def rank_candidates(
     because which figures have aged is a fact about today and this module reads no clock: the
     caller takes it from the same read that chose the figures, so the flag that lowers a grade
     here is the flag that chose the figure, by the view's calendar arithmetic.
+
+    `match_rules` is the gates' catalog and `citizenships` the household's (Q239): a gate one
+    of them clears matches with no recorded answer, and EU free movement is derived from them.
+    Handed over as data, like `home_candidate`, so evaluation reads no household. None held
+    decides nothing, and the gates read their recorded answers alone.
     """
     scored_criteria = _criteria_to_score(criteria, level)
     if not scored_criteria:
@@ -161,6 +170,11 @@ def rank_candidates(
             gate_answers=gate_answers.get(candidate, ()),
             level=level,
             names=names,
+            citizenship=Citizenship(
+                candidate=candidate,
+                held=frozenset(citizenships),
+                gates={str(rule.id): rule for rule in match_rules},
+            ),
         )
         for candidate in sorted(values)
     )
@@ -540,6 +554,7 @@ def _result_for(
     gate_answers: Sequence[MatchRuleResult],
     level: str,
     names: Names,
+    citizenship: Citizenship,
 ) -> CandidateResult:
     answered = {
         str(criterion.attribute)
@@ -586,6 +601,7 @@ def _result_for(
             ],
             answers=gate_answers,
             names=names,
+            citizenship=citizenship,
         )
         + warnings
     )
@@ -598,6 +614,7 @@ def _result_for(
             ],
             answers=gate_answers,
             names=names,
+            citizenship=citizenship,
         )
         + ruled_out_by_a_rule
         + thresholds_that_rule_out(_criteria_at(criteria, level), candidate_values, names)

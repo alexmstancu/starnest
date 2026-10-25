@@ -28,6 +28,7 @@ from starnest.data import (
     Count,
     LabelSet,
     MatchResult,
+    MatchRule,
     MatchRuleResult,
     RuleOutcome,
     Share,
@@ -37,9 +38,11 @@ from starnest.data import (
 from starnest.evaluation import (
     describe_compound_rule,
     gates_that_rule_out,
+    gates_that_warn,
     judgements_of,
     thresholds_that_rule_out,
 )
+from starnest.evaluation.rules import Citizenship
 from starnest.evaluation.wording import Names
 
 from .builders import a_criterion, a_value
@@ -756,3 +759,142 @@ class TestMatchingThresholds:
         out = thresholds_that_rule_out([crossed, within], values)
 
         assert [str(reason.criterion) for reason in out] == ["country.overcrowding_rate"]
+
+
+UNITED_KINGDOM = "country.united_kingdom"
+SWITZERLAND = "country.switzerland"
+GERMANY = "country.germany"
+ROMANIA = "country.romania"
+IRELAND = "country.ireland"
+ICELAND = "country.iceland"
+
+# The shape of 0517's catalog rows: which citizenships clear which gate, about whom.
+CITIZENSHIP_GATES = {
+    "uk_skilled_worker": MatchRule(
+        id="uk_skilled_worker",
+        name="UK Skilled Worker route",
+        level="country",
+        researchable=True,
+        concerned_candidates=(UNITED_KINGDOM,),
+        cleared_by=(IRELAND, UNITED_KINGDOM),
+    ),
+    "ch_eu_efta_quota": MatchRule(
+        id="ch_eu_efta_quota",
+        name="Swiss EU/EFTA permit quota",
+        level="country",
+        researchable=True,
+        concerned_candidates=(SWITZERLAND,),
+        cleared_by=(SWITZERLAND,),
+    ),
+    "eu_free_movement": MatchRule(
+        id="eu_free_movement",
+        name="EU/EEA free movement",
+        level="country",
+        concerned_candidates=(GERMANY, ROMANIA),
+        cleared_by=(IRELAND, ROMANIA),
+        decided_by_citizenship=True,
+    ),
+}
+
+
+def holding(candidate: str, *citizenships: str) -> Citizenship:
+    return Citizenship(candidate=candidate, held=frozenset(citizenships), gates=CITIZENSHIP_GATES)
+
+
+def refused_by(gate: str, candidate: str, *citizenships: str, answers=()):
+    return gates_that_rule_out(
+        enforced=[gate],
+        answers=list(answers),
+        names=Names(gates={gate: CITIZENSHIP_GATES[gate].name}, places={UNITED_KINGDOM: "UK"}),
+        citizenship=holding(candidate, *citizenships),
+    )
+
+
+def a_refusal_of(gate: str, candidate: str) -> MatchRuleResult:
+    return an_answer(gate, MatchResult.NOT_MATCHING, "no route").model_copy(
+        update={"candidate": candidate, "id": 3}
+    )
+
+
+class TestCitizenshipDecidesTheGates:
+    """Q239. Which citizenships clear which gate is catalog data, and EU free movement is
+    derived from the household's citizenships with no recorded answer."""
+
+    @pytest.mark.parametrize(
+        ("gate", "candidate", "citizenship"),
+        [
+            ("uk_skilled_worker", UNITED_KINGDOM, UNITED_KINGDOM),
+            ("uk_skilled_worker", UNITED_KINGDOM, IRELAND),
+            ("ch_eu_efta_quota", SWITZERLAND, SWITZERLAND),
+        ],
+    )
+    def test_a_citizenship_the_gate_names_clears_a_recorded_refusal(
+        self, gate: str, candidate: str, citizenship: str
+    ) -> None:
+        assert (
+            refused_by(gate, candidate, citizenship, answers=[a_refusal_of(gate, candidate)]) == ()
+        )
+
+    @pytest.mark.parametrize(
+        ("gate", "candidate"),
+        [("uk_skilled_worker", UNITED_KINGDOM), ("ch_eu_efta_quota", SWITZERLAND)],
+    )
+    def test_a_citizenship_no_gate_names_leaves_the_recorded_answer_to_decide(
+        self, gate: str, candidate: str
+    ) -> None:
+        recorded = a_refusal_of(gate, candidate)
+
+        (refusal,) = refused_by(gate, candidate, ICELAND, answers=[recorded])
+
+        assert (refusal.gate_answer, refusal.citizenships) == (recorded, ())
+
+    def test_with_no_citizenship_recorded_every_gate_reads_its_answer_alone(self) -> None:
+        recorded = a_refusal_of("uk_skilled_worker", UNITED_KINGDOM)
+
+        (refusal,) = refused_by("uk_skilled_worker", UNITED_KINGDOM, answers=[recorded])
+
+        assert refusal.gate_answer == recorded
+        assert refused_by("eu_free_movement", GERMANY) == ()
+
+    def test_eu_free_movement_matches_an_eu_citizenship_with_no_recorded_answer(self) -> None:
+        assert refused_by("eu_free_movement", GERMANY, ROMANIA) == ()
+
+    def test_eu_free_movement_rules_out_where_no_citizenship_clears_it(self) -> None:
+        (refusal,) = refused_by("eu_free_movement", GERMANY, UNITED_KINGDOM)
+
+        assert refusal.gate_answer is None
+        assert refusal.citizenships == (UNITED_KINGDOM,)
+        assert refusal.reason_detail == (
+            "EU/EEA free movement: no citizenship the household holds (UK) clears it"
+        )
+
+    def test_eu_free_movement_is_never_derived_about_a_country_it_does_not_concern(self) -> None:
+        assert refused_by("eu_free_movement", UNITED_KINGDOM, UNITED_KINGDOM) == ()
+
+    def test_eu_free_movement_derives_over_a_recorded_answer(self) -> None:
+        """The household's citizenships decide it outright; a recorded match does not."""
+        recorded = an_answer("eu_free_movement", MatchResult.MATCHING).model_copy(
+            update={"candidate": GERMANY}
+        )
+
+        (refusal,) = refused_by("eu_free_movement", GERMANY, ICELAND, answers=[recorded])
+
+        assert refusal.citizenships == (ICELAND,)
+
+    def test_a_gate_held_as_a_warning_warns_on_the_citizenships_it_read(self) -> None:
+        (warning,) = gates_that_warn(
+            held_as_warnings=["eu_free_movement"],
+            answers=[],
+            citizenship=holding(GERMANY, UNITED_KINGDOM),
+        )
+
+        assert (str(warning.match_rule), warning.gate_answer) == ("eu_free_movement", None)
+        assert warning.citizenships == (UNITED_KINGDOM,)
+
+    def test_a_gate_switched_off_in_the_set_is_not_derived(self) -> None:
+        assert (
+            gates_that_rule_out(
+                enforced=[], answers=[], citizenship=holding(GERMANY, UNITED_KINGDOM)
+            )
+            == ()
+        )

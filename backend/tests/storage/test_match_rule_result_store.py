@@ -12,13 +12,15 @@ answer must never be.
 import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 import pytest
 from psycopg_pool import AsyncConnectionPool
 
 from starnest.data import MatchResult, MatchRuleResult
-from starnest.storage import PostgresMatchRuleResultStore
+from starnest.household import Household
+from starnest.storage import PostgresHouseholdStore, PostgresMatchRuleResultStore
 
 pytestmark = pytest.mark.storage
 
@@ -383,3 +385,69 @@ class TestARecheckIsKeptBesideAPerson:
             await answers.propose_beside(
                 an_answer("manual", MatchResult.MATCHING, OFFICIAL_PAGE, at=MORNING)
             )
+
+
+async def hold_citizenships(pool: AsyncConnectionPool, *citizenships: str) -> None:
+    await PostgresHouseholdStore(pool).replace_household(
+        Household(
+            net_income=Decimal("4000"),
+            number_adults=2,
+            number_children=0,
+            home_country_candidate="country.romania",
+            citizenships=frozenset(citizenships),
+        )
+    )
+
+
+class TestAnAnswerRecordsTheCitizenshipsItAssumed:
+    """Q239. Each version keeps the household citizenships it was written against, and the read
+    flags it for a re-check once the household's differ -- never expiring or overwriting it."""
+
+    async def test_an_answer_assumes_the_household_s_citizenships_and_needs_no_recheck(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        await hold_citizenships(pool, "country.romania", "country.italy")
+
+        await answers.record(an_answer("manual", MatchResult.NOT_MATCHING, OFFICIAL_PAGE, at=NOON))
+
+        recorded = await the_answer(answers)
+        assert recorded.assumed_citizenships == ("country.italy", "country.romania")
+        assert recorded.needs_recheck is False
+
+    async def test_a_change_of_citizenship_flags_the_answer_and_leaves_it_standing(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        await hold_citizenships(pool, "country.romania")
+        await answers.record(an_answer("manual", MatchResult.NOT_MATCHING, OFFICIAL_PAGE, at=NOON))
+        before = await the_answer(answers)
+
+        await hold_citizenships(pool, "country.romania", "country.united_kingdom")
+
+        after = await the_answer(answers)
+        assert after.needs_recheck is True
+        assert after.model_copy(update={"needs_recheck": False}) == before
+
+    async def test_recording_again_under_the_new_citizenships_settles_the_flag(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        await hold_citizenships(pool, "country.romania")
+        await answers.record(an_answer("manual", MatchResult.NOT_MATCHING, OFFICIAL_PAGE, at=NOON))
+        await hold_citizenships(pool, "country.ireland")
+
+        await answers.record(an_answer("manual", MatchResult.MATCHING, OFFICIAL_PAGE, at=NOON))
+
+        settled = await the_answer(answers)
+        assert (settled.assumed_citizenships, settled.needs_recheck) == (
+            ("country.ireland",),
+            False,
+        )
+
+    async def test_an_answer_recorded_with_no_household_assumed_nothing_and_is_never_flagged(
+        self, answers: PostgresMatchRuleResultStore, pool: AsyncConnectionPool
+    ) -> None:
+        """Nobody knows what it assumed, so flagging it would claim something unknown."""
+        await answers.record(an_answer("manual", MatchResult.NOT_MATCHING, OFFICIAL_PAGE, at=NOON))
+        await hold_citizenships(pool, "country.united_kingdom")
+
+        recorded = await the_answer(answers)
+        assert (recorded.assumed_citizenships, recorded.needs_recheck) == ((), False)

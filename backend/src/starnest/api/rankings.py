@@ -42,7 +42,7 @@ from starnest.evaluation import (
     rank_candidates,
 )
 from starnest.evaluation.wording import names_in, readable_identifier
-from starnest.household import HouseholdNotConfiguredError
+from starnest.household import Household, HouseholdNotConfiguredError
 
 router = APIRouter(tags=["rankings"])
 
@@ -62,6 +62,12 @@ EVIDENCE_INPUTS = (
 )
 
 
+DECIDED_BY_CITIZENSHIP = (
+    "The household citizenships a gate decided by citizenship read in place of an answer, none of "
+    "which clears it (Q239). Empty for anything else."
+)
+
+
 class WarningBody(BaseModel):
     """Exactly one of the two names the rule that raised it: a compound rule, or a gate the set
     holds as a warning (D56)."""
@@ -75,6 +81,7 @@ class WarningBody(BaseModel):
             "The answer a gate held as a warning read, as it stood then. Null for a compound rule."
         ),
     )
+    citizenships: tuple[str, ...] = Field(default=(), description=DECIDED_BY_CITIZENSHIP)
     inputs: tuple[ValueBody, ...] = Field(default=(), description=EVIDENCE_INPUTS)
 
 
@@ -92,6 +99,7 @@ class NonMatchReasonBody(BaseModel):
             "for a refusal saved before its evidence was kept."
         ),
     )
+    citizenships: tuple[str, ...] = Field(default=(), description=DECIDED_BY_CITIZENSHIP)
     inputs: tuple[ValueBody, ...] = Field(
         default=(),
         description=(
@@ -257,9 +265,12 @@ async def the_ranking(
     answers: dict[str, list[MatchRuleResult]] = {}
     for answer in await match_rule_results.read_results(level=level):
         answers.setdefault(str(answer.candidate), []).append(answer)
+    gates = await catalog.read_match_rules(level=level)
+    household = await _household_or_none(households)
 
     # What the catalog calls each attribute and gate, for the sentences a result carries.
     attributes = await catalog.read_attributes(level=level)
+    places = {str(candidate.id): candidate.name for candidate in await candidates.read_candidates()}
     results = rank_candidates(
         criteria=criteria_set_read,
         level=level,
@@ -268,9 +279,12 @@ async def the_ranking(
         min_coverage=settings.min_coverage,
         compound_rules=await catalog.read_compound_rules(level=level),
         gate_answers=answers,
-        home_candidate=await _home_country(households),
-        names=names_in(attributes, await catalog.read_match_rules(level=level)),
+        home_candidate=None if household is None else str(household.home_country_candidate),
+        names=names_in(attributes, gates, places),
         stale_values=stale_values,
+        # The household's citizenships clear the gates the catalog says they clear (Q239).
+        match_rules=gates,
+        citizenships=frozenset() if household is None else household.citizenships,
     )
     return TheRanking(
         criteria=criteria_set_read,
@@ -440,19 +454,25 @@ def _attribute_score_body(
     )
 
 
-async def _home_country(households: Households) -> str | None:
-    """The household's own country, or None when no household has been recorded.
+async def _household_or_none(households: Households) -> Household | None:
+    """The household, or None when none has been recorded.
 
     **A ranking must not 404 for want of a household.** Reading one raises when nothing has been
-    configured, and the home country is only ever the anchor of one column: without it the
-    difference is null everywhere and the other nine columns are unaffected. Refusing the whole
-    ranking over an optional column would be the tail wagging the dog.
+    configured, and the household is only ever the anchor of one column and an input to the
+    gates: without it the difference is null everywhere, every gate reads its recorded answers
+    alone, and the other columns are unaffected. Refusing the whole ranking over it would be the
+    tail wagging the dog.
     """
     try:
-        household = await households.get_household()
+        return await households.get_household()
     except HouseholdNotConfiguredError:
         return None
-    return str(household.home_country_candidate)
+
+
+async def _home_country(households: Households) -> str | None:
+    """The household's own country, or None when no household has been recorded."""
+    household = await _household_or_none(households)
+    return None if household is None else str(household.home_country_candidate)
 
 
 def _cited(ids: Sequence[int], evidence: Evidence) -> tuple[ValueBody, ...]:
@@ -493,6 +513,7 @@ def _result_body(
                 gate_answer=(
                     None if flag.gate_answer is None else _evidence_body(flag.gate_answer)
                 ),
+                citizenships=tuple(str(held) for held in flag.citizenships),
                 inputs=_cited(flag.input_values, evidence),
             )
             for flag in result.warnings
@@ -506,6 +527,7 @@ def _result_body(
                 gate_answer=(
                     None if reason.gate_answer is None else _evidence_body(reason.gate_answer)
                 ),
+                citizenships=tuple(str(held) for held in reason.citizenships),
                 inputs=_cited(reason.input_values, evidence),
             )
             for reason in result.non_match_reasons
@@ -515,5 +537,10 @@ def _result_body(
 
 def _evidence_body(answer: MatchRuleResult) -> MatchRuleResultBody:
     """The answer a refusal or warning read, as evidence: what a re-check proposed since is not
-    evidence, and a saved ranking never has it, so a live one shows none either (D53)."""
-    return _gate_answer_body(answer.model_copy(update={"pending_proposal": None}))
+    evidence, and a saved ranking never has it, so a live one shows none either (D53). Nor is
+    whether today's household needs it re-checked (Q239): that is the answers read's to say."""
+    return _gate_answer_body(
+        answer.model_copy(
+            update={"pending_proposal": None, "assumed_citizenships": (), "needs_recheck": False}
+        )
+    )

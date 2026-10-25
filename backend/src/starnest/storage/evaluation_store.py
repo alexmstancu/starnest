@@ -90,6 +90,7 @@ class PostgresEvaluationStore(EvaluationStore):
                 _refuse_evidence_that_does_not_fit(result.candidate, reason)
             for flag in result.warnings:
                 _refuse_a_warning_that_does_not_fit(result.candidate, flag)
+        citizenships = _citizenships_decided_on(results)
         pillar_weights = {
             str(w.pillar): w.weight for w in criteria.pillar_weights if w.level == level
         }
@@ -200,6 +201,7 @@ class PostgresEvaluationStore(EvaluationStore):
                         if reason.criterion is not None and reason.input_values
                         else None
                     ),
+                    "decided_by_citizenship": bool(reason.citizenships),
                 }
                 for result in results
                 for reason in result.non_match_reasons
@@ -227,16 +229,22 @@ class PostgresEvaluationStore(EvaluationStore):
                 {
                     "candidate_result": identifiers[str(result.candidate)],
                     "match_rule": str(flag.match_rule),
-                    "match_rule_answer": flag.gate_answer.id,
+                    "match_rule_answer": None if flag.gate_answer is None else flag.gate_answer.id,
                     "detail": flag.detail,
+                    "decided_by_citizenship": bool(flag.citizenships),
                 }
                 for result in results
                 for flag in result.warnings
-                if flag.match_rule is not None and flag.gate_answer is not None
+                if flag.match_rule is not None
+                and (flag.gate_answer is not None or flag.citizenships)
             ]
             if gate_warnings:
                 await self._queries.insert_candidate_gate_warnings(
                     connection, warnings=json.dumps(gate_warnings)
+                )
+            if citizenships:
+                await self._queries.insert_evaluation_citizenships(
+                    connection, evaluation=evaluation, citizenships=list(citizenships)
                 )
             # The value rows behind each warning, written after the warnings so the foreign key
             # holds (ST-07). A warning with no input ids contributes none. The ordinal is the
@@ -412,6 +420,23 @@ def _leader_of(results: Sequence[CandidateResult]) -> str | None:
     return ranked[0][1] if ranked else None
 
 
+def _citizenships_decided_on(results: Sequence[CandidateResult]) -> tuple[str, ...]:
+    """The one set of household citizenships the ranking's gates were decided by citizenship on
+    (Q239), refused when two disagree: one ranking reads one household."""
+    read = {
+        tuple(str(held) for held in rule.citizenships)
+        for result in results
+        for rule in (*result.non_match_reasons, *result.warnings)
+        if rule.citizenships
+    }
+    if len(read) > 1:
+        raise UnsavableEvidenceError(
+            "one ranking reads one household, and its gates were decided on different citizenships",
+            details={"reason": "citizenships", "citizenships": sorted(read)},
+        )
+    return read.pop() if read else ()
+
+
 def _refuse_evidence_that_does_not_fit(candidate: CandidateId, reason: NonMatch) -> None:
     """Hold a non-match's evidence to its mechanism before the first row is written.
 
@@ -420,6 +445,8 @@ def _refuse_evidence_that_does_not_fit(candidate: CandidateId, reason: NonMatch)
     """
     if reason.match_rule is not None:
         answer = reason.gate_answer
+        if reason.citizenships and answer is None and not reason.input_values:
+            return
         if (
             reason.input_values
             or answer is None
@@ -432,8 +459,10 @@ def _refuse_evidence_that_does_not_fit(candidate: CandidateId, reason: NonMatch)
                 "it read, of its own gate and candidate, and no figure",
                 details={"reason": "gate_answer", "match_rule": str(reason.match_rule)},
             )
-    elif reason.gate_answer is not None or (
-        reason.criterion is not None and len(reason.input_values) > 1
+    elif (
+        reason.gate_answer is not None
+        or reason.citizenships
+        or (reason.criterion is not None and len(reason.input_values) > 1)
     ):
         raise UnsavableEvidenceError(
             f"a refusal for {candidate} that is not a gate names no gate answer, and a "
@@ -456,12 +485,14 @@ def _refuse_a_warning_that_does_not_fit(candidate: CandidateId, flag: RuleWarnin
         )
     answer = flag.gate_answer
     if flag.match_rule is None:
-        if answer is not None:
+        if answer is not None or flag.citizenships:
             raise UnsavableEvidenceError(
                 f"the warning by {flag.compound_rule} for {candidate} is not a gate's, so it "
                 "names no gate answer",
                 details={"reason": "evidence", "compound_rule": str(flag.compound_rule)},
             )
+        return
+    if flag.citizenships and answer is None and not flag.input_values:
         return
     if (
         flag.input_values
@@ -610,6 +641,7 @@ def _result_from(row: Any, attribute_scores: tuple[AttributeScore, ...] = ()) ->
                 detail=flag["detail"],
                 input_values=tuple(flag.get("input_values", [])),
                 gate_answer=_gate_answer_from(flag.get("gate_answer")),
+                citizenships=_citizenships_from(flag),
             )
             for flag in getattr(row, "warnings", []) or []
         ),
@@ -627,10 +659,16 @@ def _result_from(row: Any, attribute_scores: tuple[AttributeScore, ...] = ()) ->
                 ),
                 input_values=tuple(reason.get("input_values", [])),
                 gate_answer=_gate_answer_from(reason.get("gate_answer")),
+                citizenships=_citizenships_from(reason),
             )
             for reason in getattr(row, "non_match_reasons", []) or []
         ),
     )
+
+
+def _citizenships_from(frozen: dict[str, Any]) -> tuple[CandidateId, ...]:
+    """What a gate decided by citizenship read, frozen with the ranking (Q239)."""
+    return tuple(CandidateId(held) for held in frozen.get("citizenships") or ())
 
 
 def _gate_answer_from(frozen: dict[str, Any] | None) -> MatchRuleResult | None:

@@ -17,9 +17,10 @@ household chooses their numbers, and that silence is the intended state rather t
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 
+from starnest.candidates import CandidateId
 from starnest.criteria import Criterion
 from starnest.criteria.thresholds import (
     BooleanThreshold,
@@ -38,6 +39,7 @@ from starnest.data import (
     CompoundRuleShape,
     LabelSet,
     MatchResult,
+    MatchRule,
     MatchRuleId,
     MatchRuleResult,
     RuleOutcome,
@@ -53,6 +55,7 @@ from starnest.evaluation.wording import (
     band_words,
     figure_in_words,
     gate_called,
+    place_called,
     quoted,
     readable_figure,
     readable_identifier,
@@ -79,7 +82,10 @@ class RuleWarning:
     a gate, which reads no value."""
     gate_answer: MatchRuleResult | None = None
     """The answer a gate held as a warning read, by its stored version -- the mirror of
-    `NonMatch.gate_answer`. None for a compound rule."""
+    `NonMatch.gate_answer`. None for a compound rule, and for a gate decided by citizenship."""
+    citizenships: tuple[CandidateId, ...] = ()
+    """The household citizenships a gate decided by citizenship read in place of an answer,
+    none of which clears it (Q239). Empty for anything else."""
 
 
 @dataclass(frozen=True)
@@ -98,7 +104,49 @@ class NonMatch:
     gate_answer: MatchRuleResult | None = None
     """The answer a gate refusal read (FU-A4). Its `id` names the stored version, which never
     changes, so a saved refusal reopens to this answer after any correction (`reqs.md` Q237).
-    None for a threshold or a compound rule, and on refusals saved before versions existed."""
+    None for a threshold or a compound rule, on refusals saved before versions existed, and for
+    a gate decided by citizenship."""
+    citizenships: tuple[CandidateId, ...] = ()
+    """The household citizenships a gate decided by citizenship read in place of an answer,
+    none of which clears it (Q239). Empty for anything else."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class Citizenship:
+    """The household's citizenships against the gates' catalog, for one candidate (Q239).
+
+    **Which citizenship clears which gate is catalog data** (`reqs.md` 7.3): a gate names the
+    citizenships that clear it, and one decided by citizenship -- EU free movement -- does not
+    match where none of the household's clears it. Both only where the gate concerns the
+    candidate. **No citizenship recorded decides nothing**: the gates then read their recorded
+    answers as they always did, because deriving a refusal from an absent household would be
+    the fabricated judgement this application exists to prevent.
+    """
+
+    candidate: str = ""
+    held: frozenset[CandidateId] = frozenset()
+    gates: Mapping[str, MatchRule] = field(default_factory=dict)
+
+    def clears(self, gate: str) -> bool:
+        rule = self.gates.get(gate)
+        return (
+            rule is not None
+            and rule.concerns(self.candidate)
+            and not self.held.isdisjoint(rule.cleared_by)
+        )
+
+    def refuses(self, gate: str) -> bool:
+        rule = self.gates.get(gate)
+        return (
+            rule is not None
+            and rule.decided_by_citizenship
+            and bool(self.held)
+            and rule.concerns(self.candidate)
+            and not self.clears(gate)
+        )
+
+
+NO_CITIZENSHIP = Citizenship()
 
 
 def judgements_of(
@@ -263,6 +311,7 @@ def gates_that_rule_out(
     enforced: Sequence[MatchRuleId],
     answers: Sequence[MatchRuleResult],
     names: Names = NO_NAMES,
+    citizenship: Citizenship = NO_CITIZENSHIP,
 ) -> tuple[NonMatch, ...]:
     """The enforced gates a candidate fails, in the order the criteria set enforces them.
 
@@ -278,10 +327,14 @@ def gates_that_rule_out(
 
     A gate the criteria set does not enforce is not consulted: whether a gate counts is the
     set's preference, and the answer itself is a finding about the candidate (`arch.md` 3.6).
+
+    **The household's citizenships come first** (Q239): a gate one of them clears rules nothing
+    out whatever was recorded, and a gate decided by citizenship that none clears rules out with
+    no answer at all, naming the citizenships it read.
     """
     return tuple(
-        NonMatch(match_rule=rule, reason_detail=detail, gate_answer=answer)
-        for rule, answer, detail in _gates_failed(enforced, answers, names)
+        NonMatch(match_rule=rule, reason_detail=detail, gate_answer=answer, citizenships=held)
+        for rule, answer, detail, held in _gates_failed(enforced, answers, names, citizenship)
     )
 
 
@@ -290,6 +343,7 @@ def gates_that_warn(
     held_as_warnings: Sequence[MatchRuleId],
     answers: Sequence[MatchRuleResult],
     names: Names = NO_NAMES,
+    citizenship: Citizenship = NO_CITIZENSHIP,
 ) -> tuple[RuleWarning, ...]:
     """The gates a set holds as warnings that a candidate fails (D56).
 
@@ -297,30 +351,49 @@ def gates_that_warn(
     `unknown` and never a proposal -- reported as a flag that keeps the candidate matching.
     """
     return tuple(
-        RuleWarning(match_rule=rule, detail=detail, gate_answer=answer)
-        for rule, answer, detail in _gates_failed(held_as_warnings, answers, names)
+        RuleWarning(match_rule=rule, detail=detail, gate_answer=answer, citizenships=held)
+        for rule, answer, detail, held in _gates_failed(
+            held_as_warnings, answers, names, citizenship
+        )
     )
 
 
+_GateFailure = tuple[MatchRuleId, MatchRuleResult | None, str, tuple[CandidateId, ...]]
+
+
 def _gates_failed(
-    gates: Sequence[MatchRuleId], answers: Sequence[MatchRuleResult], names: Names
-) -> tuple[tuple[MatchRuleId, MatchRuleResult, str], ...]:
-    """Each of these gates the candidate fails, in the order given, with why in words."""
+    gates: Sequence[MatchRuleId],
+    answers: Sequence[MatchRuleResult],
+    names: Names,
+    citizenship: Citizenship,
+) -> tuple[_GateFailure, ...]:
+    """Each of these gates the candidate fails, in the order given, with why in words: by the
+    household's citizenships where they decide it, by its recorded answer otherwise."""
     failed = {
         answer.match_rule: answer
         for answer in answers
         if answer.match_result is MatchResult.NOT_MATCHING and not answer.is_proposal
     }
-    return tuple(
-        (
-            rule,
-            failed[rule],
-            failed[rule].reason
-            or f"{gate_called(names, str(rule))} answered not matching, with no reason recorded",
-        )
-        for rule in gates
-        if rule in failed
-    )
+    failures: list[_GateFailure] = []
+    for rule in gates:
+        if citizenship.clears(str(rule)):
+            continue
+        if citizenship.refuses(str(rule)):
+            held = tuple(sorted(citizenship.held))
+            failures.append((rule, None, _not_cleared(str(rule), held, names), held))
+        elif rule in failed:
+            detail = (
+                failed[rule].reason
+                or f"{gate_called(names, str(rule))} answered not matching, with no reason recorded"
+            )
+            failures.append((rule, failed[rule], detail, ()))
+    return tuple(failures)
+
+
+def _not_cleared(gate: str, held: Sequence[CandidateId], names: Names) -> str:
+    """ "EU/EEA free movement: no citizenship the household holds (United Kingdom) clears it"."""
+    places = ", ".join(place_called(names, str(place)) for place in held)
+    return f"{gate_called(names, gate)}: no citizenship the household holds ({places}) clears it"
 
 
 def thresholds_that_rule_out(

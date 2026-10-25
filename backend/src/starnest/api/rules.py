@@ -56,6 +56,10 @@ class MatchRuleBody(BaseModel):
     level: str | None = None
     description: str
     """When a candidate matches the gate, in words: catalog text (`reqs.md` 7.3, D57)."""
+    cleared_by: tuple[str, ...] = ()
+    """The citizenships that clear the gate wherever it asks (`reqs.md` 7.3, Q239)."""
+    decided_by_citizenship: bool = False
+    """Whether the household's citizenships decide it outright, with no recorded answer."""
 
 
 class MatchRulesBody(BaseModel):
@@ -112,6 +116,10 @@ class MatchRuleResultBody(BaseModel):
     # computes neither, and an ended period expires nothing.
     recorded_at: datetime | None = None
     pending_proposal: PendingProposalBody | None = None
+    # What the answer assumed, and whether the household has changed since (Q239). A flag for a
+    # person to act on: the answer applies until a person records again.
+    assumed_citizenships: tuple[str, ...] = ()
+    needs_recheck: bool = False
 
 
 class GatePairBody(BaseModel):
@@ -328,7 +336,12 @@ async def list_match_rules(catalog: Catalog, level: str | None = None) -> MatchR
     return MatchRulesBody(
         items=tuple(
             MatchRuleBody(
-                id=str(rule.id), name=rule.name, level=rule.level, description=rule.description
+                id=str(rule.id),
+                name=rule.name,
+                level=rule.level,
+                description=rule.description,
+                cleared_by=tuple(str(citizenship) for citizenship in rule.cleared_by),
+                decided_by_citizenship=rule.decided_by_citizenship,
             )
             for rule in await catalog.read_match_rules(level=level)
         )
@@ -550,6 +563,8 @@ def _result_body(result: MatchRuleResult) -> MatchRuleResultBody:
         is_proposal=result.is_proposal,
         recorded_at=result.recorded_at,
         pending_proposal=_pending_body(result.pending_proposal),
+        assumed_citizenships=tuple(str(held) for held in result.assumed_citizenships),
+        needs_recheck=result.needs_recheck,
     )
 
 

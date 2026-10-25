@@ -31,12 +31,18 @@ class Names:
     """Attribute id -> the words a figure is followed by, where the catalog has them."""
     gates: Mapping[str, str] = field(default_factory=dict)
     """Match rule id -> the catalog's name."""
+    places: Mapping[str, str] = field(default_factory=dict)
+    """Candidate id -> the roster's name, for a citizenship named in a sentence (Q239)."""
 
 
 NO_NAMES = Names()
 
 
-def names_in(attributes: Sequence[Attribute], gates: Sequence[MatchRule]) -> Names:
+def names_in(
+    attributes: Sequence[Attribute],
+    gates: Sequence[MatchRule],
+    places: Mapping[str, str] | None = None,
+) -> Names:
     """What the catalog calls each attribute, its unit and each gate, for the sentences a
     result carries (PL-067). A ratio is a percentage; a quantity reads its unit's name."""
     units: dict[str, str] = {}
@@ -49,6 +55,7 @@ def names_in(attributes: Sequence[Attribute], gates: Sequence[MatchRule]) -> Nam
         attributes={str(attribute.id): attribute.name for attribute in attributes},
         units=units,
         gates={str(gate.id): gate.name for gate in gates},
+        places=places or {},
     )
 
 
@@ -68,6 +75,10 @@ def attribute_called(names: Names, attribute: str) -> str:
 
 def gate_called(names: Names, gate: str) -> str:
     return names.gates.get(gate) or readable_identifier(gate)
+
+
+def place_called(names: Names, candidate: str) -> str:
+    return names.places.get(candidate) or readable_identifier(candidate)
 
 
 def readable_figure(figure: Decimal) -> str:

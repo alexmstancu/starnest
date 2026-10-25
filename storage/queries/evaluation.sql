@@ -153,21 +153,28 @@ JOIN   candidate_result AS parent ON parent.id = detail.candidate_result;
 -- With the evidence it read, by key (FU-A3, FU-A4): a gate refusal the answer version, a
 -- threshold refusal the value row. Both are immutable, so the reason reopens to them later, and
 -- both are the parent result's candidate's, which is copied here for the keys to hold (0523).
+--
+-- A gate decided by citizenship read no answer, and says so (Q239): the citizenships it read are
+-- the evaluation's, in evaluation_citizenship.
 INSERT INTO non_match_reason (candidate_result, evaluation, candidate, attribute, match_rule,
-                              compound_rule, reason_detail, match_rule_answer, used_value)
+                              compound_rule, reason_detail, match_rule_answer, used_value,
+                              decided_by_citizenship)
 SELECT reason.candidate_result, parent.evaluation, parent.candidate, reason.attribute,
        reason.match_rule,
-       reason.compound_rule, reason.reason_detail, reason.match_rule_answer, reason.used_value
+       reason.compound_rule, reason.reason_detail, reason.match_rule_answer, reason.used_value,
+       reason.decided_by_citizenship
 FROM   ROWS FROM (jsonb_to_recordset(:reasons::jsonb) AS (
-           candidate_result  bigint,
-           attribute         text,
-           match_rule        text,
-           compound_rule     text,
-           reason_detail     text,
-           match_rule_answer bigint,
-           used_value        bigint))
+           candidate_result       bigint,
+           attribute              text,
+           match_rule             text,
+           compound_rule          text,
+           reason_detail          text,
+           match_rule_answer      bigint,
+           used_value             bigint,
+           decided_by_citizenship boolean))
        WITH ORDINALITY AS reason(candidate_result, attribute, match_rule, compound_rule,
-                                 reason_detail, match_rule_answer, used_value, ordinal)
+                                 reason_detail, match_rule_answer, used_value,
+                                 decided_by_citizenship, ordinal)
 JOIN   candidate_result AS parent ON parent.id = reason.candidate_result
 -- In the order the ranking gave them, which the read restores by id: the join alone may
 -- reorder them, and a reopened ranking then listed its reasons in another order (PL-144).
@@ -244,17 +251,26 @@ WHERE  catalog.level IS NULL OR catalog.level = parent.level;
 -- name: insert_candidate_gate_warnings(warnings)!
 -- A gate the set held as a warning, and the candidate failed (D56): the flag, with the answer
 -- version it read, so a reopened ranking shows the answer as it stood then (FU-A4).
--- The answer is the parent result's candidate's, copied here for the key to hold (0523).
+-- The answer is the parent result's candidate's, copied here for the key to hold (0523). One
+-- decided by citizenship read no answer (Q239), as for a refusal.
 INSERT INTO candidate_gate_warning (candidate_result, candidate, match_rule, match_rule_answer,
-                                    detail)
+                                    detail, decided_by_citizenship)
 SELECT warning.candidate_result, parent.candidate, warning.match_rule,
-       warning.match_rule_answer, warning.detail
+       warning.match_rule_answer, warning.detail, warning.decided_by_citizenship
 FROM   jsonb_to_recordset(:warnings::jsonb) AS warning(
-           candidate_result  bigint,
-           match_rule        text,
-           match_rule_answer bigint,
-           detail            text)
+           candidate_result       bigint,
+           match_rule             text,
+           match_rule_answer      bigint,
+           detail                 text,
+           decided_by_citizenship boolean)
 JOIN   candidate_result AS parent ON parent.id = warning.candidate_result;
+
+-- name: insert_evaluation_citizenships(evaluation, citizenships)!
+-- The household citizenships the ranking's gates were decided by citizenship on (Q239), frozen
+-- so a reopened refusal names what it read rather than today's household.
+INSERT INTO evaluation_citizenship (evaluation, candidate)
+SELECT :evaluation, held
+FROM   unnest(:citizenships::text[]) AS held;
 
 -- Reading a saved evaluation back.
 
@@ -320,6 +336,12 @@ SELECT r.id,
                        'match_rule',    reason.match_rule,
                        'compound_rule', reason.compound_rule,
                        'detail',        reason.reason_detail,
+                       -- What a gate decided by citizenship read in place of an answer (Q239).
+                       'citizenships',  CASE WHEN reason.decided_by_citizenship THEN
+                           (SELECT jsonb_agg(held.candidate ORDER BY held.candidate)
+                            FROM   evaluation_citizenship AS held
+                            WHERE  held.evaluation = reason.evaluation)
+                           ELSE '[]'::jsonb END,
                        -- The value rows the rule judged: the one a threshold read (FU-A3), or
                        -- a not_matching compound rule's in condition order (ST-07). Empty for
                        -- a gate, which reads no figure.
@@ -373,6 +395,11 @@ SELECT r.id,
                            jsonb_build_object(
                                'match_rule',  warning.match_rule,
                                'detail',      warning.detail,
+                               'citizenships', CASE WHEN warning.decided_by_citizenship THEN
+                                   (SELECT jsonb_agg(held.candidate ORDER BY held.candidate)
+                                    FROM   evaluation_citizenship AS held
+                                    WHERE  held.evaluation = r.evaluation)
+                                   ELSE '[]'::jsonb END,
                                -- The gate-answer VERSION the warning read, as for a refusal.
                                'gate_answer', (
                                    SELECT jsonb_build_object(
@@ -502,6 +529,12 @@ SELECT r.id,
                        'match_rule',    reason.match_rule,
                        'compound_rule', reason.compound_rule,
                        'detail',        reason.reason_detail,
+                       -- What a gate decided by citizenship read in place of an answer (Q239).
+                       'citizenships',  CASE WHEN reason.decided_by_citizenship THEN
+                           (SELECT jsonb_agg(held.candidate ORDER BY held.candidate)
+                            FROM   evaluation_citizenship AS held
+                            WHERE  held.evaluation = reason.evaluation)
+                           ELSE '[]'::jsonb END,
                        -- The value rows the rule judged: the one a threshold read (FU-A3), or
                        -- a not_matching compound rule's in condition order (ST-07). Empty for
                        -- a gate, which reads no figure.
@@ -555,6 +588,11 @@ SELECT r.id,
                            jsonb_build_object(
                                'match_rule',  warning.match_rule,
                                'detail',      warning.detail,
+                               'citizenships', CASE WHEN warning.decided_by_citizenship THEN
+                                   (SELECT jsonb_agg(held.candidate ORDER BY held.candidate)
+                                    FROM   evaluation_citizenship AS held
+                                    WHERE  held.evaluation = r.evaluation)
+                                   ELSE '[]'::jsonb END,
                                -- The gate-answer VERSION the warning read, as for a refusal.
                                'gate_answer', (
                                    SELECT jsonb_build_object(

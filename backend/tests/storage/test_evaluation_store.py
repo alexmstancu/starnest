@@ -712,6 +712,53 @@ class TestTheEvidenceIsFrozen:
         listed = await values.read_values(candidate=PORTUGAL, attribute=CLIMATE_ZONE)
         assert judged.id in {listing.value.id for listing in listed}
 
+    async def test_a_refusal_decided_by_citizenship_reopens_naming_the_citizenships_it_read(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        """Q239: it read no answer, so it pins the citizenships instead."""
+        decided = NonMatch(
+            match_rule="eu_free_movement",
+            reason_detail="EU/EEA free movement: no citizenship the household holds clears it",
+            citizenships=("country.united_kingdom",),
+        )
+
+        evaluation = await self._save(pool, decided)
+
+        assert await self._both_reads(pool, evaluation) == [decided, decided]
+
+    async def test_refusals_decided_on_different_citizenships_are_refused(
+        self, pool: AsyncConnectionPool
+    ) -> None:
+        criteria = await PostgresCriteriaStore(pool).read_criteria_set(SHIPPED, level=COUNTRY)
+        results = [
+            a_result(
+                candidate,
+                71,
+                None,
+                match_status=MatchStatus.NOT_MATCHING,
+                non_match_reasons=(
+                    NonMatch(
+                        match_rule="eu_free_movement", reason_detail="x", citizenships=(held,)
+                    ),
+                ),
+            )
+            for candidate, held in ((PORTUGAL, "country.iceland"), (GREECE, "country.norway"))
+        ]
+
+        with pytest.raises(UnsavableEvidenceError) as refused:
+            await PostgresEvaluationStore(pool).save(
+                criteria=criteria,
+                level=COUNTRY,
+                results=results,
+                score_scale_max=100,
+                computed_at=COMPUTED_AT,
+            )
+
+        assert refused.value.details == {
+            "reason": "citizenships",
+            "citizenships": [("country.iceland",), ("country.norway",)],
+        }
+
     async def test_a_gate_refusal_naming_no_stored_answer_is_refused_and_nothing_is_saved(
         self, pool: AsyncConnectionPool
     ) -> None:

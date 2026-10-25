@@ -217,7 +217,15 @@ SELECT r.id,
            FROM   match_rule_candidate AS c
            WHERE  c.match_rule = r.id
            ORDER  BY c.candidate
-       ) AS concerned_candidates
+       ) AS concerned_candidates,
+       -- The citizenships that clear the gate, and whether they decide it outright (0517).
+       ARRAY(
+           SELECT k.candidate
+           FROM   match_rule_clearing_citizenship AS k
+           WHERE  k.match_rule = r.id
+           ORDER  BY k.candidate
+       ) AS cleared_by,
+       r.decided_by_citizenship
 FROM   match_rule AS r
 WHERE  :level::text IS NULL OR r.level IS NULL OR r.level = :level
 ORDER  BY r.id;

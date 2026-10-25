@@ -237,6 +237,8 @@ class PostgresCatalogStore(CatalogStore):
                 concerned_candidates=tuple(
                     CandidateId(candidate) for candidate in row.concerned_candidates
                 ),
+                cleared_by=tuple(CandidateId(citizenship) for citizenship in row.cleared_by),
+                decided_by_citizenship=row.decided_by_citizenship,
             )
             for row in rows
         )

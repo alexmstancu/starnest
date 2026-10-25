@@ -350,13 +350,40 @@ async def test_each_researchable_gate_comes_back_concerning_its_one_country(
 async def test_a_gate_that_names_no_candidate_comes_back_concerning_every_one(
     catalog: PostgresCatalogStore,
 ) -> None:
-    """No rows means every candidate at the gate's level, so the two gates research cannot
-    answer -- one definitional, one the household's own -- still concern every country."""
+    """No rows means every candidate at the gate's level, so the gate that is the household's
+    own still concerns every country."""
     rules = {str(rule.id): rule for rule in await catalog.read_match_rules()}
 
-    for gate in ("eu_free_movement", A_GATE_ASKED_AT_EVERY_LEVEL):
-        assert rules[gate].concerned_candidates == ()
-        assert rules[gate].concerns("country.portugal")
+    assert rules[A_GATE_ASKED_AT_EVERY_LEVEL].concerned_candidates == ()
+    assert rules[A_GATE_ASKED_AT_EVERY_LEVEL].concerns("country.portugal")
+
+
+async def test_free_movement_concerns_the_eu_and_eea_states_and_is_cleared_by_eu_citizenship(
+    catalog: PostgresCatalogStore,
+) -> None:
+    """0517, Q239: the 30 EU and EEA states, never the UK or Switzerland, which their own gates
+    ask about; decided by the household's citizenships, the EU's 27 clearing it."""
+    gate = {str(rule.id): rule for rule in await catalog.read_match_rules()}["eu_free_movement"]
+
+    assert len(gate.concerned_candidates) == 30
+    assert not gate.concerns("country.united_kingdom")
+    assert not gate.concerns("country.switzerland")
+    assert gate.concerns("country.norway")
+    assert (gate.decided_by_citizenship, len(gate.cleared_by)) == (True, 27)
+    assert "country.norway" not in gate.cleared_by
+
+
+async def test_the_uk_and_swiss_gates_are_cleared_by_the_citizenships_the_design_names(
+    catalog: PostgresCatalogStore,
+) -> None:
+    rules = {str(rule.id): rule for rule in await catalog.read_match_rules()}
+
+    assert {gate: rules[gate].cleared_by for gate in ("uk_skilled_worker", "ch_eu_efta_quota")} == {
+        "uk_skilled_worker": ("country.ireland", "country.united_kingdom"),
+        "ch_eu_efta_quota": ("country.switzerland",),
+    }
+    assert rules["li_eea_quota"].cleared_by == ()
+    assert not rules["uk_skilled_worker"].decided_by_citizenship
 
 
 async def test_a_compound_rule_comes_back_carrying_the_children_its_shape_reads(

@@ -145,6 +145,20 @@ class MatchRule(BaseModel):
             "level -- read through `concerns`, never directly."
         ),
     )
+    cleared_by: tuple[CandidateId, ...] = Field(
+        default=(),
+        description=(
+            "The citizenships that clear the gate wherever it asks: a household holding one "
+            "matches it with no recorded answer (`reqs.md` 7.3, Q239)."
+        ),
+    )
+    decided_by_citizenship: bool = Field(
+        default=False,
+        description=(
+            "Whether the household's citizenships decide the gate outright: where none of them "
+            "clears it, it does not match, with no recorded answer (`eu_free_movement`)."
+        ),
+    )
 
     def applies_at(self, level: str) -> bool:
         """Whether this gate is asked at that level.
@@ -232,6 +246,20 @@ class MatchRuleResult(BaseModel):
             "What a re-check found about an answer a person recorded, stored as a version "
             "beside it and never over it (`reqs.md` Q237, D53). It rules nothing out; it stops "
             "being pending once a person records an answer again."
+        ),
+    )
+    assumed_citizenships: tuple[CandidateId, ...] = Field(
+        default=(),
+        description=(
+            "The household citizenships this version assumed, copied when it was written "
+            "(Q239). Empty on a version written before they were recorded."
+        ),
+    )
+    needs_recheck: bool = Field(
+        default=False,
+        description=(
+            "Whether the household's citizenships now differ from those it assumed. A flag "
+            "only: the answer still applies until a person records again (Q239)."
         ),
     )
 

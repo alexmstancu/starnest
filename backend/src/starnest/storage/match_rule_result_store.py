@@ -148,6 +148,8 @@ def _answer_from(row: Any) -> MatchRuleResult:
         override_date=row.override_date,
         recorded_at=row.recorded_at,
         pending_proposal=_pending_proposal_from(row),
+        assumed_citizenships=tuple(CandidateId(held) for held in row.assumed_citizenships),
+        needs_recheck=bool(row.needs_recheck),
     )
 
 
