@@ -86,10 +86,9 @@ comparison is a design failure, not a shortcut.
 3. **Alex approves this plan.** A change to scope, phases or gates comes back here first.
 4. **P0 writes the four gates as failing tests**; the slices then build until each one passes.
 
-**Before P1 starts**, the five open v1 findings (`known-issues.md` P101-P103, P105, P106) are
-closed or explicitly accepted by Alex. They are handled in their own pass, by decision. This is
-what was W0 ("v1 works"): its other items, the saved-ranking snapshot gaps and the run
-accounting, closed in round 3.
+**v1 works** (what was W0): the saved-ranking snapshot gaps and the run accounting closed in
+round 3, and the five findings left open at its close (`known-issues.md` P101-P103, P105, P106)
+were closed on 2026-10-25. Nothing in v1 is open except by decision.
 
 ### 1.2 Vertical slices (Q250)
 

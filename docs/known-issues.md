@@ -21,9 +21,10 @@ the account of a defect outlives the defect.
 
 ## Status
 
-**2026-10-25: six opened, P101-P106; P104 closed the same day**, and the other five are
-handled in a separate pass by decision -- the last review of PL-033 found five, and the batch
-review left one about the mock. Round 3 closed with them open; see the last section.
+**2026-10-25: six opened, P101-P106, and all six closed the same day** -- P104 at once, the
+other five in their own pass after round 3 closed (the last review of PL-033 found five, and the
+batch review left one about the mock). P107, found in use, closed the same day too. See the last
+section.
 
 **69 findings: 67 closed, 2 open, and both are open by decision rather than by neglect**:
 P38's mitigated LLM editions and P6's Cloudflare block. **P10's unserved exchange rate closed
@@ -624,26 +625,31 @@ GPT-6 Astra and Grok 4.7 reviewed the 109 commits of the October remediation, an
 ## Found by the last review of PL-033 -- 2026-10-25
 
 The independent review of PL-033's round 10 (`85f384e`), and of the Recent-changes writers
-merged with it (C11, PL-138), found five High defects. **By decision on 2026-10-25 they are
+merged with it (C11, PL-138), found five High defects. **By decision on 2026-10-25 they were
 handled in a separate pass**, and round 3 closed PL-033, PL-142 and PL-138 with them open.
+**That pass closed all of them the same day**, each proved first by a test that failed.
 
 - **When they bite:** four need the local server to stall past the client's 10-second write
   bound, or to drop a response. **P104 happens in normal use.**
 - **One root:** each recording writer re-implements the write protocol (the one write slot,
   the per-set hold, the read-back, the unconfirmed entry, delivery through the session, and
   ending the write without depending on a component staying mounted), and each copy misses a
-  different piece. The fix is one session-level runner that every recorded write uses,
-  forward and Undo alike.
-- **A head start:** the unfinished round 11 is kept, unmerged, on branch `area/ui-history-3`
-  (`21fea38`). It has five tests reproducing P101-P105, all failing at `c0ee9c3`, and that
-  runner partly built.
+  different piece. The fix proposed was one session-level runner that every recorded write
+  uses, forward and Undo alike.
+- **The fix taken was narrower, and enough.** Every writer already read back its *forward*
+  write; what none did was read back its *reverse*. So each reverse now reads back the value it
+  restores, as its write does (`settledUndo`), and the undo engine keeps an undo of unknown
+  outcome listed unconfirmed instead of reporting it failed. The source writer gained the
+  forward read-back it alone lacked, and a reload asked of an unmounted read answers at once.
+  The runner stays a possible consolidation, not a defect. The round-11 work it was started on
+  (`21fea38`, branch `area/ui-history-3`) contributed its reproductions and was retired.
 
 | # | Finding | State |
 |---|---|---|
-| **P101** | **An overdue creation loses its history** (`RecentChanges.tsx`, `stranded()`, from `5ed84a1`). With Create held past 10 seconds, the refreshed list lacks the unfinished set, and `stranded()` takes that for a deletion and drops its unconfirmed entry. When the request lands, the set exists with no entry and no Undo. | **Open.** Drop only the entries of a set the session knew to exist and that has since gone. |
-| **P102** | **A source write in flight when Configure is left holds every Configure write for good** (`sources/useDataSources.ts`, from `e3ed552`). Its `reload()` belongs to the unmounted hook and never resolves, so the write never ends, and every writer and Undo stays held until the page is reloaded. | **Open.** The shared runner. |
-| **P103** | **A source switch whose answer is lost, and whose read-back fails, is reported as refused** (`sources/useDataSources.ts`, from `e3ed552`). There is no unconfirmed entry and no Check again, and Reset cannot reverse a change that did happen. | **Open.** The shared runner. |
+| ~~**P101**~~ | **An overdue creation loses its history** (`RecentChanges.tsx`, `stranded()`, from `5ed84a1`). With Create held past 10 seconds, the refreshed list lacks the unfinished set, and `stranded()` takes that for a deletion and drops its unconfirmed entry. When the request lands, the set exists with no entry and no Undo. | **Closed 2026-10-25.** `stranded()` never counts an unconfirmed creation: a set still being made was never known to exist, so its absence from the list is not a deletion (`changeHistory.ts`). Proved by the round-11 reproduction and a unit test of `stranded()`. |
+| ~~**P102**~~ | **A source write in flight when Configure is left holds every Configure write for good** (`sources/useDataSources.ts`, from `e3ed552`). Its `reload()` belongs to the unmounted hook and never resolves, so the write never ends, and every writer and Undo stays held until the page is reloaded. | **Closed 2026-10-25.** A `reload()` asked of a read that has unmounted is answered at once (`api/useRead.ts`), so a write answered after its screen was left gives its slot back. **And every sources panel reads again when a source write lands**, not only the one that sent it: the panel shown since the return had read the order before the move, and the next move would have been computed from it. Proved by the round-11 reproduction, extended to the order shown, and a `useRead` unit test. |
+| ~~**P103**~~ | **A source switch whose answer is lost, and whose read-back fails, is reported as refused** (`sources/useDataSources.ts`, from `e3ed552`). There is no unconfirmed entry and no Check again, and Reset cannot reverse a change that did happen. | **Closed 2026-10-25.** Source writes read back like every other writer's (`settled`): a lost answer the read-back confirms is noted as any change, one nobody can yet confirm is listed unconfirmed with Check again, and further source changes wait while one is unconfirmed (`sources/useDataSources.ts`). Proved by the round-11 reproduction. |
 | ~~**P104**~~ | **Undoing "made a gate a warning" leaves it a warning while the screen says gate** (`rules/ruleSwitches.ts`, from `85f384e`). The prior state recorded the outcome as `null`, the default, so the reverse leaves `outcome` out, and the server keeps the outcome it holds (`openapi.yaml`, `setMatchRuleEnforcement`). | **Closed 2026-10-25.** A rule read as it stands names the outcome the server holds for it (the chosen one, else a gate's `not_matching` or a compound rule's catalog outcome), so Undo sends it back by name. `RulesPanel.test.tsx`, "undoes a gate made a warning back to a gate", fails without the fix. |
-| **P105** | **An Undo of a rule switch that outlives the 10-second bound frees the rule with no unconfirmed entry** (`rules/useRuleToggles.ts`, from `85f384e`). The undo engine's handling of a lost reverse answer is older, and reaches every writer's Undo. | **Open.** Run reverses through the same runner as writes. |
+| ~~**P105**~~ | **An Undo of a rule switch that outlives the 10-second bound frees the rule with no unconfirmed entry** (`rules/useRuleToggles.ts`, from `85f384e`). The undo engine's handling of a lost reverse answer is older, and reaches every writer's Undo. | **Closed 2026-10-25.** Every writer's reverse reads back the value it restores (`settledUndo`), and an undo whose outcome is unknown is no longer a failure: the change stays listed, "Undo not confirmed", holding its set, and leaves the list once its undo is known to have landed -- by Check again or by its own request settling (`useChangeHistory.ts`). Proved by the round-11 reproduction and engine unit tests. |
 | ~~**P107**~~ | **A pillar drag answered 500, and the set then failed on every read** (found in use, 2026-10-25). `criteria/rebalancing.py` kept shares at Decimal's 28 significant digits and summed its residue at the same precision, so `local_employment`'s pillar weights were stored summing to 100.000000000000000000000000004, which `CriteriaSet`'s exact check read as 99.99999999999999999999999999 and refused: Rank, Configure and Compare all failed for the set. | **Closed the same day** (Q240). A redistributed weight is kept to ten places with its residue placed in exact arithmetic, and the check sums every digit and accepts a residue past the twentieth place. `test_rebalancing.py` replays the stored weights and fails without the fix. |
-| **P106** | **The mock counts a source it does not list as switched on and free** (`mocks/handlers.ts`, the exact-pairs estimate). OECD is absent from the mock's sources, so the mock arms an estimate over attributes only it declares where the server might refuse. Low: test fidelity. Adding OECD broke about twenty source-priority tests that count the sources. | **Open.** Add OECD and every declared source to the fixture, and update the tests that count them. |
+| ~~**P106**~~ | **The mock counts a source it does not list as switched on and free** (`mocks/handlers.ts`, the exact-pairs estimate). OECD is absent from the mock's sources, so the mock arms an estimate over attributes only it declares where the server might refuse. Low: test fidelity. Adding OECD broke about twenty source-priority tests that count the sources. | **Closed 2026-10-25.** The mock lists every source an attribute declares and every source a stored figure cites -- OECD and the Eurostat estimate added -- and no longer counts an unlisted source as switched on. The 34 tests that assumed three sources now read five; the tax rate's own order (OECD first) now shows, as it does against the server. |

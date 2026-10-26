@@ -20,9 +20,10 @@ arriving is a row rather than a change — which is the "nothing hardcoded" inva
 `docs/todos.md` tracks what is open.
 
 **The review programme is closed** (2026-10-25). Three rounds of independent review fed one
-plan of 182 items, and all 182 are done. What remains open is in `docs/known-issues.md`: five
-small items, P101-P106 (four need a stalled or crashed local server, one is the unit-test
-mock), and two open by decision (P6, P38).
+plan of 182 items, and all 182 are done. The five findings left open at its close, P101-P106,
+were fixed the same day: **an undo reads back what it did, as a write does** (`settledUndo`), so
+one whose answer never came stays listed unconfirmed instead of failing. What remains open in
+`docs/known-issues.md` is open by decision.
 
 **v2.0, the city level, is designed and planned, not started** (2026-10-25). `docs/arch.md` 12
 revises the architecture, `docs/devplan-v2.md` is the build plan awaiting approval, and the
