@@ -135,17 +135,14 @@ function nothingToFetch(reason: string, more: Record<string, unknown> = {}): Res
 
 /**
  * The sources that would answer one attribute in a scope naming it, as `settle_scope` asks: the
- * switched-on sources that declare it. **A source the mock's list does not hold counts as a
- * structured source switched on** -- the list is shorter than the server's catalog (OECD) --
- * and so does every asked source for an attribute the mock's catalog does not list.
+ * switched-on sources that declare it (P106: the list holds every source the fixtures name, so
+ * none is taken for switched on by being missing). Every asked source answers an attribute the
+ * mock's catalog does not list.
  */
 function answerersOf(attribute: string, asked: readonly DataSource[]): string[] {
   const declared = ATTRIBUTES.find((each) => each.id === attribute)?.answerable_by;
   if (declared === undefined) return asked.map((source) => source.id);
-  return declared.filter((id) => {
-    const listed = dataSources.find((source) => source.id === id);
-    return listed === undefined || asked.includes(listed);
-  });
+  return declared.filter((id) => asked.some((source) => source.id === id));
 }
 
 /** Exact pairs settled as the server settles them: a pair no asked source declares is dropped. */
@@ -172,12 +169,7 @@ function nothingToFetchIn(scope: ScopeAsked): Response | null {
     return sourcesAsked(scope).length === 0 ? nothingToFetch("no_source_switched_on") : null;
   }
   if (settledPairs(scope).length > 0) return null;
-  const unlisted = scope.pairs.some(({ attribute }) =>
-    (ATTRIBUTES.find((each) => each.id === attribute)?.answerable_by ?? []).some(
-      (id) => !dataSources.some((source) => source.id === id),
-    ),
-  );
-  if (sourcesAsked(scope).length === 0 && !unlisted) return nothingToFetch("no_source_switched_on");
+  if (sourcesAsked(scope).length === 0) return nothingToFetch("no_source_switched_on");
   return nothingToFetch("nothing_answerable", {
     candidates: new Set(scope.pairs.map((pair) => pair.candidate)).size,
     attributes: new Set(scope.pairs.map((pair) => pair.attribute)).size,
@@ -241,9 +233,7 @@ function refusedWith(body: { code: string; details?: Record<string, unknown> }):
 /**
  * A retry of part of run `runId`, in the server's order (`_go_back`, `retry_run`, `ask_again`):
  * a run in flight first, then a run with nothing of the kind, an empty selection, a pair the run
- * does not hold, and -- for failures -- every source that failed now off. **A source the mock's
- * list does not name counts as on**: the list is shorter than the server's catalog (OECD), and
- * an unlisted source is not one anybody switched off.
+ * does not hold, and -- for failures -- every source that failed now off.
  */
 function goBack(
   runId: number,
@@ -276,7 +266,7 @@ function goBack(
     return { plan: planOver(items, sources) };
   }
   const reachable = selected.filter(
-    (failure) => dataSources.find((source) => source.id === failure.data_source)?.is_enabled !== false,
+    (failure) => dataSources.find((source) => source.id === failure.data_source)?.is_enabled === true,
   );
   if (reachable.length === 0) return refusedWith({ code: "nothing_to_fetch", details: { reason: "sources_switched_off" } });
   const perSource = new Map<string, Set<string>>();

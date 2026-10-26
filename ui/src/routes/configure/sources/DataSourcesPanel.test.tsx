@@ -27,6 +27,9 @@ async function panel() {
   return within(await screen.findByRole("region", { name: "Source priority" }));
 }
 
+/** The shipped fixture's fourth source, named as its row is (P106). */
+const ESTIMATE = "Estimated from Eurostat tax-benefit figures";
+
 describe("the source priority panel", () => {
   it("lists every source in priority order, lowest number first", async () => {
     renderShell("/configure");
@@ -35,7 +38,7 @@ describe("the source priority panel", () => {
     const names = (await sources.findAllByRole("listitem")).map((item) =>
       item.getAttribute("aria-label"),
     );
-    expect(names).toEqual(["Eurostat", "Manual entry", "LLM with web search"]);
+    expect(names).toEqual(["Eurostat", "OECD", "Manual entry", ESTIMATE, "LLM with web search"]);
   });
 
   it("names how each source answers, so a figure from a model is recognisable as one", async () => {
@@ -72,7 +75,7 @@ describe("the source priority panel", () => {
     ).toHaveTextContent("not consulted");
     expect(
       screen.getByRole("listitem", { name: "Manual entry" }),
-    ).toHaveTextContent("2");
+    ).toHaveTextContent("3");
   });
 
   it("switches a source on, and it takes its place in the order", async () => {
@@ -89,7 +92,7 @@ describe("the source priority panel", () => {
     await waitFor(() =>
       expect(
         screen.getByRole("listitem", { name: "LLM with web search" }),
-      ).toHaveTextContent("3"),
+      ).toHaveTextContent("5"),
     );
   });
 
@@ -119,12 +122,15 @@ describe("the source priority panel", () => {
       await sources.findByRole("button", { name: "Move Manual entry up" }),
     );
 
-    await waitFor(() => {
-      const names = sources
-        .getAllByRole("listitem")
-        .map((item) => item.getAttribute("aria-label"));
-      expect(names[0]).toBe("Manual entry");
-    });
+    await waitFor(() =>
+      expect(namesInOrder(sources)).toEqual([
+        "Eurostat",
+        "Manual entry",
+        "OECD",
+        ESTIMATE,
+        "LLM with web search",
+      ]),
+    );
   });
 
   /** The other arrow, which nothing clicked: a lower number wins, so down means giving it up. */
@@ -139,8 +145,10 @@ describe("the source priority panel", () => {
 
     await waitFor(() =>
       expect(namesInOrder(sources)).toEqual([
-        "Manual entry",
+        "OECD",
         "Eurostat",
+        "Manual entry",
+        ESTIMATE,
         "LLM with web search",
       ]),
     );
@@ -177,9 +185,22 @@ describe("the source priority panel", () => {
     await user.click(up);
 
     await waitFor(() =>
-      expect(namesInOrder(sources)).toEqual(["Manual entry", "Eurostat", "LLM with web search"]),
+      expect(namesInOrder(sources)).toEqual([
+        "Manual entry",
+        "Eurostat",
+        "OECD",
+        ESTIMATE,
+        "LLM with web search",
+      ]),
     );
-    expect(await storedPriorities()).toEqual({ manual: 10, eurostat: 11, llm: 90 });
+    // Eurostat takes 11 to read back after Manual entry, and ties OECD there in the order asked.
+    expect(await storedPriorities()).toEqual({
+      manual: 10,
+      eurostat: 11,
+      oecd: 11,
+      eurostat_estimate: 65,
+      llm: 90,
+    });
     expect(sources.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -263,7 +284,7 @@ function recordOrders(): unknown[] {
 }
 
 /** The one request the ▲ on Manual entry sends, against the shipped fixture: the whole order. */
-const THE_ARROWS_ORDER = { order: ["manual", "eurostat", "llm"] };
+const THE_ARROWS_ORDER = { order: ["eurostat", "manual", "oecd", "eurostat_estimate", "llm"] };
 
 /**
  * Order a request *after* the gesture under test, and wait for it to land.
@@ -419,7 +440,9 @@ describe("reordering sources by dragging", () => {
 
     await waitFor(() =>
       expect(namesInOrder(sources)).toEqual([
+        "OECD",
         "Manual entry",
+        ESTIMATE,
         "LLM with web search",
         "Eurostat",
       ]),
@@ -437,7 +460,9 @@ describe("reordering sources by dragging", () => {
       expect(namesInOrder(sources)).toEqual([
         "LLM with web search",
         "Eurostat",
+        "OECD",
         "Manual entry",
+        ESTIMATE,
       ]),
     );
   });
@@ -456,11 +481,23 @@ describe("reordering sources by dragging", () => {
     dragOnto(await row("Eurostat"), await row("LLM with web search"));
 
     await waitFor(() =>
-      expect(namesInOrder(sources)).toEqual(["Manual entry", "LLM with web search", "Eurostat"]),
+      expect(namesInOrder(sources)).toEqual([
+        "OECD",
+        "Manual entry",
+        ESTIMATE,
+        "LLM with web search",
+        "Eurostat",
+      ]),
     );
-    expect(sent).toEqual([{ order: ["manual", "llm", "eurostat"] }]);
+    expect(sent).toEqual([{ order: ["oecd", "manual", "eurostat_estimate", "llm", "eurostat"] }]);
     expect(patched).toEqual([]);
-    expect(await storedPriorities()).toEqual({ manual: 10, llm: 50, eurostat: 90 });
+    expect(await storedPriorities()).toEqual({
+      oecd: 10,
+      manual: 11,
+      eurostat_estimate: 50,
+      llm: 65,
+      eurostat: 90,
+    });
   });
 
   /**
@@ -584,8 +621,8 @@ describe("reordering sources by dragging", () => {
     renderShell("/configure");
     const sources = await panel();
 
-    dragOnto(await row("Eurostat"), await row("Manual entry"));
-    await waitFor(() => expect(namesInOrder(sources)[0]).toBe("Manual entry"));
+    dragOnto(await row("Eurostat"), await row("OECD"));
+    await waitFor(() => expect(namesInOrder(sources)[0]).toBe("OECD"));
 
     await user.click(
       await sources.findByRole("button", { name: "Move Eurostat up" }),
@@ -672,7 +709,7 @@ describe("the source priority panel while a change is being written", () => {
     );
     await waitFor(() => expect(sent).toHaveLength(1));
 
-    for (const name of ["Eurostat", "Manual entry", "LLM with web search"]) {
+    for (const name of ["Eurostat", "OECD", "Manual entry", ESTIMATE, "LLM with web search"]) {
       expectHeld(sources.getByRole("switch", { name: `Consult ${name}` }));
     }
     expectHeld(sources.getByRole("button", { name: "Move Eurostat down" }));
@@ -724,8 +761,20 @@ describe("the source priority panel while a change is being written", () => {
       "Dismiss",
     ]);
     await waitFor(() => expectNotHeld(sources.getByRole("switch", { name: "Consult Eurostat" })));
-    expect(namesInOrder(sources)).toEqual(["Eurostat", "Manual entry", "LLM with web search"]);
-    expect(await storedPriorities()).toEqual({ eurostat: 10, manual: 50, llm: 90 });
+    expect(namesInOrder(sources)).toEqual([
+      "Eurostat",
+      "OECD",
+      "Manual entry",
+      ESTIMATE,
+      "LLM with web search",
+    ]);
+    expect(await storedPriorities()).toEqual({
+      eurostat: 10,
+      oecd: 11,
+      manual: 50,
+      eurostat_estimate: 65,
+      llm: 90,
+    });
 
     await user.click(within(alert).getByRole("button", { name: "Dismiss" }));
     expect(sources.queryByRole("alert")).not.toBeInTheDocument();
@@ -763,7 +812,13 @@ describe("the source priority panel while a change is being written", () => {
       "Dismiss",
     ]);
     await waitFor(() =>
-      expect(namesInOrder(sources)).toEqual(["Eurostat", "Manual entry", "LLM with web search"]),
+      expect(namesInOrder(sources)).toEqual([
+        "Eurostat",
+        "OECD",
+        "Manual entry",
+        ESTIMATE,
+        "LLM with web search",
+      ]),
     );
   });
 
@@ -876,7 +931,7 @@ describe("the source priority panel while a change is being written", () => {
       renderShell("/configure");
       const sources = await panel();
       const up = await sources.findByRole("button", {
-        name: "Move LLM with web search up",
+        name: "Move Manual entry up",
       });
       act(() => up.focus());
 
@@ -892,19 +947,19 @@ describe("the source priority panel while a change is being written", () => {
       await waitFor(() =>
         expect(namesInOrder(sources)).toEqual([
           "Eurostat",
-          "LLM with web search",
           "Manual entry",
+          "OECD",
+          ESTIMATE,
+          "LLM with web search",
         ]),
       );
       await waitFor(() => expectNotHeld(up));
       expect(up).toHaveFocus();
       await user.keyboard("{Enter}");
-      await waitFor(() =>
-        expect(namesInOrder(sources)[0]).toBe("LLM with web search"),
-      );
+      await waitFor(() => expect(namesInOrder(sources)[0]).toBe("Manual entry"));
       expect(writes.sent).toEqual([
-        { id: "order", body: { order: ["eurostat", "llm", "manual"] } },
-        { id: "order", body: { order: ["llm", "eurostat", "manual"] } },
+        { id: "order", body: { order: ["eurostat", "manual", "oecd", "eurostat_estimate", "llm"] } },
+        { id: "order", body: { order: ["manual", "eurostat", "oecd", "eurostat_estimate", "llm"] } },
       ]);
       // First now, so there is nowhere further up to go: disabled outright, not held. Waited
       // for, because the order is drawn from the read-back a render before the hold lets go.
@@ -931,8 +986,10 @@ describe("the source priority panel while a change is being written", () => {
 
       await waitFor(() =>
         expect(namesInOrder(sources)).toEqual([
-          "Manual entry",
+          "OECD",
           "Eurostat",
+          "Manual entry",
+          ESTIMATE,
           "LLM with web search",
         ]),
       );
@@ -944,7 +1001,7 @@ describe("the source priority panel while a change is being written", () => {
       renderShell("/configure");
       const sources = await panel();
       const down = await sources.findByRole("button", {
-        name: "Move Manual entry down",
+        name: `Move ${ESTIMATE} down`,
       });
       act(() => down.focus());
 
@@ -953,15 +1010,17 @@ describe("the source priority panel while a change is being written", () => {
       await waitFor(() =>
         expect(namesInOrder(sources)).toEqual([
           "Eurostat",
-          "LLM with web search",
+          "OECD",
           "Manual entry",
+          "LLM with web search",
+          ESTIMATE,
         ]),
       );
       // Last now, so its own arrow is disabled outright and cannot hold focus.
       await waitFor(() => expect(down).toBeDisabled());
       await waitFor(() =>
         expect(
-          sources.getByRole("button", { name: "Move Manual entry up" }),
+          sources.getByRole("button", { name: `Move ${ESTIMATE} up` }),
         ).toHaveFocus(),
       );
     });
@@ -994,7 +1053,9 @@ describe("the source priority panel while a change is being written", () => {
       // the control the keyboard is on.
       expect(namesInOrder(sources)).toEqual([
         "Eurostat",
+        "OECD",
         "Manual entry",
+        ESTIMATE,
         "LLM with web search",
       ]);
       expect(up).toHaveFocus();
@@ -1007,8 +1068,10 @@ describe("the source priority panel while a change is being written", () => {
       await waitFor(() =>
         expect(namesInOrder(sources)).toEqual([
           "Eurostat",
-          "LLM with web search",
+          "OECD",
           "Manual entry",
+          "LLM with web search",
+          ESTIMATE,
         ]),
       );
       await waitFor(() => expectNotHeld(up));
@@ -1185,11 +1248,12 @@ describe("attributes that name their own source order", () => {
     const list = await sources.findByRole("list", {
       name: "Attributes that name their own source order",
     });
-    const items = within(list).getAllByRole("listitem");
-    expect(items).toHaveLength(1);
-    expect(items[0]).toHaveTextContent(
+    // OECD leads the tax rate's own order, ahead of Eurostat (Q207); the mock hid that while OECD
+    // was missing from its sources (P106).
+    expect(within(list).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      "Total effective tax rate: OECD first, then the order above; refetched after 24 months",
       "International employers: LLM with web search first, then the order above; refetched after 24 months",
-    );
+    ]);
   });
 
   it("says what the order decides, and that some attributes name their own", async () => {

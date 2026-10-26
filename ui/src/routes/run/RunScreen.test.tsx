@@ -189,7 +189,9 @@ describe("estimating a run", () => {
  */
 describe("an estimate with nothing to ask", () => {
   async function everySourceOff(): Promise<void> {
-    for (const source of ["eurostat", "llm"]) await updateDataSource(source, { is_enabled: false });
+    for (const source of EVERY_FETCHING_SOURCE) {
+      await updateDataSource(source, { is_enabled: false });
+    }
   }
 
   it("is refused with every source switched off, pointing at Source priority", async () => {
@@ -490,6 +492,9 @@ describe("running and retrying", () => {
 });
 
 const TAX_PAIR = { candidate: "country.liechtenstein", attribute: "country.total_tax_rate_effective" };
+
+/** Every source in the mock's list that fetches: the structured ones and the model (P106). */
+const EVERY_FETCHING_SOURCE = ["eurostat", "oecd", "eurostat_estimate", "llm"];
 
 /** Records every retry sent, with the run it named, and answers with run `id`. */
 function recordRetries(id: number): { runId: number; body: unknown }[] {
@@ -1365,7 +1370,9 @@ describe("re-asking about part of a run", () => {
   });
 
   it("scopes a selection spanning two runs to its pairs, naming every source asked", async () => {
-    const malta = { candidate: "country.malta", attribute: "country.homicide_rate" };
+    // An attribute the mock's catalog declares, so it is asked of Eurostat alone, as the server
+    // settles it: one the mock does not list is asked of every source switched on.
+    const malta = { candidate: "country.malta", attribute: "country.cost_of_living_index" };
     serveGaps({
       failed: [
         { ...TAX_PAIR, data_acquisition_run: 7, failures: [{ data_source: "eurostat", error_message: "late" }] },
@@ -1615,7 +1622,9 @@ describe("acquiring one candidate, attribute or pillar", () => {
   });
 
   it("is refused at the estimate with every source switched off", async () => {
-    for (const source of ["eurostat", "llm"]) await updateDataSource(source, { is_enabled: false });
+    for (const source of EVERY_FETCHING_SOURCE) {
+      await updateDataSource(source, { is_enabled: false });
+    }
     await pick("One attribute", "Cost of living index");
 
     await userEvent.click(thePicker().getByRole("button", { name: "Estimate" }));

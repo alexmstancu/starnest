@@ -794,9 +794,13 @@ describe("the mock's source reorder", () => {
     items.map((source) => [source.id, source.default_priority]);
 
   it("hands the stored numbers back out in the new order, so the tiers survive", async () => {
-    const { items } = await reorderDataSources(["llm", "eurostat", "manual"]);
+    const { items } = await reorderDataSources([
+      "llm", "eurostat", "oecd", "manual", "eurostat_estimate",
+    ]);
 
-    expect(priorities(items)).toEqual([["llm", 10], ["eurostat", 50], ["manual", 90]]);
+    expect(priorities(items)).toEqual([
+      ["llm", 10], ["eurostat", 11], ["oecd", 50], ["manual", 65], ["eurostat_estimate", 90],
+    ]);
     expect(priorities((await fetchDataSources()).items)).toEqual(priorities(items));
   });
 
@@ -806,14 +810,22 @@ describe("the mock's source reorder", () => {
       pathParams: { dataSourceId: "manual" },
     });
     expect(priorities((await fetchDataSources()).items)).toEqual([
-      ["eurostat", 10], ["manual", 10], ["llm", 90],
+      ["eurostat", 10], ["manual", 10], ["oecd", 11], ["eurostat_estimate", 65], ["llm", 90],
     ]);
 
-    const kept = await reorderDataSources(["eurostat", "manual", "llm"]);
-    expect(priorities(kept.items)).toEqual([["eurostat", 10], ["manual", 10], ["llm", 90]]);
+    const kept = await reorderDataSources(["eurostat", "manual", "oecd", "eurostat_estimate", "llm"]);
+    expect(priorities(kept.items)).toEqual([
+      ["eurostat", 10], ["manual", 10], ["oecd", 11], ["eurostat_estimate", 65], ["llm", 90],
+    ]);
 
-    const swapped = await reorderDataSources(["manual", "eurostat", "llm"]);
-    expect(priorities(swapped.items)).toEqual([["manual", 10], ["eurostat", 11], ["llm", 90]]);
+    // Eurostat now follows Manual entry on 10, which reads back the other way, so it takes 11 --
+    // a tie with OECD that reads back in the order asked for, so it stands.
+    const swapped = await reorderDataSources([
+      "manual", "eurostat", "oecd", "eurostat_estimate", "llm",
+    ]);
+    expect(priorities(swapped.items)).toEqual([
+      ["manual", 10], ["eurostat", 11], ["oecd", 11], ["eurostat_estimate", 65], ["llm", 90],
+    ]);
   });
 
   it("refuses an order that does not name every source once, with all three lists", async () => {
@@ -824,17 +836,17 @@ describe("the mock's source reorder", () => {
     expect(error.status).toBe(422);
     expect(error.code).toBe("invalid_source_order");
     expect(error.details).toEqual({
-      missing: ["eurostat", "manual"],
+      missing: ["eurostat", "eurostat_estimate", "manual", "oecd"],
       repeated: ["llm"],
       unknown: ["gone"],
     });
     expect(priorities((await fetchDataSources()).items)).toEqual([
-      ["eurostat", 10], ["manual", 50], ["llm", 90],
+      ["eurostat", 10], ["oecd", 11], ["manual", 50], ["eurostat_estimate", 65], ["llm", 90],
     ]);
   });
 
   it("leaves a list empty where nothing was wrong with it", async () => {
-    const error = (await reorderDataSources(["eurostat", "manual"]).catch(
+    const error = (await reorderDataSources(["eurostat", "oecd", "manual", "eurostat_estimate"]).catch(
       (thrown: unknown) => thrown,
     )) as ApiError;
 
@@ -964,7 +976,7 @@ describe("the mock's estimate with nothing to ask", () => {
   });
 
   it("refuses a sweep with every fetching source switched off", async () => {
-    await updateDataSource("eurostat", { is_enabled: false });
+    await switchOffEveryStructuredSource();
 
     expect(await refused(() => planRun({ level: "country" }))).toEqual([
       409,
@@ -974,7 +986,7 @@ describe("the mock's estimate with nothing to ask", () => {
   });
 
   it("asks a paid source only when the scope names attributes", async () => {
-    await updateDataSource("eurostat", { is_enabled: false });
+    await switchOffEveryStructuredSource();
     await updateDataSource("llm", { is_enabled: true });
     const pair = { candidate: "country.malta", attribute: "country.homicide_rate" };
 
@@ -1086,9 +1098,13 @@ describe("the mock's retry of exact pairs", () => {
       items: "unanswered",
       pairs: [{ candidate: "country.liechtenstein", attribute: "country.overcrowding_rate" }],
     });
-    expect(asked.by_source).toEqual([{ data_source: "eurostat", items: 1 }]);
+    expect(asked.by_source).toEqual([
+      { data_source: "eurostat", items: 1 },
+      { data_source: "oecd", items: 1 },
+      { data_source: "eurostat_estimate", items: 1 },
+    ]);
 
-    await updateDataSource("eurostat", { is_enabled: false });
+    await switchOffEveryStructuredSource();
     expect(
       await refused(() =>
         planRetry(7, {
@@ -1308,3 +1324,10 @@ describe("the mock's re-check of recorded answers", () => {
     expect(stored?.pending_proposal ?? null).toBeNull();
   });
 });
+
+/** Every structured source the mock lists switched off, as "nothing left to fetch from" needs. */
+async function switchOffEveryStructuredSource(): Promise<void> {
+  for (const id of ["eurostat", "oecd", "eurostat_estimate"]) {
+    await updateDataSource(id, { is_enabled: false });
+  }
+}

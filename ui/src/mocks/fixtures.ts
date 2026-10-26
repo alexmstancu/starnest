@@ -1796,6 +1796,13 @@ export const COMPOUND_RULES: CompoundRule[] = [
  * **One is switched off**, so the screen's two states are both exercised by a test rather
  * than one of them only by a configured environment.
  */
+/**
+ * **Every source an attribute here declares, and every source a stored figure here cites** (P106),
+ * as the server's own rows: OECD declares the total tax rate, and the Eurostat estimate is a
+ * figure's provenance. A declaring source missing here was counted as switched on and free, so an
+ * estimate could be armed that the server refuses. Sources named only for display -- an override
+ * order, an external score, the shipped plan -- are left out, and show by their id.
+ */
 export const DATA_SOURCES: DataSource[] = [
   {
     id: "eurostat",
@@ -1806,11 +1813,27 @@ export const DATA_SOURCES: DataSource[] = [
     is_enabled: true,
   },
   {
+    id: "oecd",
+    name: "OECD",
+    source_kind: "structured",
+    default_priority: 11,
+    reliability_tier: "official_international",
+    is_enabled: true,
+  },
+  {
     id: "manual",
     name: "Manual entry",
     source_kind: "manual",
     default_priority: 50,
     reliability_tier: "manual",
+    is_enabled: true,
+  },
+  {
+    id: "eurostat_estimate",
+    name: "Estimated from Eurostat tax-benefit figures",
+    source_kind: "structured",
+    default_priority: 65,
+    reliability_tier: "derived",
     is_enabled: true,
   },
   {

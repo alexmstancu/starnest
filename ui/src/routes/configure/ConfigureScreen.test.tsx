@@ -1184,16 +1184,22 @@ describe("the Configure edits Recent changes records", () => {
     await user.click(sources.getByRole("button", { name: "Move Manual entry up" }));
 
     const panel = await historyPanel();
-    const entry = await panel.findByText("Moved Manual entry from position 2 to 1");
+    const entry = await panel.findByText("Moved Manual entry from position 3 to 2");
     const item = within(entry.closest("li") as HTMLElement);
     expect(item.getByText("Source priority")).toBeInTheDocument();
-    expect(order()[0]).toBe("Manual entry");
+    expect(order().slice(0, 3)).toEqual(["Eurostat", "Manual entry", "OECD"]);
 
     await user.click(item.getByRole("button", { name: "Undo this" }));
 
-    await waitFor(() => expect(order()[0]).toBe("Eurostat"));
+    await waitFor(() => expect(order().slice(0, 3)).toEqual(["Eurostat", "OECD", "Manual entry"]));
     expect(orders).toHaveLength(2);
-    expect((orders[1] as { order: string[] }).order[0]).toBe("eurostat");
+    expect((orders[1] as { order: string[] }).order).toEqual([
+      "eurostat",
+      "oecd",
+      "manual",
+      "eurostat_estimate",
+      "llm",
+    ]);
     expect(panel.getByText("No changes yet.")).toBeInTheDocument();
   });
 
