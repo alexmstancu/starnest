@@ -14,7 +14,7 @@ import type { NumberRule } from "../../format/typedNumber";
 import { isRecord } from "../../shell/sessionState";
 import { useDraftSlot } from "../../shell/SessionProvider";
 import { describeRecordChange, undoUnsets, type RecordWording } from "./recordChange";
-import { pendingEntry, settled, UnconfirmedWrite } from "./unknownOutcome";
+import { pendingEntry, settled, settledUndo, UnconfirmedWrite } from "./unknownOutcome";
 import { sameDrafts, saveStatusOf, type SaveStatus } from "./saveState";
 import { useConfigurationSession } from "./useConfigurationSession";
 
@@ -159,10 +159,20 @@ export function useRecordForm<R, D extends Draft<D>>(spec: RecordFormSpec<R, D>)
       describe: ({ before, after }: { before: unknown; after: unknown }) =>
         describeRecordChange(draftOf(before as R), draftOf(after as R), recorded.wording),
       before: was,
-      reverse: async (back: unknown) => {
-        await spec.write(back as R);
-        noteRankingInputsChanged();
-        noteRecordsChanged();
+      // Read back as the save is (P105): an undo whose answer never came is unconfirmed.
+      reverse: (back: unknown) => {
+        const restored = draftOf(back as R);
+        return settledUndo(
+          () => spec.write(back as R),
+          async (signal) => {
+            const stored = await spec.read(signal);
+            return sameDrafts(draftOf(stored), restored, rules) ? stored : null;
+          },
+          () => {
+            noteRankingInputsChanged();
+            noteRecordsChanged();
+          },
+        );
       },
     };
     try {

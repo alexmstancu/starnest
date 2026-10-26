@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type Change, heldByLater, reachOf, record, without } from "./changeHistory";
+import { UnconfirmedUndo } from "./unknownOutcome";
 
 /**
  * How a change gets undone: by making the opposite request, never by restoring local state.
@@ -18,6 +19,11 @@ export interface RecordedChange extends Change {
    * history then resolves the change by itself (PL-033).
    */
   settles?: Promise<unknown>;
+  /**
+   * Present while the change is unconfirmed because **its undo** was sent and never answered
+   * (P105): checked, it leaves the list if the undo landed and stays, confirmed, if it did not.
+   */
+  undoUnconfirmed?: true;
 }
 
 export interface ChangeHistory {
@@ -93,6 +99,9 @@ export function useChangeHistory(): ChangeHistory {
   const rendered = useRef(new Set<number>());
   // Unconfirmed changes whose request has settled, resolved as soon as nothing is in flight.
   const settledMeanwhile = useRef(new Set<number>());
+  // Changes an unanswered undo made unconfirmed, until they render so (P105): a settlement heard
+  // before then waits for that render, as a new change's does.
+  const turningUnconfirmed = useRef(new Set<number>());
   const checkRef = useRef<(change: RecordedChange, quietly: boolean) => Promise<void>>(
     () => Promise.resolve(),
   );
@@ -103,6 +112,7 @@ export function useChangeHistory(): ChangeHistory {
       // **Not rendered yet, it waits for its render** (PL-033): a request can settle before the
       // change it resolves is in the history, and that settlement must not be lost.
       if (change === undefined && !rendered.current.has(id)) continue;
+      if (change?.unconfirmed === undefined && turningUnconfirmed.current.has(id)) continue;
       settledMeanwhile.current.delete(id);
       if (change?.unconfirmed !== undefined) {
         void checkRef.current(change, true);
@@ -110,9 +120,24 @@ export function useChangeHistory(): ChangeHistory {
       }
     }
   }, []);
+  // **Its own settlement resolves it** (PL-033): answered, refused or lost, an unconfirmed change
+  // is checked as soon as its request is done, rather than waiting for Check again.
+  const resolveWhenSettled = useCallback(
+    (id: number, settles: Promise<unknown>) => {
+      const settledNow = () => {
+        settledMeanwhile.current.add(id);
+        resolveSettled();
+      };
+      settles.then(settledNow, settledNow);
+    },
+    [resolveSettled],
+  );
   useEffect(() => {
     recorded.current = changes;
-    for (const { id } of changes) rendered.current.add(id);
+    for (const { id, unconfirmed } of changes) {
+      rendered.current.add(id);
+      if (unconfirmed !== undefined) turningUnconfirmed.current.delete(id);
+    }
     resolveSettled();
   }, [changes, resolveSettled]);
 
@@ -123,15 +148,9 @@ export function useChangeHistory(): ChangeHistory {
       setChanges(
         (history) => record(history, { ...entry, id, at: new Date() }) as RecordedChange[],
       );
-      // **Its own settlement resolves it** (PL-033): answered, refused or lost, the change is
-      // checked as soon as the request is done, rather than waiting for Check again.
-      const settledNow = () => {
-        settledMeanwhile.current.add(id);
-        resolveSettled();
-      };
-      entry.settles?.then(settledNow, settledNow);
+      if (entry.settles !== undefined) resolveWhenSettled(id, entry.settles);
     },
-    [resolveSettled],
+    [resolveWhenSettled],
   );
 
   const begin = useCallback(
@@ -191,25 +210,50 @@ export function useChangeHistory(): ChangeHistory {
     setFailure(null);
     setDropped(0);
     const undone: RecordedChange[] = [];
+    // The change whose undo nobody can yet say landed, listed unconfirmed until it is known.
+    let unknown: { id: number; pending: UnconfirmedUndo["pending"] } | null = null;
+    let reversing: RecordedChange | undefined;
     try {
       // **Newest first.** The changes are reversed in the order that returns the
       // configuration through the states it actually passed through; going the other way
       // would write an older value and then a newer one over it.
       for (const change of reach) {
+        reversing = change;
         await change.reverse(change.before);
         undone.push(change);
       }
     } catch (error) {
-      // **A half-finished undo is a real state** (PL-139, D43): what it undid is no longer in
-      // force, so it leaves the list, and the change it stopped at stays with everything older.
-      setFailure(error);
+      // **An undo whose answer never came is not a failure** (P105): it may land yet, so the
+      // change stays listed, unconfirmed, holding its set until it is known -- never listed as
+      // in force with its set free to be written over while its undo may still land.
+      if (error instanceof UnconfirmedUndo && reversing !== undefined) {
+        unknown = { id: reversing.id, pending: error.pending };
+      } else {
+        // **A half-finished undo is a real state** (PL-139, D43): what it undid is no longer in
+        // force, so it leaves the list, and the change it stopped at stays with everything
+        // older.
+        setFailure(error);
+      }
     } finally {
-      setChanges((history) => without(history, undone) as RecordedChange[]);
+      const awaited = unknown;
+      if (awaited !== null) turningUnconfirmed.current.add(awaited.id);
+      setChanges((history) => {
+        const kept = without(history, undone) as RecordedChange[];
+        if (awaited === null) return kept;
+        return kept.map((change) =>
+          change.id === awaited.id
+            ? { ...change, ...awaited.pending, undoUnconfirmed: true as const }
+            : change,
+        );
+      });
+      if (awaited?.pending.settles !== undefined) {
+        resolveWhenSettled(awaited.id, awaited.pending.settles);
+      }
       inFlight.current = false;
       setUndoing(false);
       resolveSettled();
     }
-  }, [resolveSettled]);
+  }, [resolveSettled, resolveWhenSettled]);
 
   return {
     changes,
@@ -247,6 +291,7 @@ function confirmed(change: RecordedChange): RecordedChange {
   const copy = { ...change };
   delete copy.unconfirmed;
   delete copy.settles;
+  delete copy.undoUnconfirmed;
   return copy;
 }
 

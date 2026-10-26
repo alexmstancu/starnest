@@ -9,6 +9,13 @@ import type { LabelParts } from "../changeHistory";
 import { useConfigurationSession } from "../useConfigurationSession";
 import { inPriorityOrder, orderAfterDrop, orderAfterMove } from "./sourceOrder";
 import { noteRankingInputsChanged } from "../../../api/rankingInputs";
+import {
+  pendingEntry,
+  settled,
+  settledUndo,
+  UnconfirmedWrite,
+  type ReadBack,
+} from "../unknownOutcome";
 
 /**
  * Switching a source on or off, and moving it in the order.
@@ -33,31 +40,55 @@ export function useDataSources() {
     [read],
   );
 
+  // **A change nobody can confirm holds the next** (P103): changed again meanwhile, the list could
+  // no longer say whether the first ever landed. Read from the history, so it holds whichever
+  // screen is mounted when it is checked.
+  const unconfirmed = history.changes.some(
+    (each) => each.stage === SOURCES_STAGE && each.unconfirmed !== undefined,
+  );
+
   /**
    * **One change at a time, and Configure's one write in flight** (UI-07, PL-138): a gesture
    * started while another is written would be computed from the order before it. Recorded in
    * Recent changes with the request that reverses it, as every other Configure write is.
+   *
+   * **An answer lost on the way is read back** (P103), as every other Configure write's is: what
+   * took effect is noted as any change, and what nobody can yet say is noted unconfirmed, with
+   * Check again -- never reported as refused, which would leave a change that did happen with no
+   * entry and no undo. Its undo reads back the same way.
    */
   const change = useCallback(
-    async (id: string, write: () => Promise<unknown>, entry: SourceChange) => {
+    async (id: string, entry: SourceChange) => {
+      if (unconfirmed) return;
       const done = history.begin();
       if (done === null) return;
       setSaving(id);
       setFailure(null);
-      try {
-        await write();
+      // **Every sources panel reads again when a change lands** (PL-138), this one's included: a
+      // write answered after its screen was left would otherwise leave the panel shown since then
+      // on the order before it, and the next move would be computed from that order (P102).
+      const shown = () => {
         noteRankingInputsChanged();
-        history.note({
-          ...entry,
-          stage: SOURCES_STAGE,
-          reverse: async (back) => {
-            await entry.reverse(back);
-            noteRankingInputsChanged();
-            noteSourcesChanged();
-          },
-        });
+        noteSourcesChanged();
+      };
+      const recorded = {
+        target: entry.target,
+        setting: entry.setting,
+        describe: entry.describe,
+        before: entry.before,
+        after: entry.after,
+        stage: SOURCES_STAGE,
+        reverse: (back: unknown) =>
+          settledUndo(() => entry.send(back), entry.readBack(back), shown),
+      };
+      try {
+        await settled(() => entry.send(entry.after), entry.readBack(entry.after));
+        shown();
+        history.note(recorded);
       } catch (error) {
-        setFailure(error);
+        if (error instanceof UnconfirmedWrite) {
+          history.note({ ...recorded, ...pendingEntry(error, shown) });
+        } else setFailure(error);
       }
       // **Re-read even after a failure**, so the order on screen is the one the server last
       // answered, and the refusal stays shown beside it. **And wait for it**: until it lands,
@@ -66,14 +97,14 @@ export function useDataSources() {
       done();
       setSaving(null);
     },
-    [history, reload, noteSourcesChanged],
+    [history, reload, noteSourcesChanged, unconfirmed],
   );
 
   const reorder = (id: string, order: string[] | null) => {
     if (order === null) return;
     const before = inPriorityOrder(sources).map((source) => source.id);
     const name = sources.find((source) => source.id === id)?.name ?? id;
-    void change(id, () => reorderDataSources(order), {
+    void change(id, {
       target: `source-order:${id}`,
       // Every move rewrites the whole order, so the order is one setting (PL-140).
       setting: "source-order",
@@ -81,18 +112,34 @@ export function useDataSources() {
         `Moved ${name} from position ${String((from as string[]).indexOf(id) + 1)} to ${String((to as string[]).indexOf(id) + 1)}`,
       before,
       after: order,
-      reverse: (back) => reorderDataSources(back as string[]),
+      send: (wanted) => reorderDataSources(wanted as string[]).then(() => true as const),
+      readBack: (wanted) => async (signal) => {
+        const stored = inPriorityOrder((await fetchDataSources({ signal })).items);
+        return sameOrder(
+          stored.map((source) => source.id),
+          wanted as string[],
+        )
+          ? true
+          : null;
+      },
     });
   };
 
   const setEnabled = (id: string, isEnabled: boolean) => {
     const name = sources.find((source) => source.id === id)?.name ?? id;
-    void change(id, () => updateDataSource(id, { is_enabled: isEnabled }), {
+    void change(id, {
       target: `source-enabled:${id}`,
       describe: ({ after: to }) => `${to === true ? "Switched on" : "Switched off"} ${name}`,
       before: !isEnabled,
       after: isEnabled,
-      reverse: (back) => updateDataSource(id, { is_enabled: back === true }),
+      send: (wanted) =>
+        updateDataSource(id, { is_enabled: wanted === true }).then(() => true as const),
+      readBack: (wanted) => async (signal) => {
+        const stored = (await fetchDataSources({ signal })).items.find(
+          (source) => source.id === id,
+        );
+        return stored?.is_enabled === (wanted === true) ? true : null;
+      },
     });
   };
 
@@ -104,8 +151,11 @@ export function useDataSources() {
     sources,
     /** The source a change is being made to, until the list has been read back after it. */
     saving,
-    /** Whether a press is refused now: this stage's change, or any other Configure write. */
-    held: saving !== null || history.busy,
+    /**
+     * Whether a press is refused now: this stage's change, any other Configure write, or a change
+     * to the sources nobody has confirmed yet.
+     */
+    held: saving !== null || history.busy || unconfirmed,
     setEnabled,
     /** Null where there is no neighbour to move past, which is what disables the button. */
     moveTo: (id: string, direction: "up" | "down") =>
@@ -122,12 +172,21 @@ export function useDataSources() {
 /** Where a change to the sources is made, as Recent changes names it. */
 const SOURCES_STAGE = "Source priority";
 
-/** A change to the sources, as `change` is given it: what it was, is, and how it goes back. */
+/**
+ * A change to the sources, as `change` is given it: what it was and is, how either is sent --
+ * forward with `after`, back with `before` -- and how the list says one of them is stored.
+ */
 interface SourceChange {
   target: string;
   setting?: string;
   describe: (parts: LabelParts) => string;
   before: unknown;
   after: unknown;
-  reverse: (before: unknown) => Promise<unknown>;
+  send: (wanted: unknown) => Promise<true>;
+  readBack: (wanted: unknown) => ReadBack<true>;
+}
+
+/** Whether two orders of the sources are the same, place for place. */
+function sameOrder(stored: readonly string[], wanted: readonly string[]): boolean {
+  return stored.length === wanted.length && stored.every((id, place) => id === wanted[place]);
 }

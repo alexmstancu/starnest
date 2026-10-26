@@ -279,8 +279,9 @@ export function RecentChanges({
                   {change.unconfirmed !== undefined && (
                     <>
                       <span id={unconfirmedIdOf(change.id)} className="panel__hint" role="note">
-                        Not confirmed: the server did not answer, so whether this took effect
-                        is not known yet.
+                        {change.undoUnconfirmed
+                          ? "Undo not confirmed: the server did not answer, so whether this was undone is not known yet."
+                          : "Not confirmed: the server did not answer, so whether this took effect is not known yet."}
                         {/* What else waits on it, said where the reason is (PL-033). */}
                         {change.undoes !== undefined &&
                           " Changes to this set wait until it is checked."}

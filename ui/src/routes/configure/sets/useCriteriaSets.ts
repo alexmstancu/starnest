@@ -32,6 +32,7 @@ import {
 import type { Selection } from "../../../shell/SelectionContext";
 import {
   pendingEntry,
+  settledUndo,
   READ_PATIENCE_MS,
   type ReadBack,
   settled,
@@ -132,14 +133,16 @@ export function useCriteriaSets(options: {
         ? LIST_NEVER_CAME_BACK
         : null;
 
-  /** Deleting restorably, which is also how a created set or a copy is undone. */
-  const deleteAndReread = async (criteriaSetId: string) => {
-    await settled(
+  /**
+   * Deleting restorably, which is also how a created set or a copy is undone -- read back as any
+   * undo is (P105), so one whose answer never came is unconfirmed rather than failed.
+   */
+  const deleteAndReread = (criteriaSetId: string) =>
+    settledUndo(
       () => deleteCriteriaSet(criteriaSetId).then(() => true as const),
       async (signal) => ((await setNow(criteriaSetId, signal)) === null ? true : null),
+      () => selection.reload(),
     );
-    selection.reload();
-  };
   const [newName, setNewName] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
@@ -257,10 +260,13 @@ export function useCriteriaSets(options: {
             `Renamed ${(from as { name: string }).name} to ${(to as { name: string }).name}`,
           before: { name: was },
           after: { name },
-          reverse: async (before) => {
+          reverse: (before) => {
             const back = (before as { name: string }).name;
-            await settled(() => renameCriteriaSet(target, back), renamedTo(back));
-            selection.reload();
+            return settledUndo(
+              () => renameCriteriaSet(target, back),
+              renamedTo(back),
+              () => selection.reload(),
+            );
           },
           undoes: { criteriaSetId: target, by: "write" },
         }),
@@ -348,16 +354,17 @@ export function useCriteriaSets(options: {
           describe: () => `Deleted ${name}`,
           before: { deleted: false, wasInUse },
           after: { deleted: true },
-          reverse: async () => {
-            await settled(
+          reverse: () =>
+            settledUndo(
               () => restoreCriteriaSet(criteriaSetId),
               (signal) => setNow(criteriaSetId, signal),
-            );
-            // Back in use only if the selection is still where the deletion left it, asked of
-            // the selection itself: the restore may answer after Configure has gone.
-            if (wasInUse) selection.selectCriteriaSetIf(fallback, criteriaSetId);
-            selection.reload();
-          },
+              () => {
+                // Back in use only if the selection is still where the deletion left it, asked
+                // of the selection itself: the restore may answer after Configure has gone.
+                if (wasInUse) selection.selectCriteriaSetIf(fallback, criteriaSetId);
+                selection.reload();
+              },
+            ),
           undoes: { criteriaSetId, by: "restore" },
         }),
       );

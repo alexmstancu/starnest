@@ -20,7 +20,7 @@ import { titleOf, type AttributeCatalog } from "./criteria/criterionReading";
 import { holdsCriterionRule, ruleBefore, ruleChangeWords } from "./criteria/ruleChange";
 import type { Answers } from "./useAnswers";
 import type { ChangeHistory, RecordedChange } from "./useChangeHistory";
-import { pendingEntry, settled, UnconfirmedWrite } from "./unknownOutcome";
+import { pendingEntry, settled, settledUndo, UnconfirmedWrite } from "./unknownOutcome";
 import {
   refusedUnder,
   standingFailure,
@@ -227,14 +227,15 @@ export function useCriteriaEditor(
             : UNDO_CANNOT_RESTORE_THE_PILLAR,
         // The opposite request, not a local restore: an undo that only moved a number on
         // screen would disagree with the server the moment anything else read it.
+        // Read back as the write is (P105): an undo whose answer never came is unconfirmed.
         reverse: async (before) => {
           if (typeof before !== "number") return;
-          const back = await updateCriterionWeight(
-            sentFor,
-            attribute,
-            before,
+          await settledUndo(
+            () => updateCriterionWeight(sentFor, attribute, before),
+            (signal) =>
+              criteriaIf(sentFor, attribute, (criterion) => criterion.weight === before, signal),
+            (back) => deliver(sentFor, back.criteria),
           );
-          deliver(sentFor, back.criteria);
         },
         undoes: { criteriaSetId: sentFor, by: "write" },
       });
@@ -290,14 +291,18 @@ export function useCriteriaEditor(
           `${to === true ? "Locked" : "Unlocked"} ${named}, in ${now ?? inSet}`,
         before: !weightLocked,
         after: weightLocked,
-        reverse: async (before) => {
-          const back = await updateCriterionLock(
-            sentFor,
-            attribute,
-            before === true,
-          );
-          deliver(sentFor, back.criteria);
-        },
+        reverse: (before) =>
+          settledUndo(
+            () => updateCriterionLock(sentFor, attribute, before === true),
+            (signal) =>
+              criteriaIf(
+                sentFor,
+                attribute,
+                (criterion) => criterion.weight_locked === (before === true),
+                signal,
+              ),
+            (back) => deliver(sentFor, back.criteria),
+          ),
         undoes: { criteriaSetId: sentFor, by: "write" },
       });
 
@@ -355,10 +360,18 @@ export function useCriteriaEditor(
           `Rule for ${named}: ${ruleChangeWords(from as CriterionRule, to as CriterionRule)}, in ${now ?? inSet}`,
         before,
         after: rule,
-        reverse: async (back) => {
-          const answer = await updateCriterionRule(sentFor, attribute, back as CriterionRule);
-          deliver(sentFor, answer.criteria);
-        },
+        reverse: (back) =>
+          settledUndo(
+            () => updateCriterionRule(sentFor, attribute, back as CriterionRule),
+            (signal) =>
+              criteriaIf(
+                sentFor,
+                attribute,
+                (criterion) => holdsCriterionRule(criterion, back as CriterionRule),
+                signal,
+              ),
+            (answer) => deliver(sentFor, answer.criteria),
+          ),
         undoes: { criteriaSetId: sentFor, by: "write" },
       };
 

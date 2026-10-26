@@ -324,6 +324,22 @@ describe("reload, awaited", () => {
 
     expect(landed).toBe(true);
   });
+
+  /** P102. A write answered after its screen was left awaits a reload of a read already gone. */
+  it("resolves at once when asked after it was unmounted", async () => {
+    const requests = requestQueue(1);
+    const { result, unmount } = renderOn(requests);
+    await act(async () => requests.request(0).settle("figures"));
+    const reload = result.current.reload;
+
+    unmount();
+    let landed = false;
+    await act(async () => {
+      await reload().then(() => (landed = true));
+    });
+
+    expect(landed).toBe(true);
+  });
 });
 
 describe("letting go", () => {

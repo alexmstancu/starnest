@@ -7,6 +7,7 @@ import {
   heldByLater,
   reachOf,
   record,
+  stranded,
   undoCanRestore,
   without,
 } from "./changeHistory";
@@ -328,5 +329,35 @@ describe("whether a change can be undone alone", () => {
   it("waits for a later change to its set to be confirmed", () => {
     const pending = { ...inSet(2, "gate:a", "a"), unconfirmed: () => Promise.resolve(true) };
     expect(heldByLater([pending, inSet(1, "rule:a", "a")], 1)).toBe("unconfirmed");
+  });
+});
+
+/** PL-139, P101. Which changes an undo would find their set deleted for. */
+describe("the changes whose set is gone", () => {
+  const created = (
+    id: number,
+    criteriaSetId: string,
+    unconfirmed?: () => Promise<boolean>,
+  ): Change => ({
+    id,
+    target: `criteria-set:${criteriaSetId}:created`,
+    describe: () => `Created ${criteriaSetId}`,
+    stage: "Criteria sets",
+    at: AT,
+    before: { exists: false },
+    after: { exists: true },
+    undoes: { criteriaSetId, by: "delete" },
+    ...(unconfirmed === undefined ? {} : { unconfirmed }),
+  });
+
+  it("finds a creation whose set has since gone", () => {
+    expect(stranded([created(1, "partner")], new Set(["partner"]))).toEqual(new Set([1]));
+  });
+
+  /** P101. Absent from the list until its creation lands, it was never known to exist. */
+  it("never takes a set still being made for one deleted", () => {
+    const making = created(1, "partner", () => Promise.resolve(true));
+
+    expect(stranded([making], new Set(["partner"]))).toEqual(new Set());
   });
 });

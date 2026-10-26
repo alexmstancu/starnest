@@ -1946,6 +1946,161 @@ describe("a set read and a write it overlaps (PL-142)", () => {
  * PL-033 round 10. **A rule's switch is a write the session holds**, as a lock is: its hold, its
  * entry and its late answer outlive the panel that sent it.
  */
+/**
+ * P101-P105, the last review of PL-033. **A write whose outcome is unknown stays listed, and holds
+ * what it holds, until it is known** -- an undo's as well as a write's, and one that lands after
+ * the panel that sent it is gone.
+ */
+describe("a write whose outcome is unknown, forward or back (P101-P105)", () => {
+  const GATE = "Enforce Free movement applies";
+
+  function slowly() {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  }
+
+  async function leaveAndReturn(user: UserEvent): Promise<void> {
+    await user.click(screen.getByRole("link", { name: "Rank" }));
+    await screen.findByRole("heading", { name: "Rank", level: 1 });
+    await user.click(screen.getByRole("link", { name: "Configure" }));
+    await settledScreen();
+  }
+
+  /** P101: a set still being made is absent from the list by nature, not deleted. */
+  it("keeps an overdue creation listed while the list lacks its set, and gives it its Undo once it lands", async () => {
+    const user = slowly();
+    renderShell("/configure");
+    await settledScreen();
+    const made = holdRequests("post", "/v1/criteria-sets");
+    const sets = await panel();
+    await user.type(sets.getByRole("textbox", { name: /name a new set/i }), "Partner");
+    await user.click(sets.getByRole("button", { name: "Create set" }));
+    await waitFor(() => expect(made.sent).toHaveLength(1));
+    act(() => {
+      vi.advanceTimersByTime(WRITE_PATIENCE_MS);
+    });
+
+    const history = await historyPanel();
+    const entry = (await history.findByText("Created Partner")).closest("li")!;
+    expect(within(entry).getByText(/not confirmed/i)).toBeInTheDocument();
+    // The list read again after the verb lacks the set, which is still being made.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(history.getByText("Created Partner")).toBeInTheDocument();
+
+    made.release();
+
+    await waitFor(() => expect(within(entry).queryByText(/not confirmed/i)).toBeNull());
+    expect(await row("Partner")).toBeTruthy();
+    expect(within(entry).getByRole("button", { name: "Undo this" })).toBeInTheDocument();
+  });
+
+  /** P102: a source write in flight when Configure unmounts gives its slot back all the same. */
+  it("gives the slot back when a source write lands after Configure was left", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settledScreen();
+    const order = holdRequests("put", "/v1/data-sources/order");
+    await user.click(await screen.findByRole("button", { name: "Move Manual entry up" }));
+    await waitFor(() => expect(order.sent).toHaveLength(1));
+
+    await leaveAndReturn(user);
+    order.release();
+
+    const history = await historyPanel();
+    await history.findByText("Moved Manual entry from position 3 to 2");
+    await waitFor(() => expectNotHeld(screen.getByRole("button", { name: "Lock Economy" })));
+    expect(history.queryByRole("status")).toBeNull();
+    // The panel shown since the return was read before the move landed, and reads it again.
+    const sources = screen.getByRole("list", { name: "Every configured source, in priority order" });
+    await waitFor(() =>
+      expect(
+        within(sources)
+          .getAllByRole("listitem")
+          .map((item) => item.getAttribute("aria-label"))
+          .slice(0, 3),
+      ).toEqual(["Eurostat", "Manual entry", "OECD"]),
+    );
+  });
+
+  /** P103: a source switch whose reply was lost and cannot be read back is unconfirmed. */
+  it("lists a source switch whose reply was lost and cannot be read back as unconfirmed, never refused", async () => {
+    const user = userEvent.setup();
+    renderShell("/configure");
+    await settledScreen();
+    mockServer.use(
+      http.patch(
+        "/v1/data-sources/:dataSourceId",
+        async ({ request }) => {
+          await getResponse(handlers, request);
+          mockServer.use(
+            http.get(
+              "/v1/data-sources",
+              () => HttpResponse.json({ code: "internal_error", message: "down" }, { status: 500 }),
+              { once: true },
+            ),
+          );
+          return HttpResponse.error();
+        },
+        { once: true },
+      ),
+    );
+
+    await user.click(await screen.findByRole("switch", { name: "Consult Eurostat" }));
+
+    const history = await historyPanel();
+    const entry = (await history.findByText("Switched off Eurostat")).closest("li")!;
+    expect(within(entry).getByText(/not confirmed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/did not go through/)).toBeNull();
+    await user.click(within(entry).getByRole("button", { name: "Check again" }));
+    await waitFor(() => expect(within(entry).queryByText(/not confirmed/i)).toBeNull());
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: "Consult Eurostat" })).toHaveAttribute(
+        "aria-checked",
+        "false",
+      ),
+    );
+  });
+
+  /** P105: an undo whose request outlives its patience is unconfirmed, and holds the set. */
+  it("holds a gate while its undo is overdue, lists the undo unconfirmed, and settles it when it lands", async () => {
+    const user = slowly();
+    renderShell("/configure");
+    await settledScreen();
+    await user.click(await screen.findByRole("switch", { name: GATE }));
+    const history = await historyPanel();
+    const entry = (await history.findByText("Enforced Free movement applies, in Default")).closest(
+      "li",
+    )!;
+    const undo = holdRequests("put", "/v1/criteria-sets/:criteriaSetId/match-rules/:matchRuleId");
+
+    await user.click(within(entry).getByRole("button", { name: "Undo this" }));
+    await waitFor(() => expect(undo.sent).toHaveLength(1));
+    act(() => {
+      vi.advanceTimersByTime(WRITE_PATIENCE_MS);
+    });
+
+    await waitFor(() => expect(within(entry).getByText(/not confirmed/i)).toBeInTheDocument());
+    expect(within(entry).getByRole("button", { name: "Check again" })).toBeInTheDocument();
+    await waitFor(() => expectHeld(screen.getByRole("switch", { name: GATE })));
+    expect(screen.queryByText(/did not go through/)).toBeNull();
+
+    undo.release();
+
+    await waitFor(() =>
+      expect(history.queryByText("Enforced Free movement applies, in Default")).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("switch", { name: GATE })).toHaveAttribute("aria-checked", "false"),
+    );
+    await waitFor(() => expectNotHeld(screen.getByRole("switch", { name: GATE })));
+  });
+});
+
 describe("a rule's write the session holds (PL-033 round 10)", () => {
   const FREE_MOVEMENT = "Enforce Free movement applies";
 

@@ -44,6 +44,7 @@ export function useRead<T>(
   const [attempt, setAttempt] = useState(0);
   const started = useRef(0);
   const waiting = useRef<Waiting[]>([]);
+  const unmounted = useRef(false);
 
   useEffect(() => {
     if (!enabled) {
@@ -80,7 +81,11 @@ export function useRead<T>(
   // Unmounted, nothing will land: a reload still waiting is answered rather than left hanging.
   useEffect(() => {
     const unanswered = waiting.current;
-    return () => answerReloads(unanswered, Infinity);
+    unmounted.current = false;
+    return () => {
+      unmounted.current = true;
+      answerReloads(unanswered, Infinity);
+    };
   }, []);
 
   const read = useMemo((): Read<T> | Idle => {
@@ -94,6 +99,13 @@ export function useRead<T>(
   const reload = useCallback(
     () =>
       new Promise<void>((resolve) => {
+        // **Asked of a read already gone, it is answered at once** (P102): no read will ever
+        // land, and a write awaiting it -- one that answered after its screen was left -- would
+        // otherwise hold Configure's one write in flight for ever.
+        if (unmounted.current) {
+          resolve();
+          return;
+        }
         waiting.current.push({ after: started.current, resolve });
         setAttempt((previous) => previous + 1);
       }),

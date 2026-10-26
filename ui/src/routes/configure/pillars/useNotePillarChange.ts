@@ -1,5 +1,10 @@
 import { useMemo } from "react";
-import { updatePillarLock, updatePillarWeight, type CriteriaSet } from "../../../api/endpoints";
+import {
+  fetchCriteriaSet,
+  updatePillarLock,
+  updatePillarWeight,
+  type CriteriaSet,
+} from "../../../api/endpoints";
 import type { components } from "../../../api/schema";
 import type { PillarNames } from "../../../api/usePillarNames";
 import { formatPercentage, pillarName } from "../../../format/display";
@@ -8,7 +13,7 @@ import {
   undoCanRestore,
   type PillarShare,
 } from "../changeHistory";
-import type { Pending } from "../unknownOutcome";
+import { settledUndo, type Pending } from "../unknownOutcome";
 import type { ChangeHistory } from "../useChangeHistory";
 
 type PillarWeight = components["schemas"]["PillarWeight"];
@@ -54,9 +59,15 @@ export function useNotePillarChange(
             answer === null || undoCanRestore(asShares(was), asShares(answer), pillar)
               ? undefined
               : UNDO_CANNOT_RESTORE_THE_PILLARS,
+          // Read back as the write is (P105): an undo whose answer never came is unconfirmed.
           reverse: async (back) => {
             if (typeof back !== "number") return;
-            showAnswer(sentFor, (await updatePillarWeight(sentFor, pillar, back)).items);
+            await settledUndo(
+              () => updatePillarWeight(sentFor, pillar, back),
+              (signal) =>
+                pillarsIf(sentFor, (row) => row.pillar === pillar && row.weight === back, signal),
+              (answer) => showAnswer(sentFor, answer.items),
+            );
           },
           undoes: { criteriaSetId: sentFor, by: "write" },
           ...pending,
@@ -71,15 +82,37 @@ export function useNotePillarChange(
             `${to === true ? "Locked" : "Unlocked"} the ${named(pillar)} pillar, in ${now ?? inSet}`,
           before: !locked,
           after: locked,
-          reverse: async (back) => {
-            showAnswer(sentFor, (await updatePillarLock(sentFor, pillar, back === true)).items);
-          },
+          reverse: (back) =>
+            settledUndo(
+              () => updatePillarLock(sentFor, pillar, back === true),
+              (signal) =>
+                pillarsIf(
+                  sentFor,
+                  (row) => row.pillar === pillar && row.weight_locked === (back === true),
+                  signal,
+                ),
+              (answer) => showAnswer(sentFor, answer.items),
+            ),
           undoes: { criteriaSetId: sentFor, by: "write" },
           ...pending,
         });
       },
     };
   }, [criteriaSet, names, showAnswer, history]);
+}
+
+/**
+ * A set's pillar weights read back, when a write's answer was lost: what the write would have
+ * answered if the read shows it took effect, nothing when it did not (PL-033). An undo reads back
+ * the same way (P105).
+ */
+export async function pillarsIf(
+  criteriaSetId: string,
+  tookEffect: (row: PillarWeight) => boolean,
+  signal: AbortSignal,
+): Promise<{ items: PillarWeight[] } | null> {
+  const items = (await fetchCriteriaSet(criteriaSetId, { signal })).pillar_weights ?? [];
+  return items.some(tookEffect) ? { items } : null;
 }
 
 /** A level's weights in the shape `undoCanRestore` reads a pillar's in. */

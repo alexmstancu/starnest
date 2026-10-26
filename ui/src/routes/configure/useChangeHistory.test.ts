@@ -9,6 +9,7 @@
 
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { UnconfirmedUndo } from "./unknownOutcome";
 import { useChangeHistory } from "./useChangeHistory";
 
 describe("an undo while another is on its way", () => {
@@ -130,5 +131,109 @@ describe("a change whose request settles before it is rendered", () => {
     await vi.waitFor(() => expect(readBack).toHaveBeenCalledTimes(1));
     await vi.waitFor(() => expect(result.current.changes[0]?.unconfirmed).toBeUndefined());
     expect(result.current.waitsFor("default")).toBe(false);
+  });
+});
+
+/**
+ * P105. **An undo whose answer never came is not a failure**: it may land yet, so the change stays
+ * listed, unconfirmed, holding its set -- and leaves the list only once its undo is known to have
+ * landed.
+ */
+describe("an undo whose answer never came", () => {
+  const entry = (id: string, reverse: () => Promise<void> | void) => ({
+    target: `criterion:default:${id}`,
+    stage: "Pillar weights",
+    describe: () => `Weight for ${id}`,
+    before: 50,
+    after: 40,
+    reverse,
+    undoes: { criteriaSetId: "default", by: "write" as const },
+  });
+  const unknown = (stillInForce: () => Promise<boolean>, settles?: Promise<unknown>) => () =>
+    Promise.reject(
+      new UnconfirmedUndo(
+        settles === undefined ? { unconfirmed: stillInForce } : { unconfirmed: stillInForce, settles },
+      ),
+    );
+
+  it("keeps the change listed, unconfirmed and holding its set, and reports no failure", async () => {
+    const { result } = renderHook(() => useChangeHistory());
+    act(() => result.current.note(entry("a", unknown(() => Promise.resolve(false)))));
+
+    await act(async () => result.current.undoOnly(result.current.changes[0]!.id));
+
+    const [kept] = result.current.changes;
+    expect(kept?.unconfirmed).toBeDefined();
+    expect(kept?.undoUnconfirmed).toBe(true);
+    expect(result.current.failure).toBeNull();
+    expect(result.current.waitsFor("default")).toBe(true);
+  });
+
+  it("lets the change go once a check finds the undo landed", async () => {
+    const { result } = renderHook(() => useChangeHistory());
+    act(() => result.current.note(entry("a", unknown(() => Promise.resolve(false)))));
+    await act(async () => result.current.undoOnly(result.current.changes[0]!.id));
+
+    await act(async () => result.current.confirm(result.current.changes[0]!.id));
+
+    await vi.waitFor(() => expect(result.current.changes).toEqual([]));
+  });
+
+  it("keeps the change, confirmed, once a check finds the undo did not land", async () => {
+    const { result } = renderHook(() => useChangeHistory());
+    act(() => result.current.note(entry("a", unknown(() => Promise.resolve(true)))));
+    await act(async () => result.current.undoOnly(result.current.changes[0]!.id));
+
+    await act(async () => result.current.confirm(result.current.changes[0]!.id));
+
+    await vi.waitFor(() => expect(result.current.changes[0]?.unconfirmed).toBeUndefined());
+    expect(result.current.changes[0]?.undoUnconfirmed).toBeUndefined();
+    expect(result.current.waitsFor("default")).toBe(false);
+  });
+
+  it("is resolved by itself once its request settles", async () => {
+    let settle = (): void => undefined;
+    const settles = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    const stillInForce = vi.fn(() => Promise.resolve(false));
+    const { result } = renderHook(() => useChangeHistory());
+    act(() => result.current.note(entry("a", unknown(stillInForce, settles))));
+    await act(async () => result.current.undoOnly(result.current.changes[0]!.id));
+    expect(stillInForce).not.toHaveBeenCalled();
+
+    await act(async () => settle());
+
+    await vi.waitFor(() => expect(result.current.changes).toEqual([]));
+    expect(stillInForce).toHaveBeenCalledTimes(1);
+  });
+
+  /** Settled before the change renders as unconfirmed, it is resolved once it does (P105). */
+  it("is resolved when its request settled before the change rendered unconfirmed", async () => {
+    const stillInForce = vi.fn(() => Promise.resolve(false));
+    const { result } = renderHook(() => useChangeHistory());
+    act(() => result.current.note(entry("a", unknown(stillInForce, Promise.resolve()))));
+
+    await act(async () => result.current.undoOnly(result.current.changes[0]!.id));
+
+    await vi.waitFor(() => expect(result.current.changes).toEqual([]));
+    expect(stillInForce).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops a run of undos there, the newer ones undone and the older ones kept", async () => {
+    const { result } = renderHook(() => useChangeHistory());
+    act(() => result.current.note(entry("older", () => undefined)));
+    act(() => result.current.note(entry("middle", unknown(() => Promise.resolve(false)))));
+    act(() => result.current.note(entry("newer", () => undefined)));
+    const older = result.current.changes[2]!.id;
+
+    await act(async () => result.current.undoThrough(older));
+
+    expect(result.current.changes.map((each) => each.describe({ before: 50, after: 40, inSet: undefined }))).toEqual([
+      "Weight for middle",
+      "Weight for older",
+    ]);
+    expect(result.current.changes[0]?.undoUnconfirmed).toBe(true);
+    expect(result.current.changes[1]?.unconfirmed).toBeUndefined();
   });
 });

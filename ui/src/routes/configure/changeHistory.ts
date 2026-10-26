@@ -92,8 +92,11 @@ export function stranded(
 ): Set<number> {
   const gone = new Set(deleted);
   const found = new Set<number>();
-  for (const { id, undoes } of history) {
+  for (const { id, undoes, unconfirmed } of history) {
     if (undoes === undefined) continue;
+    // **A set still being made is not missing** (P101): it is absent from the list until its
+    // creation lands, and nobody ever knew it to exist, so its creation is never stranded.
+    if (undoes.by === "delete" && unconfirmed !== undefined) continue;
     if (undoes.by === "restore") gone.delete(undoes.criteriaSetId);
     else if (gone.has(undoes.criteriaSetId)) found.add(id);
     else if (undoes.by === "delete") gone.add(undoes.criteriaSetId);

@@ -1,15 +1,10 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { usePillarNames, type PillarNames } from "../../../api/usePillarNames";
-import {
-  fetchCriteriaSet,
-  updatePillarLock,
-  updatePillarWeight,
-  type CriteriaSet,
-} from "../../../api/endpoints";
+import { updatePillarLock, updatePillarWeight, type CriteriaSet } from "../../../api/endpoints";
 import type { components } from "../../../api/schema";
 import { formatPercentage, pillarName } from "../../../format/display";
 import type { ChangeHistory } from "../useChangeHistory";
-import { useNotePillarChange } from "./useNotePillarChange";
+import { pillarsIf, useNotePillarChange } from "./useNotePillarChange";
 import type { Answers } from "../useAnswers";
 import { pendingEntry, settled, UnconfirmedWrite } from "../unknownOutcome";
 import { ActRefusal } from "../../../shell/ActRefusal";
@@ -509,19 +504,6 @@ function PillarRow({
       )}
     </>
   );
-}
-
-/**
- * A set's pillar weights read back, when a write's answer was lost: what the write would have
- * answered if the read shows it took effect, nothing when it did not (PL-033).
- */
-async function pillarsIf(
-  criteriaSetId: string,
-  tookEffect: (row: PillarWeight) => boolean,
-  signal: AbortSignal,
-): Promise<{ items: PillarWeight[] } | null> {
-  const items = (await fetchCriteriaSet(criteriaSetId, { signal })).pillar_weights ?? [];
-  return items.some(tookEffect) ? { items } : null;
 }
 
 /** What a pillar's write answers, and what a confirmation reads back in its place (PL-033). */

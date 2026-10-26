@@ -28,7 +28,12 @@ import { useCandidateRosterState } from "../../../api/useCandidateRoster";
 import type { CandidateNames } from "../../../api/useCandidateNames";
 import { useConfigurationSession } from "../useConfigurationSession";
 import type { LabelParts } from "../changeHistory";
-import { pendingEntry, settled as settledWrite, UnconfirmedWrite } from "../unknownOutcome";
+import {
+  pendingEntry,
+  settled as settledWrite,
+  settledUndo,
+  UnconfirmedWrite,
+} from "../unknownOutcome";
 import { holdsRule, ruleChangeLabel, sendRule, type RuleState } from "./ruleSwitches";
 
 import { answersAtLevel } from "./ruleEffect";
@@ -214,6 +219,9 @@ export function useRuleToggles(
     const done = history.begin(sentFor);
     if (done === null) return;
     setFailure(null);
+    // What the set holds, read back when an answer is lost: a write's and its undo's alike.
+    const holding = (state: RuleState) => async (signal: AbortSignal) =>
+      holdsRule(await fetchCriteriaSet(sentFor, { signal }), state) ? (true as const) : null;
     const entry = {
       target: `${after.kind}:${sentFor}:${after.id}`,
       stage: RULES_STAGE,
@@ -221,18 +229,19 @@ export function useRuleToggles(
         `${ruleChangeLabel(named, from as RuleState, to as RuleState)}, in ${inSet ?? setName}`,
       before,
       after,
-      reverse: async (back: unknown) => {
+      // Read back as the write is (P105): an undo whose answer never came is unconfirmed,
+      // holding the set, never a failure that frees it while the undo may still land.
+      reverse: (back: unknown) => {
         const state = back as RuleState;
-        await sendRule(sentFor, state);
-        ruleAnswers.deliver(sentFor, state);
+        return settledUndo(
+          () => sendRule(sentFor, state).then(() => true as const),
+          holding(state),
+          () => ruleAnswers.deliver(sentFor, state),
+        );
       },
       undoes: { criteriaSetId: sentFor, by: "write" as const },
     };
-    void settledWrite(
-      () => sendRule(sentFor, after).then(() => true as const),
-      async (signal) =>
-        holdsRule(await fetchCriteriaSet(sentFor, { signal }), after) ? true : null,
-    )
+    void settledWrite(() => sendRule(sentFor, after).then(() => true as const), holding(after))
       .then(() => {
         ruleAnswers.deliver(sentFor, after);
         history.note(entry);

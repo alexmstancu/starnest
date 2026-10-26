@@ -55,6 +55,52 @@ export function pendingEntry<Answer>(
   return error.settles === undefined ? { unconfirmed } : { unconfirmed, settles: error.settles };
 }
 
+/**
+ * An undo whose outcome is not known yet (P105): its answer was lost and could not be read back,
+ * or it was still running when the client stopped waiting for it. `pending` is what the history
+ * lists the change with meanwhile -- its read-back answers whether **the change is still in
+ * force**, which is the question the history asks of every unconfirmed entry.
+ */
+export class UnconfirmedUndo extends Error {
+  readonly pending: Pending;
+
+  constructor(pending: Pending) {
+    super("Whether the undo took effect is not known yet.");
+    this.name = "UnconfirmedUndo";
+    this.pending = pending;
+  }
+}
+
+/**
+ * Sends a change back, as an undo does (P105): **an undo's answer can be lost as a write's can**,
+ * so it is read back the same way (`settled`) and shown only once it is known to have landed.
+ * When nobody can yet say, `UnconfirmedUndo` -- never a failure, which would leave the change
+ * listed as in force while its undo may still land, and its set free to be written over.
+ */
+export async function settledUndo<Answer>(
+  send: () => Promise<Answer>,
+  readBack: ReadBack<Answer>,
+  show: (answer: Answer) => void,
+): Promise<void> {
+  let answer: Answer;
+  try {
+    answer = await settled(send, readBack);
+  } catch (error) {
+    if (!(error instanceof UnconfirmedWrite)) throw error;
+    const stillInForce = async () => {
+      const landed = (await error.readAgain()) as Answer | null;
+      if (landed !== null) show(landed);
+      return landed === null;
+    };
+    throw new UnconfirmedUndo(
+      error.settles === undefined
+        ? { unconfirmed: stillInForce }
+        : { unconfirmed: stillInForce, settles: error.settles },
+    );
+  }
+  show(answer);
+}
+
 /** A read-back of what a write did: what it would have answered, or null if it did not land. */
 export type ReadBack<Answer> = (signal: AbortSignal) => Promise<Answer | null>;
 
