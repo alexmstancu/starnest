@@ -23,7 +23,10 @@ arriving is a row rather than a change — which is the "nothing hardcoded" inva
 plan of 182 items, and all 182 are done. The five findings left open at its close, P101-P106,
 were fixed the same day: **an undo reads back what it did, as a write does** (`settledUndo`), so
 one whose answer never came stays listed unconfirmed instead of failing. What remains open in
-`docs/known-issues.md` is open by decision.
+`docs/known-issues.md` is open by decision or by scope, latent, or warnings only, and none of it
+blocks v2.0. **`docs/kt-handoff-to-builder-2026-10-26.md` is the handoff from the review
+programme**: every fix with its commits, the rules that changed in round 3, what stays open
+(its section 8), and where v2.0 stands.
 
 **v2.0, the city level, is designed and planned, not started** (2026-10-25). `docs/arch.md` 12
 revises the architecture, `docs/devplan-v2.md` is the build plan awaiting approval, and the

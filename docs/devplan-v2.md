@@ -88,7 +88,8 @@ comparison is a design failure, not a shortcut.
 
 **v1 works** (what was W0): the saved-ranking snapshot gaps and the run accounting closed in
 round 3, and the five findings left open at its close (`known-issues.md` P101-P103, P105, P106)
-were closed on 2026-10-25. Nothing in v1 is open except by decision.
+were closed on 2026-10-25. What stays open in v1 is open by decision or by scope, latent, or
+warnings only, and none of it blocks P0 (`kt-handoff-to-builder-2026-10-26.md` section 8).
 
 ### 1.2 Vertical slices (Q250)
 
@@ -350,6 +351,15 @@ parent's status, geography, delivery, Numbeo and the evaluated figure.
    by Alex, as Q209.
 5. **The contract additions** — approved at P0's exit.
 6. **Caching** — decided on the P7 measurement, never before.
+7. **Breakdown reduction (NEW-25)** — `arch.md` 7.2 step 3, choosing which option of a
+   multi-option attribute a criterion scores, was never built; round 3 deferred it here. No
+   active attribute has a breakdown today, and the research moved rent to per m² and the cost of
+   living to a derivation, so v2.0 needs it only if a city attribute keeps one. **Decide with the
+   city catalog (P4d).**
+8. **What Undo means for a nomination** — Recent changes records every stored Configure edit, and
+   the nomination history is append-only, so undoing an approval cannot delete the step that
+   recorded it: it adds a reversing step, or nomination stays out of Recent changes. **Decide
+   before the Candidates panel (P5).**
 
 ## 6. Risks this plan carries
 

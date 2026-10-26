@@ -61,10 +61,10 @@ answered 202 and then blocked (it cost 2.70 EUR to discover), closed 2026-09-19.
 
 | Open | Severity | Waiting on |
 |---|---|---|
-| **P41**-**P62** | six high, thirteen medium, rest low | **The full review of 2026-09-16**, in the last section of this file. Two highs spend money on the retry path (P41, P42), one stores unvalidated figures (P59), one ignores a criteria set's own rule choices (P43), two break a screen with no way back (P44, P45) |
+| ~~**P41**-**P62**~~ | six high, thirteen medium, rest low | **All closed except P58** (low, latent), each row below says when. **The full review of 2026-09-16**, in the last section of this file. Two highs spend money on the retry path (P41, P42), one stores unvalidated figures (P59), one ignores a criteria set's own rule choices (P43), two break a screen with no way back (P44, P45) |
 | ~~**D9**~~ | — | **Closed 2026-09-13 (Q229): dropped.** It was superseded before it was ever used, and its own COMMENT said so -- `attribute_allowed_label` arrived two migrations later and holds per-attribute vocabularies, while no two attributes share one. **The more useful half of the finding was the third table**: `attribute_allowed_label` was fully wired -- read by `catalog.sql`, carried on `Attribute.allowed_labels`, enforced in `refuse_unless_the_payload_suits` -- and completely empty, so `country.climate_zone` would have accepted any string. It now permits the 20 Köppen codes that occur in Europe. **Corrected 2026-09-16 (P59): the enforcement this row claims does not exist.** There is no `refuse_unless_the_payload_suits` anywhere in the repository; the method that would do the work, `rejection_reason_for`, has no production caller; and the 20 seeded codes therefore constrain nothing. The `DO` block in `0472` proved the rows had arrived, which is not the same as proving anything reads them |
-| **D14**-**D16** | low | Test-quality. Three tests assert less than their names claim, and `LevelHierarchy` accepts a branching tree |
-| **D17**-**D22** | low | Documentation and query drift between `reqs.md`, `openapi.yaml` and the SQL |
+| ~~**D14**-**D16**~~ | low | **Closed**, struck through in the list below. Test-quality. Three tests assert less than their names claim, and `LevelHierarchy` accepts a branching tree |
+| ~~**D17**-**D22**~~ | low | **Closed**, struck through in the list below. Documentation and query drift between `reqs.md`, `openapi.yaml` and the SQL |
 | **D24** | low | Nine `set-state-in-effect` warnings in `ui/`, up from five: the criterion editor's draft follows the stored rule the same way `CriterionRow`'s input follows the stored weight. Each has a derived-state formulation; none is a bug |
 
 ## Fixed

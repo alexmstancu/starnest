@@ -1,6 +1,6 @@
 # Round 3 plan: every built feature works to its specification
 
-**Owner:** Copilot, end to end. **Status:** awaiting your approval and your decisions. No code has been written.
+**Owner:** Copilot, end to end. **Status: done.** Approved on 2026-10-24; all 182 items landed by 2026-10-25 (`7a5d8e6..1077465`). Each item's commits are in `kt-handoff-to-builder-2026-10-26.md`, Appendix A; what was found afterwards is P101-P107 in `known-issues.md`.
 **Baseline:** `master` at `7a5d8e6`, 2026-10-24.
 
 **Inputs.** The UI functional review (`docs/ui-functional-review.md`, UF-001 to UF-144). The earlier round-3 draft and its Appendix B. Seven read-only consequence maps (gates, saved rankings, runs, integrity, UI, tooling, history). The trackers: `docs/findings-review-comparison.md`, `docs/copilot-remediation-plan.md` section 7, `docs/known-issues.md` and `docs/copilot-cross-model-review.md`. The specification: `docs/design/` (README, UX-REVIEW, DECISIONS, the live `.dc.html` and the screens), `docs/design-brief.md` and `docs/reqs.md`. The live-data checks of 2026-10-23.
